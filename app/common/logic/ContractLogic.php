@@ -429,6 +429,34 @@ class ContractLogic
     }
 
     /**
+     * 超管强制删除的审批终结（2026-08-11）：将指定合同的 PENDING 审批实例置 RECALLED 终态，
+     * 并将合同状态回退草稿（DRAFT），解除 deleteBlockers 的「进行中的审批流程」拦截后即可走 softDelete。
+     * 用于审批人/提交人已失效（被禁用/删除）导致无法撤回/审批的僵尸审批中合同清理（测试数据清理出口）。
+     * 审批轨迹保留（实例终态 RECALLED），待办列表按 instance.status=PENDING 过滤会自动消失，不产生悬空待办。
+     * @return bool 是否有 PENDING 审批实例被终结（无则返回 false）
+     */
+    public static function forceTerminateApproval(int $contractId): bool
+    {
+        $instances = Db::name('approval_instance')
+            ->where('contract_id', $contractId)
+            ->where('status', 'PENDING')
+            ->column('id');
+        if (!$instances) {
+            return false;
+        }
+        $now = date('Y-m-d H:i:s');
+        Db::name('approval_instance')->whereIn('id', $instances)->update([
+            'status'      => 'RECALLED',
+            'finished_at' => $now,
+        ]);
+        Db::name('contract')->where('id', $contractId)->where('status', 'PENDING_APPROVAL')->update([
+            'status'     => 'DRAFT',
+            'updated_at' => $now,
+        ]);
+        return true;
+    }
+
+    /**
      * 删除前关联校验（CR-15）：返回阻塞删除的具体原因列表；空数组表示可安全删除。
      * 覆盖：进行中审批实例、未撤销回款记录、发票记录（签署任务无独立表，由合同状态体现）。
      */

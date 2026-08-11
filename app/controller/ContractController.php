@@ -12,7 +12,6 @@ use app\common\logic\ApprovalLogic;
 use app\common\logic\AuthLogic;
 use app\common\logic\CompanyLogic;
 use app\common\logic\UserLogic;
-use app\common\logic\TemplateLogic;
 use app\common\logic\CustomerLogic;
 use app\common\logic\SupplierLogic;
 use app\common\logic\PartyLogic;        // v2.38.14 乙方往来摘要
@@ -126,7 +125,6 @@ class ContractController extends BaseController
 
         View::assign('contract', $contract);
         View::assign('categories', contract_categories());
-        View::assign('templates', TemplateLogic::getPublishedOptions());
         // REV-34：关联框架合同下拉按数据权限收敛（非管理员仅见本人/本部门范围），并加安全上限避免全表加载
         View::assign('parent_contracts', ContractLogic::getFrameworkOptions(500));
 
@@ -188,7 +186,6 @@ class ContractController extends BaseController
         $data = [
             'title'               => $this->getPost('title', ''),
             'category'            => $this->getPost('category', 'SERVICE'),
-            'template_id'         => (int)$this->getPost('template_id', 0),
             'direction'           => $direction,
             'trade_attr'          => $tradeAttr,
             'project_id'          => (int)$this->getPost('project_id', 0),
@@ -425,16 +422,8 @@ class ContractController extends BaseController
         // 关联审批记录（CR-09：含已撤回/驳回实例及其节点意见，详情可查看完整历史）
         $approvals = \app\common\logic\ApprovalQueryService::getApprovalHistory((int)$id);
 
-        // P1-C：模板结构化字段 schema（用于展示 custom_fields 的中文标签与顺序）
+        // 自定义结构化字段 schema（仅由合同自身 custom_fields 决定标签顺序）
         $customSchema = [];
-        if (!empty($contract['template_id'])) {
-            $tpl = TemplateLogic::getById((int)$contract['template_id']);
-            $raw = trim((string)($tpl['fields_schema'] ?? ''));
-            if ($raw !== '' && $raw !== '[]') {
-                $decoded = json_decode($raw, true);
-                if (is_array($decoded)) $customSchema = $decoded;
-            }
-        }
         $customValues = [];
         $rawCv = trim((string)($contract['custom_fields'] ?? ''));
         if ($rawCv !== '' && $rawCv !== '{}') {
@@ -481,6 +470,8 @@ class ContractController extends BaseController
         View::assign('can_apply_invoice', $this->hasPermission('invoice:apply') || $this->hasPermission('invoice:create'));
         // UX 门控：删除按钮按 contract:delete 权限渲染（后端 delete 已有守卫，此处仅收敛视图入口）
         View::assign('can_delete', $this->hasPermission('contract:delete'));
+        // v2.47.2：超管标志注入详情页——审批中合同（僵尸审批）允许超管强制删除，前端放开删除按钮
+        View::assign('is_super_admin', $this->isSuperAdmin());
         // UX 门控：提交审批按钮按 approval:submit 权限渲染（后端 Approval::create 已有守卫）
         View::assign('can_submit_approval', $this->hasPermission('approval:submit'));
         // UX 门控：归档/续约按钮按后端守卫同口径渲染（archive→contract:edit，renew→contract:create）
@@ -521,7 +512,15 @@ class ContractController extends BaseController
         // CR-15：删除前关联校验，存在进行中审批/回款/发票则拒绝并提示具体阻塞项
         $blockers = \app\common\logic\ContractLogic::deleteBlockers($id);
         if (!empty($blockers)) {
-            return json_error('删除失败：' . implode('；', $blockers) . '。请先处理相关关联数据');
+            // v2.47.2：超管强制删除——审批人/提交人已失效（被禁用/删除）导致无法撤回/审批的
+            // 僵尸审批中合同，允许超管终结其审批实例（置 RECALLED、合同回草稿）后删除（测试数据清理出口）；
+            // 回款/发票/子合同等业务关联仍拦截，不因超管放行。
+            if ($this->isSuperAdmin() && \app\common\logic\ContractLogic::forceTerminateApproval($id)) {
+                $blockers = \app\common\logic\ContractLogic::deleteBlockers($id);
+            }
+            if (!empty($blockers)) {
+                return json_error('删除失败：' . implode('；', $blockers) . '。请先处理相关关联数据');
+            }
         }
         if (ContractLogic::softDelete($id)) {
             AuditService::log($this->userId, 'delete', 'contract', $id);
@@ -749,9 +748,17 @@ class ContractController extends BaseController
             foreach ($idArr as $id) {
                 $contract = $contractMap[$id] ?? null;
                 if (!$contract) { $skipped++; continue; }
-                if (!in_array($contract['status'], ['DRAFT', 'REJECTED', 'ARCHIVED', 'COMPLETED', 'EXPIRED', 'TERMINATED'])) { $skipped++; continue; }
+                // v2.47.2：超管批量删除放行 PENDING_APPROVAL（经 forceTerminateApproval 终结审批后删除，测试数据清理出口）
+                $statusOk = in_array($contract['status'], ['DRAFT', 'REJECTED', 'ARCHIVED', 'COMPLETED', 'EXPIRED', 'TERMINATED'])
+                    || ($this->isSuperAdmin() && $contract['status'] === 'PENDING_APPROVAL');
+                if (!$statusOk) { $skipped++; continue; }
                 // 关联校验：审批进行中 / 回款未撤销不可删除
-                if (!empty(ContractLogic::deleteBlockers($id))) { $skipped++; continue; }
+                if (!empty(ContractLogic::deleteBlockers($id))) {
+                    // v2.47.2：超管强制删除——同单条 delete()，终结僵尸审批实例后放行；其余业务关联仍跳过
+                    if (!$this->isSuperAdmin() || !ContractLogic::forceTerminateApproval($id)) {
+                        $skipped++; continue;
+                    }
+                }
                 if (ContractLogic::softDelete($id)) {
                     AuditService::log($this->userId, 'batch_delete', 'contract', $id, ['status' => $contract['status']]);
                     $success++;
@@ -957,7 +964,6 @@ class ContractController extends BaseController
             'party_b_contact'     => $contract['party_b_contact'] ?? '',
             'party_b_credit_code' => $contract['party_b_credit_code'] ?? '',
             'supplier_id'         => (int)($contract['supplier_id'] ?? 0),
-            'template_id'         => (int)($contract['template_id'] ?? 0),
             'custom_fields'       => $contract['custom_fields'] ?? '{}',
             'flow_id'             => (int)($contract['flow_id'] ?? 0),
             'effective_date'      => $contract['effective_date'] ?? null,

@@ -34,7 +34,7 @@ function now(): string { return date('Y-m-d H:i:s'); }
 function day(int $offset): string { return date('Y-m-d', strtotime("$offset days")); }
 
 echo "开始清空业务表...\n";
-// 清空业务表（保留 角色/权限/用户角色权限/审批流/合同模板/系统配置/本公司主体 等基础配置）
+// 清空业务表（保留 角色/权限/用户角色权限/审批流/系统配置/本公司主体 等基础配置）
 foreach ([
     'approval_record', 'approval_instance', 'contract_invoice',
     'payment_record', 'contract_revision', 'remind_log', 'customer_claim_record',
@@ -62,7 +62,7 @@ foreach ($depts as [$id, $name, $pid]) {
 
 // ================= 用户（演示账号） =================
 echo "写入用户...\n";
-// 演示口令随机生成（每次 seed 不同），运行末尾会打印；如需固定口令可手动修改下方变量
+// 演示口令随机生成（每次 seed 不同），运行末尾会打印
 $demoPwdAdmin  = bin2hex(random_bytes(6));  // admin 口令（随机 12 位十六进制）
 $demoPwdUser   = bin2hex(random_bytes(6));  // 普通账号口令（随机 12 位十六进制）
 $pwd      = password_hash($demoPwdUser, PASSWORD_BCRYPT);    // 普通演示账号统一口令
@@ -393,7 +393,6 @@ foreach ($contracts as $c) {
         'contract_no' => nextNo(),
         'title' => $title,
         'category' => $category,
-        'template_id' => 1,
         'status' => $status,
         'amount' => $amount,
         'party_a_name' => $ourCo,

@@ -71,11 +71,6 @@ Route::get('/invoice-apply', 'InvoiceApply/index');
 Route::get('/approval/create/<contractId>', 'Approval/create');
 Route::get('/approval/<id>', 'Approval/detail');
 
-// 模板（已移入系统管理 tab=template，旧链接跳转）
-Route::get('/template', function() { return redirect('/admin?tab=template'); });
-Route::get('/template/create', function() { return redirect('/admin?tab=template'); });
-Route::get('/template/<id>/edit', function() { return redirect('/admin?tab=template'); });
-
 // 归档
 Route::get('/archive', 'Archive/index');
 
@@ -84,7 +79,6 @@ Route::get('/admin', 'Admin/index');
 Route::get('/admin/user', 'Admin/user');
 Route::get('/admin/role', 'Admin/role');
 Route::get('/admin/flow', 'Admin/flow');
-Route::get('/admin/template', 'Admin/template');
 Route::get('/admin/dict', 'Admin/dict');
 Route::get('/admin/dingtalk', 'Admin/dingtalk');
 Route::get('/admin/config', 'Admin/config');   // 系统配置（版权信息等基础设置，v2.34.0）
@@ -275,13 +269,6 @@ Route::group('ajax', function () {
 
     Route::post('upload/contract', 'Contract/upload');
 
-
-    Route::post('template/save', 'Template/save');
-    Route::post('template/delete', 'Template/delete');
-    Route::post('template/publish', 'Template/publish');
-    Route::post('template/restore', 'Template/restore');
-    Route::get('template/:id/content', 'Template/getContent');
-    Route::get('template/:id/preset', 'Template/getPreset');
 
     // 本公司主体
     Route::get('company/options', 'Company/options');

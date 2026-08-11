@@ -24,6 +24,9 @@ include __DIR__.'/../layout/header.php'; ?>
 <?php if(!empty($can_delete)): ?>
 <?php if(in_array($contract['status'],['DRAFT','REJECTED','ARCHIVED','COMPLETED','EXPIRED','TERMINATED'])): ?>
 <button class="btn btn-outline-danger btn-sm" onclick="delContract(<?=$contract['id']?>)"><i class="bi bi-trash"></i> 删除</button>
+<?php elseif(!empty($is_super_admin) && $contract['status']==='PENDING_APPROVAL'): ?>
+<!-- v2.47.2：超管强制删除审批中合同（审批人/提交人已失效的僵尸审批清理出口，后端终结审批实例后删除） -->
+<button class="btn btn-outline-danger btn-sm" onclick="delContract(<?=$contract['id']?>, true)" title="超管强制删除：将终结进行中的审批流程并删除该合同"><i class="bi bi-trash"></i> 强制删除</button>
 <?php else: ?>
 <button class="btn btn-outline-danger btn-sm" disabled title="仅草稿/已驳回/已归档/已完成/已到期/已终止状态可删除"><i class="bi bi-trash"></i> 删除</button>
 <?php endif; ?>
@@ -569,7 +572,8 @@ window.__ATTACHMENTS__ = <?php
 var __canPay = <?= !empty($can_pay) ? 'true' : 'false' ?>;
 var __canIssue = <?= !empty($can_issue) ? 'true' : 'false' ?>;
 function doArchive(){pcConfirm({message:'确定归档？'}).then(function(ok){if(!ok)return;$ajax('/ajax/archive/<?=$contract['id']?>',{method:'POST',loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.reload();}).catch(function(){});});}
-function delContract(id){pcConfirm({message:'确定删除该合同？删除后进入回收站，可在数据回收站恢复或彻底清除',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/delete',{method:'POST',body:new URLSearchParams({id:id}),loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.href='/contract';}).catch(function(){});});}
+// v2.47.2：超管强制删除审批中合同（force=true 时提示将终结进行中的审批流程）
+function delContract(id, force){pcConfirm({message:force ? '确定强制删除该审批中合同？将终结其进行中的审批流程并删除，进入回收站可恢复' : '确定删除该合同？删除后进入回收站，可在数据回收站恢复或彻底清除',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/delete',{method:'POST',body:new URLSearchParams({id:id}),loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.href='/contract';}).catch(function(){});});}
 // v2.43.4：执行中/已签署合同「终止」入口（后端 statusTransition 已有，补前端按钮；
 // 存在逾期未结回款时后端会拦截并提示，前端弹窗预先提醒）
 function doTerminate(){pcConfirm({message:'确定终止该合同？终止后需另走新合同，请确认无逾期未结回款。',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/status-transition',{method:'POST',body:new URLSearchParams({id:<?=(int)$contract['id']?>,status:'TERMINATED'}),loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.reload();}).catch(function(){});});}

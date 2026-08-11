@@ -244,27 +244,6 @@ $tables = [
     )",
     "CREATE INDEX idx_project_owner ON project(owner_id)",
 
-    // contract_template
-    "CREATE TABLE contract_template (
-        -- 表注释：合同模板——生成合同的基础模板
-        id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
-        name TEXT NOT NULL DEFAULT '',  -- 名称
-        code TEXT NOT NULL DEFAULT '',  -- 编码
-        category TEXT DEFAULT '',  -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
-        status TEXT DEFAULT 'DRAFT',  -- 状态
-        current_version INTEGER DEFAULT 1,  -- 当前版本号
-        content TEXT DEFAULT '',  -- 内容
-        fields_schema TEXT DEFAULT '',  -- 自定义字段JSON
-        default_direction TEXT DEFAULT '',  -- 默认方向(sales/purchase)
-        default_trade_attr TINYINT NOT NULL DEFAULT 1,  -- 默认交易属性(1=交易)
-        default_flow_id INTEGER DEFAULT 0,  -- 默认审批流ID
-        tips TEXT DEFAULT '',  -- 提示说明
-        creator_id INTEGER NOT NULL DEFAULT 0,  -- 创建人ID
-        created_at TEXT DEFAULT (datetime('now','localtime')),  -- 创建时间
-        updated_at TEXT DEFAULT (datetime('now','localtime'))  -- 更新时间
-    )",
-    "CREATE UNIQUE INDEX uk_tpl_code ON contract_template(code)",
-
     // contract
     "CREATE TABLE contract (
         -- 表注释：合同主表——合同核心信息
@@ -272,7 +251,6 @@ $tables = [
         contract_no TEXT NOT NULL DEFAULT '',  -- 合同编号
         title TEXT NOT NULL DEFAULT '',  -- 标题
         category TEXT DEFAULT 'SERVICE',  -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
-        template_id INTEGER DEFAULT 0,  -- 合同模板ID
         status TEXT DEFAULT 'DRAFT',  -- 状态
         amount REAL DEFAULT 0.00,  -- 金额
         party_a_name TEXT DEFAULT '',  -- 甲方名称
@@ -627,7 +605,6 @@ $perms = [
     [3, '编辑合同', 'contract:edit', '合同管理'],
     [4, '删除合同', 'contract:delete', '合同管理'],
     [5, '导出合同', 'contract:export', '合同管理'],
-    [6, '模板管理', 'template:manage', '合同模板'],
     [7, '查看审批', 'approval:view', '审批管理'],
     [8, '提交审批', 'approval:submit', '审批管理'],
     [9, '审批操作', 'approval:approve', '审批管理'],
@@ -762,11 +739,6 @@ Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_t
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (7, 'tax_no', '税号', 'text', '[]', 0, 1, 70, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (8, 'remark', '申请说明', 'textarea', '[]', 0, 1, 90, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (9, 'customer_id', '开票客户', 'customer', '[]', 0, 1, 55, 1)");
-
-// 合同类型预设（模板重构为“合同类型预设”，套用即带出默认分类/方向/建议审批流/必填提醒）
-Db::execute("INSERT INTO contract_template (id, name, code, category, status, current_version, content, fields_schema, default_direction, default_trade_attr, default_flow_id, tips, creator_id, created_at, updated_at) VALUES (1, '媒体投放服务合同', 'TPL-MEDIA', 'SERVICE', 'PUBLISHED', 1, '', '[{\"key\":\"platform\",\"label\":\"投放平台/渠道\",\"type\":\"text\",\"required\":true},{\"key\":\"period\",\"label\":\"投放周期\",\"type\":\"text\",\"required\":true},{\"key\":\"kpi\",\"label\":\"KPI考核指标\",\"type\":\"textarea\",\"required\":true},{\"key\":\"settlement\",\"label\":\"结算方式\",\"type\":\"select\",\"required\":true,\"options\":[\"预付\",\"月结\",\"季结\",\"CPS分成\"]},{\"key\":\"account_period\",\"label\":\"账期(天)\",\"type\":\"number\",\"required\":false}]', 'sales', 1, 1, '必填：投放平台/渠道、投放周期、KPI考核指标、结算方式与账期。', 1, datetime('now','localtime'), datetime('now','localtime'))");
-Db::execute("INSERT INTO contract_template (id, name, code, category, status, current_version, content, fields_schema, default_direction, default_trade_attr, default_flow_id, tips, creator_id, created_at, updated_at) VALUES (2, '供应商采购合同', 'TPL-PURCHASE', 'PURCHASE', 'PUBLISHED', 1, '', '[{\"key\":\"deliverables\",\"label\":\"交付物清单\",\"type\":\"textarea\",\"required\":true},{\"key\":\"acceptance\",\"label\":\"验收标准\",\"type\":\"textarea\",\"required\":true},{\"key\":\"warranty\",\"label\":\"质保期\",\"type\":\"text\",\"required\":false},{\"key\":\"quote_no\",\"label\":\"报价单编号\",\"type\":\"text\",\"required\":false}]', 'purchase', 1, 1, '必填：供应商资质、报价单、交付物清单、验收标准与质保期。', 1, datetime('now','localtime'), datetime('now','localtime'))");
-Db::execute("INSERT INTO contract_template (id, name, code, category, status, current_version, content, fields_schema, default_direction, default_trade_attr, default_flow_id, tips, creator_id, created_at, updated_at) VALUES (3, '年度框架协议', 'TPL-FRAMEWORK', 'SERVICE', 'PUBLISHED', 1, '', '[]', 'sales', 1, 2, '注意关联执行订单；约定年度预算上限、结算周期与单价区间。', 1, datetime('now','localtime'), datetime('now','localtime'))");
 
 // System config
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('contract_categories', '{\"SALES\":\"销售合同\",\"PURCHASE\":\"采购合同\",\"LABOR\":\"劳动合同\",\"LEASE\":\"租赁合同\",\"NDA\":\"保密协议\",\"SERVICE\":\"服务合同\",\"OTHER\":\"其他\"}', 'contract')");

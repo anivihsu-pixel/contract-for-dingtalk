@@ -889,8 +889,12 @@ function openInvoiceEditor(){
 .dict-header .dict-chev{color:var(--text-3);transition:transform .15s}
 .dict-header.active .dict-chev{transform:rotate(90deg)}
 .dict-label{min-width:110px;font-weight:600}
-.dict-item{display:inline-flex;align-items:center;background:#f0f4ff;color:var(--primary);border-radius:6px;padding:3px 10px;margin:2px 4px;font-size:13px;cursor:pointer;transition:all .15s}
+.dict-item{display:inline-flex;align-items:center;background:#f0f4ff;color:var(--primary);border-radius:6px;padding:3px 10px;margin:2px 4px;font-size:13px;cursor:grab;transition:all .15s}
 .dict-item:hover{background:#dbeafe;transform:translateY(-1px)}
+/* v2.47.2：拖动排序视觉反馈 */
+.dict-item:active{cursor:grabbing}
+.dict-dragging{opacity:.45}
+.dict-drag-over{outline:2px dashed var(--primary);outline-offset:1px;background:#dbeafe}
 .dict-item .del-x{font-size:12px;margin-left:5px;color:var(--text-3);line-height:1;cursor:pointer}
 .dict-item .del-x:hover{color:var(--danger)}
 /* v2.40.7：停用项样式（灰底+删除线），点击停用按钮可恢复 */
@@ -932,7 +936,7 @@ $labels = [
 ?>
 <?php if(!empty($dicts)): ?>
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <span class="text-muted small">共 <?=count($dicts)?> 个字典，点击标题展开编辑选项</span>
+  <span class="text-muted small">共 <?=count($dicts)?> 个字典，点击标题展开编辑选项；启用项可直接拖动调整排序</span>
   <div>
     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="dictExpandAll()"><i class="bi bi-chevron-double-down"></i> 全部展开</button>
     <button type="button" class="btn btn-outline-secondary btn-sm ms-1" onclick="dictCollapseAll()"><i class="bi bi-chevron-double-up"></i> 全部收起</button>
@@ -967,7 +971,7 @@ $labels = [
   <?php foreach($activeItems as $code=>$label):
     $escCode = addslashes(htmlspecialchars($code));
   ?>
-    <span class="dict-item" onclick="dictEdit(this,'<?=$escKey?>','<?=$escCode?>','<?=addslashes(htmlspecialchars($label))?>')" title="点击修改">
+    <span class="dict-item" draggable="true" data-code="<?=$escCode?>" onclick="dictEdit(this,'<?=$escKey?>','<?=$escCode?>','<?=addslashes(htmlspecialchars($label))?>')" title="拖动排序，点击修改">
       <?=htmlspecialchars($label)?>
       <?php if(empty($di['system'])): ?><span class="del-x" onclick="dictDelItem(event,'<?=$escKey?>','<?=$escCode?>')" title="删除">&times;</span><?php endif; ?>
       <span class="dict-toggle" onclick="dictToggleItem(event,'<?=$escKey?>','<?=$escCode?>')" title="点击停用（从下拉隐藏，历史数据不受影响）">停用</span>
@@ -1101,6 +1105,53 @@ function setDictToggleLabel(span, txt, tip) {
     if(t){ t.textContent = txt; t.title = tip; }
 }
 
+// v2.47.2：字典项拖动排序——HTML5 原生 DnD，事件委托到启用区容器，
+// 拖动后收集 data-code 顺序提交 __REORDER_ITEMS__ 保存（后端重排 config_value 键顺序）。
+function initDictDrag(zone) {
+    zone.addEventListener('dragstart', function(e){
+        var item = e.target.closest('.dict-item[data-code]');
+        if(!item) return;
+        zone._dragEl = item;
+        item.classList.add('dict-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try{ e.dataTransfer.setData('text/plain', item.getAttribute('data-code')); }catch(_){}
+    });
+    zone.addEventListener('dragend', function(){
+        zone._dragEl = null;
+        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-dragging','dict-drag-over'); });
+    });
+    zone.addEventListener('dragover', function(e){
+        var item = e.target.closest('.dict-item[data-code]');
+        if(!item || !zone._dragEl || item === zone._dragEl) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-drag-over'); });
+        item.classList.add('dict-drag-over');
+    });
+    zone.addEventListener('drop', function(e){
+        var item = e.target.closest('.dict-item[data-code]');
+        if(!item || !zone._dragEl || item === zone._dragEl) return;
+        e.preventDefault();
+        e.stopPropagation();
+        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-drag-over'); });
+        // 落到目标下半部则插入其后，否则插入其前（按 DOM 顺序重排）
+        var rect = item.getBoundingClientRect();
+        var after = (e.clientY - rect.top) > rect.height / 2;
+        if(after) item.after(zone._dragEl); else item.before(zone._dragEl);
+        saveDictOrder(zone);
+    });
+}
+function saveDictOrder(zone) {
+    var key = zone.id.replace('dictActive_','');
+    var codes = [];
+    zone.querySelectorAll('.dict-item[data-code]').forEach(function(x){ codes.push(x.getAttribute('data-code')); });
+    if(!codes.length){ return; }
+    $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__REORDER_ITEMS__',item_key:codes.join(',')})}).then(function(res){
+        showToast(res.msg||'排序已保存',res.code===0?'success':'error');
+    }).catch(function(){});
+}
+document.querySelectorAll('.dict-items-active').forEach(initDictDrag);
+
 // v2.40.7：展开/收起「已停用 N 项」折叠区（.dict-off-items 由 CSS 类初始隐藏，须用 getComputedStyle 判真实可见性 + 内联 block 覆盖）
 function toggleOffZone(key) {
     var t = document.getElementById('dictOffToggle_'+key);
@@ -1181,9 +1232,9 @@ function toggleOffZone(key) {
   <div class="card-header bg-light"><i class="bi bi-arrow-counterclockwise"></i> 系统配置备份 / 恢复</div>
   <div class="card-body">
     <p class="text-muted small mb-3">
-      将「角色 / 权限 / 部门 / 本公司主体 / 审批流程 / 合同模板 / 资料库 / 系统配置」等配置整体导出为 JSON 快照；
+      将「角色 / 权限 / 部门 / 本公司主体 / 审批流程 / 资料库 / 系统配置 / 字典设置 / 钉钉配置」等配置整体导出为 JSON 快照；
       需要时可原样恢复（覆盖上述表的全部行并保留原 id）。<b>不含用户账号（user 表）</b>，避免密码出域。
-      恢复会覆盖当前配置，建议在恢复前先手动备份数据库。
+      钉钉配置（.env 中 DINGTALK_*）随备份导出、恢复时写回 .env。恢复会覆盖当前配置，建议在恢复前先手动备份数据库。
     </p>
     <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
       <button class="btn btn-outline-primary" onclick="backupExport()"><i class="bi bi-download"></i> 导出配置（JSON）</button>

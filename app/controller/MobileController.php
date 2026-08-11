@@ -27,7 +27,6 @@ use app\common\logic\ResourceLogic;
 use app\common\logic\RoleLogic;
 use app\common\logic\ApproverResolver;
 use app\common\logic\SupplierLogic;
-use app\common\logic\TemplateLogic;
 use app\common\logic\AdminLogic;
 use app\common\service\RemindService;
 use app\common\service\InternalNotify;
@@ -464,15 +463,8 @@ class MobileController extends BaseController
             throw new \think\exception\HttpException(403, '当前合同状态不可提交审批');
         }
 
-        // 自动匹配将使用的审批流程（预览，无需用户手动选择；去模板落地 Phase 1.5：仅按分类+金额）
+        // 自动匹配将使用的审批流程（预览，无需用户手动选择；去模板落地：仅按分类+金额）
         $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
-        // 与 PC 端一致：金额/分类未命中时回退合同模板默认流，避免移动端对模板合同误报「未匹配」
-        if (!$flow && !empty($contract['template_id'])) {
-            $tpl = TemplateLogic::getById((int)$contract['template_id']);
-            if ($tpl && !empty($tpl['default_flow_id'])) {
-                $flow = \app\common\logic\ApprovalQueryService::getFlowById((int)$tpl['default_flow_id']);
-            }
-        }
 
         // 解析每个审批节点的实际用户
         $rawNodes = json_decode($flow['nodes'] ?? '[]', true) ?: [];
@@ -570,7 +562,7 @@ class MobileController extends BaseController
             $party360['supplier'] = PartyLogic::getSummary('supplier', (int)$contract['supplier_id']);
         }
 
-        // 自定义结构化字段（去模板落地 Phase 1.5：schema 不再从合同模板取，仅渲染合同自身 custom_fields）
+        // 自定义结构化字段（schema 仅由合同自身 custom_fields 决定）
         $customSchema = [];
         $customValues = [];
         $rawCv = trim((string)($contract['custom_fields'] ?? ''));

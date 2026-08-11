@@ -425,6 +425,27 @@ class AdminLogic
     }
 
     /**
+     * 统计用户进行中的审批数（v2.47.2）：作为审批人待处理的记录（PENDING 且实例进行中）
+     * + 作为提交人仍审批中的实例。禁用前校验用——有进行中审批即禁用会使其成为
+     * 无人能审批/撤回的僵尸审批（对应合同卡死在审批中，普通删除被拦截）。
+     * @return int 进行中的审批数（含审批人待办 + 已提交未完结）
+     */
+    public static function countPendingApprovals(int $userId): int
+    {
+        $asApprover = Db::name('approval_record')->alias('ar')
+            ->join('approval_instance ai', 'ar.instance_id = ai.id')
+            ->where('ar.approver_id', $userId)
+            ->where('ar.action', 'PENDING')
+            ->where('ai.status', 'PENDING')
+            ->count();
+        $asSubmitter = Db::name('approval_instance')
+            ->where('submitted_by', $userId)
+            ->where('status', 'PENDING')
+            ->count();
+        return (int)$asApprover + (int)$asSubmitter;
+    }
+
+    /**
      * 离职交接（v2.38.16）：将某用户的客户/合同/待审批批量转移给接收人，并按需禁用离职用户。
      * 事务内执行，任一环节失败整体回滚；审计日志在事务外记录（不随业务回滚）。
      * @param int   $fromUserId 离职用户 id
@@ -759,7 +780,7 @@ class AdminLogic
     }
 
     /**
-     * 彻底删除审批流程（永久删除；仅当无审批实例/模板引用时允许，保护历史关联）
+     * 彻底删除审批流程（永久删除；仅当无审批实例引用时允许，保护历史关联）
      * @return array ['ok'=>bool,'msg'=>string]
      */
     public static function purgeFlowById(int $id): array
@@ -768,11 +789,6 @@ class AdminLogic
         $instCnt = Db::name('approval_instance')->where('flow_id', $id)->count();
         if ($instCnt > 0) {
             return ['ok' => false, 'msg' => "该流程已有 {$instCnt} 条审批实例，无法彻底删除（历史审批关联不可破坏）"];
-        }
-        // 合同模板默认审批流引用保护：被设为默认流程的模板需先改默认流程
-        $tplCnt = Db::name('contract_template')->where('default_flow_id', $id)->count();
-        if ($tplCnt > 0) {
-            return ['ok' => false, 'msg' => "该流程被 {$tplCnt} 个合同模板设为默认审批流，无法彻底删除（请先修改模板默认流程）"];
         }
         Db::name('approval_flow')->where('id', $id)->delete();
         return ['ok' => true, 'msg' => '已彻底删除'];
@@ -1023,6 +1039,32 @@ class AdminLogic
             return ['ok' => true, 'msg' => '字典项已删除'];
         }
 
+        // 字典项拖动排序（v2.47.2：重排 config_value 键顺序即全站下拉/筛选显示顺序；
+        // item_key 传新顺序的编码列表，逗号分隔，仅含启用项；停用项保持原相对顺序追加末尾）
+        if ($value === '__REORDER_ITEMS__') {
+            $existing = Db::name('system_config')->where('config_key', $key)->find();
+            if (!$existing) {
+                return ['ok' => false, 'msg' => '字典不存在'];
+            }
+            $items = json_decode($existing['config_value'], true) ?: [];
+            $order = array_values(array_filter(array_map('trim', explode(',', (string)$itemKey))));
+            if (!$order) {
+                return ['ok' => false, 'msg' => '缺少排序数据'];
+            }
+            $newItems = [];
+            foreach ($order as $k) {
+                if (array_key_exists($k, $items)) { $newItems[$k] = $items[$k]; }
+            }
+            foreach ($items as $k => $v) {
+                if (!array_key_exists($k, $newItems)) { $newItems[$k] = $v; }
+            }
+            Db::name('system_config')->where('config_key', $key)
+                ->update(['config_value' => json_encode($newItems, JSON_UNESCAPED_UNICODE)]);
+            self::clearDictCache($key);
+            if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
+            return ['ok' => true, 'msg' => '排序已保存'];
+        }
+
         // 删除整个字典
         if ($value === '__DELETE_DICT__') {
             // v2.40.7：系统枚举字典整体禁止删除（删除后 dict() 返回空，全站引用处回退英文编码）
@@ -1052,18 +1094,19 @@ class AdminLogic
 
     // ========================================================================
     // 系统配置备份 / 恢复（v2.36.0）
-    // 导出范围：配置/组织/权限/流程/模板/资料库，**不含 user 表**（避免密码哈希出域，
+    // 导出范围：配置/组织/权限/流程/字典/钉钉配置/资料库，**不含 user 表**（避免密码哈希出域，
     //   同时满足用户「导出不含 user 表」的明确要求）。
     // 导入采用整簇「DELETE + 批量 INSERT 保留原 id」事务恢复，保证 role_permission 等
     //   靠 id join 的引用不断链（与 RBAC 教训一致：不可重排号）。
     // 表顺序即依赖顺序（先父后子），便于日志与排错。
     // ========================================================================
 
-    /** 配置备份允许导出的表（不含 user） */
+    /** 配置备份允许导出的表（不含 user）。dict=字典设置（system_config 中 dict_% 键的独立分区）、
+     *  dingtalk=钉钉配置（.env 中 DINGTALK_*，恢复写回 .env）。 */
     public const CONFIG_BACKUP_TABLES = [
         'role', 'permission', 'role_permission', 'user_role',
         'department', 'company_profile', 'approval_flow',
-        'contract_template', 'resource_library', 'system_config',
+        'resource_library', 'system_config', 'dict', 'dingtalk',
     ];
 
     /** 配置备份表的中文名（对应各表注释，备份/恢复 UI 展示用） */
@@ -1075,9 +1118,10 @@ class AdminLogic
         'department'       => '部门',
         'company_profile'  => '本公司主体',
         'approval_flow'    => '审批流程',
-        'contract_template'=> '合同模板',
         'resource_library' => '资料库',
         'system_config'    => '系统配置',
+        'dict'             => '字典设置',
+        'dingtalk'         => '钉钉配置',
     ];
 
     /** 表中文名（未知表回退原名） */
@@ -1118,11 +1162,28 @@ class AdminLogic
         // 避免并发修改导致表间引用（role_permission→role/permission）自相矛盾
         Db::transaction(function () use (&$tables, $export) {
             foreach ($export as $t) {
+                // 字典设置：system_config 中 dict_% 键独立成表（dict_disabled_*/dict_meta 随行）
+                if ($t === 'dict') {
+                    $tables[$t] = Db::name('system_config')->whereLike('config_key', 'dict%')->select()->toArray();
+                    continue;
+                }
+                // 钉钉配置：.env 中 DINGTALK_*（独立于 DB，恢复写回 .env）
+                if ($t === 'dingtalk') {
+                    $tables[$t] = self::readDingTalkEnv();
+                    continue;
+                }
                 // 排序键：有 id 用 id，联合主键表（user_role/role_permission）用首列，保证稳定顺序且不报错
                 $cols     = self::tableColumns($t);
                 $orderCol = in_array('id', $cols, true) ? 'id' : ($cols[0] ?? 'id');
                 // 全量行（保留所有列与原值），按主键升序
                 $tables[$t] = Db::name($t)->order($orderCol, 'asc')->select()->toArray();
+                // system_config 排除 dict_% 键（字典设置已独立成 dict 表，避免重复导出）
+                if ($t === 'system_config') {
+                    $tables[$t] = array_values(array_filter(
+                        $tables[$t],
+                        static fn($r) => strpos((string)($r['config_key'] ?? ''), 'dict_') !== 0
+                    ));
+                }
             }
         });
         return [
@@ -1250,8 +1311,18 @@ class AdminLogic
         $restored = [];
         Db::transaction(function () use ($payload, &$restored) {
             foreach (self::CONFIG_BACKUP_TABLES as $t) {
+                if ($t === 'dingtalk') { continue; } // .env 写入不可回滚，置于事务外（见下方）
                 $rows = $payload['tables'][$t] ?? null;
                 if (!is_array($rows)) { continue; }
+                // 字典设置：仅覆盖 system_config 中 dict_% 键，保护普通配置不被误清
+                if ($t === 'dict') {
+                    Db::name('system_config')->whereLike('config_key', 'dict%')->delete();
+                    foreach (array_chunk($rows, 200) as $chunk) {
+                        Db::name('system_config')->insertAll($chunk);
+                    }
+                    $restored[$t] = count($rows);
+                    continue;
+                }
                 // 仅保留当前表真实存在的列，规避版本间列差异（多出的列丢弃，缺失的列由 DB 默认值补齐）
                 $cols = self::tableColumns($t);
                 $clean = [];
@@ -1265,10 +1336,15 @@ class AdminLogic
                     }
                     $clean[] = $cleanRow;
                 }
-                Db::name($t)->where('1=1')->delete();
+                // system_config：只清非字典键（字典设置独立分区，避免整表清空误伤/重复）
+                if ($t === 'system_config') {
+                    Db::name('system_config')->whereNotLike('config_key', 'dict%')->delete();
+                } else {
+                    Db::name($t)->where('1=1')->delete();
+                }
                 if (!empty($clean)) {
                     // ⑤ 分批写入（评估优化）：防止单条多值 INSERT 超过 MySQL max_allowed_packet
-                    //（role_permission 全量 + 大字段模板/资料库时单条 SQL 可能超限）
+                    //（role_permission 全量 + 大字段资料库时单条 SQL 可能超限）
                     foreach (array_chunk($clean, 200) as $chunk) {
                         Db::name($t)->insertAll($chunk);
                     }
@@ -1276,6 +1352,11 @@ class AdminLogic
                 $restored[$t] = count($clean);
             }
         });
+        // 钉钉配置：DB 事务提交成功后写回 .env（文件写不可回滚，须置于事务外）
+        $envRows = $payload['tables']['dingtalk'] ?? null;
+        if (is_array($envRows)) {
+            $restored['dingtalk'] = self::writeDingTalkEnv($envRows) ? count($envRows) : 0;
+        }
         // 恢复后清缓存（字典/配置短缓存等），失败不影响已提交的恢复
         try { \think\facade\Cache::clear(); } catch (\Throwable $e) { /* 忽略缓存清理失败 */ }
         return ['ok' => true, 'msg' => '系统配置已恢复', 'restored' => $restored];
@@ -1291,5 +1372,63 @@ class AdminLogic
         }
         $rows = Db::query("PRAGMA table_info(`{$table}`)");
         return array_column($rows, 'name');
+    }
+
+    /** 钉钉配置备份读取：.env 中 DINGTALK_* 键值对（键名保留 .env 原名） */
+    private static function readDingTalkEnv(): array
+    {
+        $keys = ['DINGTALK_APP_KEY', 'DINGTALK_APP_SECRET', 'DINGTALK_CORP_ID',
+                 'DINGTALK_AGENT_ID', 'DINGTALK_APP_URL', 'DINGTALK_MOCK_MODE'];
+        $out  = [];
+        $file = root_path() . '.env';
+        if (is_file($file)) {
+            foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
+                $ln = trim($ln);
+                foreach ($keys as $k) {
+                    if (strpos($ln, $k . '=') === 0) {
+                        $out[$k] = trim(substr($ln, strlen($k) + 1));
+                        break;
+                    }
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** 钉钉配置恢复写入：将 DINGTALK_* 键值对写回 .env（按 KEY=VALUE 更新或追加） */
+    private static function writeDingTalkEnv(array $map): bool
+    {
+        $map = array_filter($map, static fn($v, $k) => is_string($v) && strpos($k, 'DINGTALK_') === 0, ARRAY_FILTER_USE_BOTH);
+        if (!$map) {
+            return false;
+        }
+        $file = root_path() . '.env';
+        if (!is_file($file)) {
+            return false;
+        }
+        $content = file_get_contents($file);
+        $lines   = explode("\n", $content);
+        foreach ($map as $k => $v) {
+            $found = false;
+            foreach ($lines as &$ln) {
+                if (strpos(trim($ln), $k . '=') === 0) {
+                    $ln    = $k . '=' . self::envQuote($v);
+                    $found = true;
+                    break;
+                }
+            }
+            unset($ln);
+            if (!$found) {
+                $lines[] = $k . '=' . self::envQuote($v);
+            }
+        }
+        $data = implode("\n", $lines);
+        return @file_put_contents($file, $data) !== false;
+    }
+
+    /** .env 值引用：含空格/特殊字符时加双引号，防止解析错位 */
+    private static function envQuote(string $v): string
+    {
+        return (preg_match('/[\s#"\']/', $v)) ? '"' . addcslashes($v, '"\\') . '"' : $v;
     }
 }

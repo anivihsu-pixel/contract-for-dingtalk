@@ -163,8 +163,6 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
   document.querySelectorAll('input[name="trade_attr"]').forEach(function(r){ r.addEventListener('change', syncTrade); });
   syncTrade();
 
-  // 合同模板 JS 已隐藏，后端保留
-
   // ===== 甲乙方身份（法律地位）与收付款方向（资金）解耦 =====
   // ourSide：我方在法律上的哪一侧（A=甲方 / B=乙方），由「本公司」按钮显式指定，
   // 与收付款方向（direction）完全独立。技术服务合同可「我方=乙方 + 收款」。

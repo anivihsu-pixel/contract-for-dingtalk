@@ -80,7 +80,7 @@ class ApprovalSubmitService
 
     /**
      * 提交审批（自动匹配流程）
-     * 匹配顺序：指定 flowId → 按分类+金额 matchFlow → 合同模板默认流 → 报错
+     * 匹配顺序：指定 flowId → 按分类+金额 matchFlow → 报错
      * @param int $contractId
      * @param int $submitterId
      * @param int $flowId  为 0 时自动匹配
@@ -120,7 +120,7 @@ class ApprovalSubmitService
                 throw new \RuntimeException('该合同已有审批中的流程，请勿重复提交');
             }
 
-            // 1) 解析适用流程：指定 flowId > 分类+金额匹配（去模板落地 Phase 1.5：不再依赖合同模板默认流）
+            // 1) 解析适用流程：指定 flowId > 分类+金额匹配
             // P1（2026-08-09）：提交人可控 flow_id 防护——指定流程必须满足：
             //  ① 存在且 status=1（启用）；
             //  ② 业务类型匹配（biz_type 为空视为 contract，发票流不可用于合同提交）；

@@ -11,7 +11,6 @@ use app\common\logic\ApprovalLogic;
 use app\common\logic\ApproverResolver;
 use app\common\logic\ContractLogic;
 use app\common\logic\RoleLogic;
-use app\common\logic\TemplateLogic;
 use app\common\logic\UserLogic;
 use app\common\service\AuditService;
 
@@ -83,12 +82,6 @@ class ApprovalController extends BaseController
 
         // 自动匹配将使用的审批流程（预览，无需用户手动选择）
         $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
-        if (!$flow && !empty($contract['template_id'])) {
-            $tpl = TemplateLogic::getById((int)$contract['template_id']);
-            if ($tpl && !empty($tpl['default_flow_id'])) {
-                $flow = \app\common\logic\ApprovalQueryService::getFlowById((int)$tpl['default_flow_id']);
-            }
-        }
 
         // 解析每个审批节点的实际用户，便于提交页直接展示具体人员（含角色下的成员）
         $rawNodes = json_decode($flow['nodes'] ?? '[]', true) ?: [];
@@ -145,7 +138,7 @@ class ApprovalController extends BaseController
     {
         $this->requirePermission('approval:submit');
         $contractId = (int)$this->getPost('contract_id', 0);
-        // 尊重前端传入的流程 ID（来自合同模板默认流 / 流程选择）。
+        // 尊重前端传入的流程 ID（流程选择）。
         // 修复（v2.37.5）：此前此处硬编码只传 $contractId，导致 \app\common\logic\ApprovalSubmitService::submit 的 flowId 默认 0，
         // 永远走 matchFlow 自动匹配——即便合同已配置好「含抄送节点」的流程，也会被自动匹配成
         // 另一个把同一人设为审批人的流程，造成「纯抄送人收到审批催办且能审批」的错配。

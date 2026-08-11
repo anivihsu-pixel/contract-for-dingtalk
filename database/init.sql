@@ -263,37 +263,13 @@ CREATE TABLE `project` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='项目';
 
 -- ============================================================
--- 12. 合同模板
--- ============================================================
-CREATE TABLE `contract_template` (
-    `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
-    `name` VARCHAR(128) NOT NULL DEFAULT '' COMMENT '名称',    -- 名称
-    `code` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '编码',    -- 编码
-    `category` VARCHAR(32) DEFAULT '' COMMENT '合同分类(SERVICE/PURCHASE/LEASE/NDA等)',    -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
-    `status` VARCHAR(16) DEFAULT 'DRAFT' COMMENT '状态(DRAFT/PUBLISHED/DISABLED)',    -- 状态(DRAFT/PUBLISHED/DISABLED)
-    `current_version` INT DEFAULT 1 COMMENT '当前版本号',    -- 当前版本号
-    `content` LONGTEXT COMMENT '内容',    -- 内容
-    `fields_schema` TEXT COMMENT '自定义字段JSON',    -- 自定义字段JSON
-    `default_direction` VARCHAR(16) DEFAULT '' COMMENT '默认方向(sales/purchase)',    -- 默认方向(sales/purchase)
-    `default_trade_attr` TINYINT NOT NULL DEFAULT 1 COMMENT '默认交易属性(1=交易)',    -- 默认交易属性(1=交易)
-    `default_flow_id` BIGINT DEFAULT 0 COMMENT '默认审批流ID',    -- 默认审批流ID
-    `tips` TEXT COMMENT '提示说明',    -- 提示说明
-    `creator_id` BIGINT NOT NULL DEFAULT 0 COMMENT '创建人ID',    -- 创建人ID
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
-    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',    -- 更新时间
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_tpl_code` (`code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同模板';
-
--- ============================================================
--- 13. 合同主表
+-- 12. 合同主表
 -- ============================================================
 CREATE TABLE `contract` (
     `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
     `contract_no` VARCHAR(32) NOT NULL DEFAULT '' COMMENT '合同编号',    -- 合同编号
     `title` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '标题',    -- 标题
     `category` VARCHAR(32) DEFAULT 'SERVICE' COMMENT '合同分类(SERVICE/PURCHASE/LEASE/NDA等)',    -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
-    `template_id` BIGINT DEFAULT 0 COMMENT '合同模板ID',    -- 合同模板ID
     `status` VARCHAR(32) DEFAULT 'DRAFT' COMMENT '状态',    -- 状态
     `amount` DECIMAL(15,2) DEFAULT 0.00 COMMENT '金额',    -- 金额
     `party_a_name` VARCHAR(128) DEFAULT '' COMMENT '甲方名称',    -- 甲方名称
@@ -674,7 +650,6 @@ INSERT INTO `permission` (`id`, `name`, `code`, `group_name`) VALUES
 (3, '编辑合同', 'contract:edit', '合同管理'),
 (4, '删除合同', 'contract:delete', '合同管理'),
 (5, '导出合同', 'contract:export', '合同管理'),
-(6, '模板管理', 'template:manage', '合同模板'),
 (7, '查看审批', 'approval:view', '审批管理'),
 (8, '提交审批', 'approval:submit', '审批管理'),
 (9, '审批操作', 'approval:approve', '审批管理'),
@@ -775,12 +750,6 @@ INSERT INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`
 (7, 'tax_no', '税号', 'text', '[]', 0, 1, 70, 1),
 (8, 'remark', '申请说明', 'textarea', '[]', 0, 1, 90, 1),
 (9, 'customer_id', '开票客户', 'customer', '[]', 0, 1, 55, 1);
-
--- 合同模板
-INSERT INTO `contract_template` (`id`, `name`, `code`, `category`, `status`, `current_version`, `content`, `fields_schema`, `default_direction`, `default_trade_attr`, `default_flow_id`, `tips`, `creator_id`, `created_at`, `updated_at`) VALUES
-(1, '媒体投放服务合同', 'TPL-MEDIA', 'SERVICE', 'PUBLISHED', 1, '', '[{"key":"platform","label":"投放平台/渠道","type":"text","required":true},{"key":"period","label":"投放周期","type":"text","required":true},{"key":"kpi","label":"KPI考核指标","type":"textarea","required":true},{"key":"settlement","label":"结算方式","type":"select","required":true,"options":["预付","月结","季结","CPS分成"]},{"key":"account_period","label":"账期(天)","type":"number","required":false}]', 'sales', 1, 1, '必填：投放平台/渠道、投放周期、KPI考核指标、结算方式与账期。', 1, NOW(), NOW()),
-(2, '供应商采购合同', 'TPL-PURCHASE', 'PURCHASE', 'PUBLISHED', 1, '', '[{"key":"deliverables","label":"交付物清单","type":"textarea","required":true},{"key":"acceptance","label":"验收标准","type":"textarea","required":true},{"key":"warranty","label":"质保期","type":"text","required":false},{"key":"quote_no","label":"报价单编号","type":"text","required":false}]', 'purchase', 1, 1, '必填：供应商资质、报价单、交付物清单、验收标准与质保期。', 1, NOW(), NOW()),
-(3, '年度框架协议', 'TPL-FRAMEWORK', 'SERVICE', 'PUBLISHED', 1, '', '[]', 'sales', 1, 2, '注意关联执行订单；约定年度预算上限、结算周期与单价区间。', 1, NOW(), NOW());
 
 -- 示例合同
 INSERT INTO `contract` (`id`, `contract_no`, `title`, `category`, `status`, `amount`, `party_a_name`, `party_b_name`, `effective_date`, `expiry_date`, `content`, `file_url`, `keywords`, `creator_id`, `created_at`, `updated_at`) VALUES

@@ -51,7 +51,7 @@ def covered(path):
 
 # 白名单：内部/子视图（由其他页面加载，非独立入口）
 ALLOW = {'/preview', '/profile/change-password', '/dingtalk/entry', '/m/login',
-         '/admin/template', '/admin/invoice-form'}  # admin tab 内渲染（发票表单=form-builder 历史路径）
+         '/admin/invoice-form'}  # admin tab 内渲染（发票表单=form-builder 历史路径）
 dead = sorted(p for p in page_routes if p.startswith('/') and not covered(p) and p not in ALLOW)
 
 if dead:

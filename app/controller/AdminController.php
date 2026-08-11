@@ -10,7 +10,6 @@ use think\facade\Session;
 use app\BaseController;
 use app\common\service\RbacService;
 use app\common\logic\AdminLogic;
-use app\common\logic\TemplateLogic;
 use app\common\logic\UserLogic;
 
 class AdminController extends BaseController
@@ -53,9 +52,9 @@ class AdminController extends BaseController
             $r['_permIds'] = $permMap[(int)$r['id']] ?? [];
             $r['_deptIds'] = $deptMap[(int)$r['id']] ?? [];
         }
-        // v2.40.2：角色配置隐藏「全员默认基础权限」（普通员工能力集，判定层已默认开放）与「合同模板」
-        // （入口收敛至 system:user 控制的系统管理 tab，角色配置勾选无独立效果）；其余高级权限照常可配
-        $hiddenCodes = array_merge(\app\common\logic\AuthLogic::DEFAULT_PERMISSION_CODES, ['template:manage']);
+        // v2.40.2：角色配置隐藏「全员默认基础权限」（普通员工能力集，判定层已默认开放）；
+        // 其余高级权限照常可配
+        $hiddenCodes = \app\common\logic\AuthLogic::DEFAULT_PERMISSION_CODES;
         $permissions = array_values(array_filter(
             RbacService::getPermissions(),
             static fn($p) => !in_array($p['code'], $hiddenCodes, true)
@@ -73,11 +72,6 @@ class AdminController extends BaseController
 
         // 部门列表（用户列表「部门」列 + 按部门筛选下拉 + 编辑弹窗部门下拉；getDeptTree 返回扁平 [id,name,parent_id]）
         View::assign('depts', UserLogic::getDeptTree());
-
-        // 合同模板
-        $filterStatus = $this->getParam('status', 'active');
-        View::assign('templates', TemplateLogic::getList($filterStatus));
-        View::assign('filter_status', $filterStatus);
 
         // v2.28.2：视图层 Db::name 下沉 — 字典配置由 Logic 取数后注入视图
         View::assign('dicts', AdminLogic::getDicts());
@@ -105,7 +99,6 @@ class AdminController extends BaseController
     public function user()     { return $this->index('user'); }
     public function role()     { return $this->index('role'); }
     public function flow()     { return $this->index('flow'); }
-    public function template() { return $this->index('template'); }
     public function dict()     { return $this->index('dict'); }
     public function dingtalk() { return $this->index('dingtalk'); }
     public function config()   { return $this->index('config'); }   // 系统配置（版权信息等，v2.34.0）
@@ -197,6 +190,12 @@ class AdminController extends BaseController
     {
         $this->requirePermission('system:user');
         $id = (int)$this->getPost('id', 0);
+        // v2.47.2：禁用前校验进行中审批——有审批在身即禁用会使其成为无人能审批/撤回的
+        // 僵尸审批（对应合同卡死审批中无法删除），先办离职交接（审批转交他人）再禁用
+        $pending = \app\common\logic\AdminLogic::countPendingApprovals($id);
+        if ($pending > 0) {
+            return json_error("该用户有 {$pending} 条进行中的审批（待审批/已提交未完结），请先在「离职交接」中将审批转交给他人后再禁用");
+        }
         AdminLogic::disableUser($id);
         // v2.44.1 P1：用户禁用属权限变更，补审计留痕
         \app\common\service\AuditService::log($this->userId, 'disable_user', 'user', $id);
