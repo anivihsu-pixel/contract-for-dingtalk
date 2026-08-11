@@ -2,9 +2,17 @@
 
 > PHP 8.4 + ThinkPHP 6.1 + SQLite + Bootstrap 5 的合同管理与审批系统，覆盖合同全生命周期、客户/供应商、项目、发票三段式审批、财务统计、提醒中心、钉钉集成、RBAC 权限。
 
-- **当前版本**：见 [VERSION.md](VERSION.md)
-- **变更历史**：见 [CHANGELOG.md](CHANGELOG.md)
-- **开发规范**：见 [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)
+---
+
+## 功能特性
+
+- **合同全生命周期**：草稿 → 审批 → 生效 → 归档，状态机流转 + 审批流级抄送
+- **客户/供应商管理**：档案、行业、跟进记录、共享与集团层级
+- **项目经营**：项目阶段、里程碑、收支统计
+- **发票三段式审批**：申请 → 审批 → 财务开票（红冲/作废）
+- **财务统计**：驾驶舱、经营月报/周报、应收账龄、口径对齐
+- **移动工作台**：钉钉免登、个人/部门/全公司经营看板
+- **RBAC 权限**：角色 + 数据范围（部门/个人/全部）
 
 ---
 
@@ -133,19 +141,28 @@ python scripts/keep_alive_devserver.py
 
 ---
 
-## 发布流程
+## 发布门禁
 
-详见 [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) §3。简要：
+项目设 6 道发布门禁（`scripts/run_gates.ps1 all` 一键运行，Windows/Linux 均可）：
 
-```bash
-# 1. 同步 VERSION.md 与 CHANGELOG.md 顶部版本号
-# 2. 跑门禁（Windows）
+| # | 门禁 | 作用 |
+|---|------|------|
+| 1 | schema_parity | 三份初始化脚本「表+字段」1:1 一致性校验 |
+| 2 | db_comments | 全部表级 + 字段级中文注释完整性校验 |
+| 3 | view_globals | 视图公共全局变量未声明在 tab 分支内 |
+| 4 | frontend | 前端脚本加载顺序 + DCL 防护 |
+| 5 | dead_entry | 路由已注册但全站无入口的死功能拦截 |
+| 6 | PHPUnit | 单元测试基线 |
+
+```powershell
+# 运行全部门禁（Windows）
 .\scripts\run_gates.ps1 all
-# 2. 跑门禁（Linux/macOS）
+
+# Linux/macOS
 bash scripts/check_schema_parity.sh && bash scripts/check_db_comments.sh && ...
-# 3. 一键发布
-bash scripts/release.sh
 ```
+
+发布：`bash scripts/release.sh`（内置前 5 道门禁为发布卡点）。
 
 ---
 

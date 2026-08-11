@@ -52,3 +52,12 @@
 /UPGRADE_*.md
 /PM审查报告_*.md
 /续接开发checklist.md
+/AGENTS.md
+/CHANGELOG.md
+/VERSION.md
+/DEPLOY.md
+/DEPLOY_V2.44.1_UPGRADE.md
+/DEPLOY_ZERO_DOWNTIME.md
+/DEVELOPMENT_GUIDE.md
+/DINGTALK_SSO_GUIDE.md
+/测试报告_*.md
