@@ -261,6 +261,7 @@ $tables = [
         party_b_customer_id INTEGER DEFAULT 0,  -- 乙方客户ID
         party_b_name TEXT DEFAULT '',  -- 乙方名称
         party_b_contact TEXT DEFAULT '',  -- 乙方联系人
+        party_b_phone TEXT DEFAULT '',  -- 乙方电话(v2.47.3：联系人/电话拆分填写)
         party_b_credit_code TEXT DEFAULT '',  -- 乙方信用代码
         effective_date TEXT DEFAULT NULL,  -- 生效日期
         expiry_date TEXT DEFAULT NULL,  -- 到期日期

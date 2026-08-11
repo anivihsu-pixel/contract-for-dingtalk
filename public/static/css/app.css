@@ -40,7 +40,10 @@
 .party-item:last-child{border-bottom:none}
 .party-item:hover,.party-item.active{background:var(--brand-light)}
 .party-item .badge{font-weight:400}
-.party-self-btn{font-size:13px;white-space:nowrap}
+/* v2.47.x：我方侧主体名+切换（对齐移动端 m-mine）——display 由 .d-none 控制，d-none 优先 */
+.pc-party-mine{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--radius,8px);padding:6px 10px;background:var(--brand-light);min-height:38px}
+.pc-party-mine-name{font-weight:600;color:var(--text,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-party-switch{font-size:13px;white-space:nowrap;flex-shrink:0}
 /* 搜索选择器（v2.41.0：客户/账号由下拉改搜索——cs-wrap 内输入框 + 浮层建议 + 隐藏 id） */
 .cs-wrap{position:relative}
 .cs-suggestions{display:none;position:absolute;top:100%;left:0;right:0;z-index:1050;background:#fff;border:1px solid var(--line);border-radius:0 0 8px 8px;box-shadow:var(--shadow-pop);max-height:240px;overflow-y:auto}

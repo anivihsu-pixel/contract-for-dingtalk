@@ -62,9 +62,9 @@ foreach ($depts as [$id, $name, $pid]) {
 
 // ================= 用户（演示账号） =================
 echo "写入用户...\n";
-// 演示口令随机生成（每次 seed 不同），运行末尾会打印
-$demoPwdAdmin  = bin2hex(random_bytes(6));  // admin 口令（随机 12 位十六进制）
-$demoPwdUser   = bin2hex(random_bytes(6));  // 普通账号口令（随机 12 位十六进制）
+// admin 口令随机生成（12 位十六进制，运行末尾会打印）；普通账号口令同样随机生成（每次 seed 不同）。
+$demoPwdAdmin  = bin2hex(random_bytes(6));      // admin 口令（随机 12 位十六进制）
+$demoPwdUser   = bin2hex(random_bytes(6));      // 普通账号口令（随机 12 位十六进制）
 $pwd      = password_hash($demoPwdUser, PASSWORD_BCRYPT);    // 普通演示账号统一口令
 $pwdAdmin = password_hash($demoPwdAdmin, PASSWORD_BCRYPT);   // admin 专用口令
 $usersSeed = [
@@ -127,6 +127,22 @@ foreach ($customers as $i => [$name, $code, $legal, $contact, $mobile, $email, $
         'is_deleted' => 0,
     ]);
     $cid[$i] = $id;
+}
+// ================= 客户联系人（v2.38.3 独立联系人表；演示：为前 4 家客户补联系人，支撑移动/PC 端「从客户联系人选择」下拉） =================
+echo "写入客户联系人...\n";
+$contactSeeds = [
+    [0, '王磊', '13800001111', 'chen@zhilian.com', '商务负责人', 1],
+    [0, '陈晓东', '13800001112', 'dxchen@zhilian.com', '技术对接人', 0],
+    [1, '赵敏', '13800002222', 'zhao@yunchuang.cn', '商务负责人', 1],
+    [1, '刘伟', '13800002223', 'liuwei@yunchuang.cn', '法务对接人', 0],
+    [2, '周婷', '13800003333', 'zhouting@shuyun.com', '商务负责人', 1],
+    [3, '吴芳', '13800004444', 'wufang@huaxia.com', '商务负责人', 1],
+];
+foreach ($contactSeeds as [$ci, $cname, $cphone, $cemail, $crole, $cprimary]) {
+    insertRow($db, 'customer_contact', [
+        'customer_id' => $cid[$ci], 'name' => $cname, 'phone' => $cphone,
+        'email' => $cemail, 'role' => $crole, 'is_primary' => $cprimary,
+    ]);
 }
 // 客户认领 / 交接流水
 insertRow($db, 'customer_claim_record',  ['customer_id' => $cid[0], 'user_id' => $uid['sales02']]);

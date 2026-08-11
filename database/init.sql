@@ -280,6 +280,7 @@ CREATE TABLE `contract` (
     `party_b_customer_id` BIGINT DEFAULT 0 COMMENT '乙方客户ID',    -- 乙方客户ID
     `party_b_name` VARCHAR(128) DEFAULT '' COMMENT '乙方名称',    -- 乙方名称
     `party_b_contact` VARCHAR(64) DEFAULT '' COMMENT '乙方联系人',    -- 乙方联系人
+    `party_b_phone` VARCHAR(32) DEFAULT '' COMMENT '乙方电话',    -- 乙方电话(v2.47.3：联系人/电话拆分填写)
     `party_b_credit_code` VARCHAR(64) DEFAULT '' COMMENT '乙方信用代码',    -- 乙方信用代码
     `effective_date` DATE DEFAULT NULL COMMENT '生效日期',    -- 生效日期
     `expiry_date` DATE DEFAULT NULL COMMENT '到期日期',    -- 到期日期

@@ -201,9 +201,9 @@ include __DIR__ . '/_head.php';
       <div class="party">
         <div class="role">乙方（<?=($contract['party_b_customer_id'] ?? 0) ? '客户' : (($contract['supplier_id'] ?? 0) ? '供应商' : '外部')?>）</div>
         <div class="pn"><?=htmlspecialchars($contract['party_b_name'] ?: '—')?></div>
-        <?php if (!empty($contract['party_b_contact']) || !empty($contract['party_b_credit_code'])): ?>
+        <?php if (!empty($contract['party_b_contact']) || !empty($contract['party_b_phone']) || !empty($contract['party_b_credit_code'])): ?>
           <div style="font-size:13px;color:var(--m-text-3);margin-top:4px;">
-            <?=htmlspecialchars($contract['party_b_contact'] ?? '')?><?=!empty($contract['party_b_contact']) && !empty($contract['party_b_credit_code']) ? ' · ' : ''?><?=htmlspecialchars($contract['party_b_credit_code'] ?? '')?>
+            <?=htmlspecialchars($contract['party_b_contact'] ?? '')?><?=!empty($contract['party_b_contact']) && (!empty($contract['party_b_phone']) || !empty($contract['party_b_credit_code'])) ? ' · ' : ''?><?=!empty($contract['party_b_phone']) ? phone_link($contract['party_b_phone'], false) : ''?><?=!empty($contract['party_b_phone']) && !empty($contract['party_b_credit_code']) ? ' · ' : ''?><?=htmlspecialchars($contract['party_b_credit_code'] ?? '')?>
           </div>
         <?php endif; ?>
         <!-- v2.38.14：乙方往来摘要（360 能力内嵌，点击跳相对方全景） -->

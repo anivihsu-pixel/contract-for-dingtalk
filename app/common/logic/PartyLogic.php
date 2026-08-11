@@ -58,11 +58,12 @@ class PartyLogic
             if (empty($opts['selfDefault'])) {
                 return [];
             }
-            // S-11：空关键词分支（本公司默认客户）同样收敛数据范围，避免未来收紧基础权限后成为缺口
+            // 空关键词分支（本公司默认客户）同样收敛数据范围，避免未来收紧基础权限后成为缺口
             $q = Db::name($table)->where('is_deleted', 0)->where('status', 1)
                 ->where($opts['selfField'] ?? 'is_self', 1);
             AuthLogic::appendDataScope($q, 'owner_id', 'dept_id');
-            return $q->field("id, name, contact_name, credit_code, '" . ($opts['selfLiteral'] ?? '') . "' AS type_name, '" . $opts['partyType'] . "' AS party_type, is_self")
+            // v2.47.x：contact_mobile 一并返回——合同表单选择客户时带出电话
+            return $q->field("id, name, contact_name, contact_mobile, credit_code, '" . ($opts['selfLiteral'] ?? '') . "' AS type_name, '" . $opts['partyType'] . "' AS party_type, is_self")
                 ->limit(10)->select()->toArray();
         }
         $q = Db::name($table)->where('is_deleted', 0)->where('status', 1)
@@ -72,7 +73,7 @@ class PartyLogic
         $typeName = $opts['typeNameField'] ?? "''";
         $credit   = !empty($opts['creditCode']) ? 'credit_code' : "'' AS credit_code";
         $self     = !empty($opts['selfDefault']) ? 'is_self' : '0 AS is_self';
-        $q->field("id, name, contact_name, {$credit}, {$typeName} AS type_name, '" . $opts['partyType'] . "' AS party_type, {$self}");
+        $q->field("id, name, contact_name, contact_mobile, {$credit}, {$typeName} AS type_name, '" . $opts['partyType'] . "' AS party_type, {$self}");
         if (!empty($opts['orderBy'])) {
             [$obField, $obDir] = explode(' ', $opts['orderBy'], 2) + [1 => 'desc'];
             $q->order($obField, $obDir ?: 'desc');

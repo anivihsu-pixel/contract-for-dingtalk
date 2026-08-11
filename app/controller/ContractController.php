@@ -137,6 +137,12 @@ class ContractController extends BaseController
         // 可关联项目（P2-5，仅未归档，走数据权限）
         View::assign('projects', \app\common\logic\ProjectLogic::options());
 
+        // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
+        View::assign('current_user', [
+            'name'   => $this->user['name'] ?? '',
+            'mobile' => $this->user['mobile'] ?? '',
+        ]);
+
         return $template ? View::fetch($template) : View::fetch();
     }
 
@@ -202,6 +208,7 @@ class ContractController extends BaseController
             'party_b_customer_id' => (int)$this->getPost('party_b_customer_id', 0),
             'party_b_name'        => $this->getPost('party_b_name', ''),
             'party_b_contact'     => $this->getPost('party_b_contact', ''),
+            'party_b_phone'       => $this->getPost('party_b_phone', ''),   // v2.47.x：乙方电话独立字段
             'party_b_credit_code' => $this->getPost('party_b_credit_code', ''),
             'effective_date'      => $this->getPost('effective_date', '') ?: null,
             'expiry_date'         => $this->getPost('expiry_date', '') ?: null,
@@ -962,6 +969,7 @@ class ContractController extends BaseController
             'party_b_customer_id' => (int)($contract['party_b_customer_id'] ?? 0),
             'party_b_name'        => $contract['party_b_name'] ?? '',
             'party_b_contact'     => $contract['party_b_contact'] ?? '',
+            'party_b_phone'       => $contract['party_b_phone'] ?? '',
             'party_b_credit_code' => $contract['party_b_credit_code'] ?? '',
             'supplier_id'         => (int)($contract['supplier_id'] ?? 0),
             'custom_fields'       => $contract['custom_fields'] ?? '{}',

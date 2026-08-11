@@ -95,8 +95,16 @@ $__dcid = $default_company_id ?? 0;
   window.onPartyBContactPick = function(){
     var sel = document.getElementById('partyBContactSelect');
     var txt = document.getElementById('partyBContact');
-    if(sel && sel.value){ try{ var c = JSON.parse(decodeURIComponent(sel.value)); txt.value = c.name + (c.phone?(' / '+c.phone):''); }catch(e){} }
+    var ph = document.getElementById('partyBPhone');
+    if(sel && sel.value){ try{
+      var c = JSON.parse(decodeURIComponent(sel.value));
+      if(txt) txt.value = c.name || '';
+      if(ph) ph.value = c.phone || '';   // v2.47.x：联系人/电话拆分填写
+    }catch(e){} }
   };
+  // M9 修复：selectParty 用 JS 赋值设置 partyBCustId 不触发下方 attributes 观察器，
+  // 暴露本函数供 contract.js 选中后手动调用（客户→加载联系人；非客户/清空→隐藏下拉）
+  window.loadPartyBContacts = loadPartyBContacts;
   var obs = new MutationObserver(function(){
     var custId = parseInt(document.getElementById('partyBCustId').value, 10) || 0;
     var type = document.getElementById('partyBType').value;
@@ -349,9 +357,10 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
 </script>
 
 <script>
-// "本公司"快捷选择 — 从 company_profile（本公司主体）取数，自动填名并设签约主体
+// v2.47.x：我方侧「切换」签约主体（对齐移动端）——从 company_profile（本公司主体）取数，
+// 更新我方侧主体名展示 + hidden 名称 + 同步 step1 签约主体下拉
 (function(){
-    document.querySelectorAll('.party-self-btn').forEach(function(btn){
+    document.querySelectorAll('.pc-party-switch').forEach(function(btn){
         btn.addEventListener('click', function(){
             var side = this.dataset.side;
             fetch('/ajax/company/options')
@@ -371,8 +380,9 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
     });
 
     function fillSelf(side, item){
-        document.getElementById('party' + side + 'Search').value = item.name;
-        document.getElementById('party' + side + 'Name').value = item.name;
+        document.getElementById('party' + side + 'Name').value = item.name;   // hidden 名称
+        var mn = document.querySelector('[data-mine-name="' + side + '"]');
+        if(mn) mn.textContent = item.name;
         // 同步签约主体下拉（深化：自动识别我方主体）
         var cs = document.getElementById('companySelect');
         if (cs) { cs.value = item.id; }
@@ -411,14 +421,59 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
 </script>
 
 <script>
-// v2.45：PC 我方身份引导（与移动端 my|our 语义对齐）——切换「我方=乙方/甲方」时，
+// v2.45：PC 我方身份引导（与移动端 my|our 语义对齐）——切换「我是合同乙方/甲方」时，
 // 自动把签约主体名带出到我方侧名称，并清空对方侧误放的同一主体名，降低甲乙方填反概率。
+// v2.47.x：对齐移动端双形态——我方侧=主体名+切换按钮，对方侧=搜索框，按我方身份切换显隐。
 (function(){
     var labels = document.querySelectorAll('label[data-action="pc-our-side"]');
     if(!labels.length) return;
+    // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
+    var CURRENT_USER = <?=json_encode(isset($current_user) ? $current_user : ['name'=>'','mobile'=>''], JSON_UNESCAPED_UNICODE)?>;
     function companyName(){
         var cs = document.getElementById('companySelect');
         return (cs && cs.selectedIndex >= 0) ? (cs.options[cs.selectedIndex].text || '') : '';
+    }
+    function getOurSide(){
+        var os = document.getElementById('ourSideField');
+        return (os && os.value) ? os.value : 'B';
+    }
+    // 对齐移动端 recomputeOurSide：编辑态 contract 无 our_side 列（ourSideField 为空），
+    // 依据两侧名称中与签约主体名完全匹配的一侧反推我方身份（先判甲方后判乙方，与移动端同口径）
+    function recomputeOurSidePC(){
+        var cn = companyName();
+        var osEl = document.getElementById('ourSideField');
+        if(!cn || !osEl) return;
+        var aEl = document.getElementById('partyAName');
+        var bEl = document.getElementById('partyBName');
+        if(aEl && aEl.value.trim() === cn) osEl.value = 'A';
+        else if(bEl && bEl.value.trim() === cn) osEl.value = 'B';
+    }
+    // 我方侧兜底带出签约主体名 + 登录用户联系人/电话（空则填，不覆盖已有回显）
+    function ensureMineFilledPC(){
+        var our = getOurSide();
+        var nm = document.getElementById('party' + our + 'Name');
+        var cn = companyName();
+        if(nm && !nm.value.trim() && cn) nm.value = cn;
+        var mn = document.querySelector('[data-mine-name="' + our + '"]');
+        if(mn) mn.textContent = nm ? (nm.value || cn || '') : (cn || '');
+        var ct = document.getElementById('party' + our + 'Contact');
+        var ph = document.getElementById('party' + our + 'Phone');
+        if(ct && !ct.value.trim() && CURRENT_USER.name) ct.value = CURRENT_USER.name;
+        if(ph && !ph.value.trim() && CURRENT_USER.mobile) ph.value = CURRENT_USER.mobile;
+    }
+    // 我方/对方形态切换（对齐移动端 applyOurSide）
+    function applyOurSidePC(){
+        var our = getOurSide();
+        ['A','B'].forEach(function(s){
+            var mine = document.querySelector('[data-mine="' + s + '"]');
+            var other = document.querySelector('[data-other="' + s + '"]');
+            var isMine = s === our;
+            if(mine) mine.classList.toggle('d-none', !isMine);
+            if(other) other.classList.toggle('d-none', isMine);
+        });
+        var rb = document.getElementById('pcOurSide' + (our === 'A' ? 'A' : 'B'));
+        if(rb) rb.checked = true;
+        ensureMineFilledPC();
     }
     labels.forEach(function(lb){
         lb.addEventListener('click', function(){
@@ -428,6 +483,7 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
             if(osEl) osEl.value = side;
             // v2.46.0 修复：切换我方身份清空两侧名称/关联档案——原「对方」侧变「我方」后
             // 若沿用上一步填写的对方信息会被误当本方；新我方侧随后带出签约主体名。
+            // 对齐移动端：联系人/类型一并清空，避免我方侧残留对方客户信息。
             ['A','B'].forEach(function(s){
                 var sEl = document.getElementById('party' + s + 'Search');
                 var nEl = document.getElementById('party' + s + 'Name');
@@ -436,16 +492,33 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
                 var cidEl = document.getElementById('party' + s + 'CustId'); if(cidEl) cidEl.value = 0;
                 var sidEl = document.getElementById('party' + s + 'SupplierId'); if(sidEl) sidEl.value = 0;
                 var ccEl = document.getElementById('party' + s + 'CreditCode'); if(ccEl) ccEl.value = '';
+                var ctEl = document.getElementById('party' + s + 'Contact'); if(ctEl) ctEl.value = '';
+                var phEl = document.getElementById('party' + s + 'Phone'); if(phEl) phEl.value = '';   // v2.47.3：联系人/电话拆分后一并清空
+                var tpEl = document.getElementById('party' + s + 'Type'); if(tpEl) tpEl.value = '';
             });
-            var cname = companyName();
-            if(cname){
-                var mineSearch = document.getElementById('party' + side + 'Search');
-                var mineName = document.getElementById('party' + side + 'Name');
-                if(mineName && mineSearch){ mineSearch.value = cname; mineName.value = cname; }
-            }
-            if (typeof showToast === 'function') showToast('我方已设为' + (side === 'A' ? '甲方' : '乙方'), 'info');
+            // M9 联系人下拉只监听 value 属性，JS 清空 CustId 不触发观察器，须手动隐藏
+            var bw = document.getElementById('partyBContactWrap');
+            if(bw){ bw.style.display = 'none'; }
+            var bsel = document.getElementById('partyBContactSelect');
+            if(bsel){ bsel.innerHTML = '<option value="">— 手动输入 —</option>'; }
+            applyOurSidePC();   // 切换形态 + 新我方侧带出签约主体名
+            if (typeof showToast === 'function') showToast('已设为：我是合同' + (side === 'A' ? '甲方' : '乙方'), 'info');
         });
     });
+    recomputeOurSidePC();  // 编辑态先按签约主体与两侧名称匹配反推我方身份（新建时 ourSideField 为空且两侧无匹配，保持默认乙方）
+    applyOurSidePC();   // 页面初始化按我方身份应用形态（编辑态回显 ourSideField）
+    // step1 签约主体下拉变更 → 同步我方侧主体名展示（我方侧名称始终=签约主体）
+    var cs = document.getElementById('companySelect');
+    if(cs){
+        cs.addEventListener('change', function(){
+            var our = getOurSide();
+            var mn = document.querySelector('[data-mine-name="' + our + '"]');
+            var nm = document.getElementById('party' + our + 'Name');
+            var txt = (this.options[this.selectedIndex] || {}).text || '';
+            if(nm) nm.value = txt;
+            if(mn) mn.textContent = txt;
+        });
+    }
 })();
 </script>
 

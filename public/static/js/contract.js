@@ -699,8 +699,15 @@ if(cf)cf.addEventListener('submit',function(e){
         document.getElementById('party' + side + 'Name').readOnly = true;
         partyLinked[side] = true;
         document.getElementById('party' + side + 'Contact').value = item.contact_name || '';
+        // v2.47.x：选择客户/供应商带出电话（独立字段）
+        var phEl = document.getElementById('party' + side + 'Phone');
+        if(phEl) phEl.value = item.contact_mobile || '';
         document.getElementById('party' + side + 'Type').value = item.party_type;
         document.getElementById('party' + side + 'CustId').value = (item.party_type === 'customer') ? item.id : 0;
+        // M9：JS 赋值不触发 partyBCustId 的 attributes 观察器，须手动刷新客户联系人下拉（仅 PC 新建页定义了该函数）
+        if (typeof window.loadPartyBContacts === 'function') {
+            window.loadPartyBContacts((side === 'B' && item.party_type === 'customer') ? item.id : 0);
+        }
         var supEl = document.getElementById('party' + side + 'SupplierId');
         if(supEl) supEl.value = (item.party_type === 'supplier') ? item.id : 0;
         // 客户同时填充信用代码
@@ -748,7 +755,10 @@ function savePartyQuick() {
         }
         var m = document.getElementById('partyQuickModal');
         if (m && typeof bootstrap !== 'undefined') { bootstrap.Modal.getOrCreateInstance(m).hide(); }
-        window._partySelect(__quickSide, {id: res.data.id, name: name, party_type: type, contact_name: document.getElementById('quickContact').value.trim()});
+        // v2.47.x：快速新建回填同时带出联系人/电话
+        window._partySelect(__quickSide, {id: res.data.id, name: name, party_type: type,
+            contact_name: document.getElementById('quickContact').value.trim(),
+            contact_mobile: document.getElementById('quickMobile').value.trim()});
     })
     .catch(function () { showToast('新建失败，请重试', 'error'); });
 }

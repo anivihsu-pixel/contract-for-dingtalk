@@ -42,8 +42,11 @@ class ContractFormConfig
             ['name'=>'party_a_name','label'=>'甲方名称','type'=>'party_name','group'=>'party','required'=>true,
              'side'=>'A','placeholder'=>'甲方名称','col_pc'=>6,'pc_step'=>2,'m_sec'=>'对方信息',
              'pc_id'=>'partyAName','m_id'=>'f_party_a'],
-            ['name'=>'party_a_contact','label'=>'甲方联系人/电话','type'=>'text','group'=>'party',
-             'placeholder'=>'选填','col_pc'=>3,'pc_step'=>2,'m_sec'=>'对方信息','pc_id'=>'partyAContact'],
+            ['name'=>'party_a_contact','label'=>'甲方联系人','type'=>'text','group'=>'party',
+             'placeholder'=>'选填','col_pc'=>3,'pc_step'=>2,'m_sec'=>'对方信息','pc_id'=>'partyAContact','m_id'=>'f_party_a_contact'],
+            // v2.47.x：甲方电话独立字段（原与联系人合并填写，对齐移动端拆分）
+            ['name'=>'party_a_phone','label'=>'甲方电话','type'=>'text','group'=>'party',
+             'placeholder'=>'选填','col_pc'=>3,'pc_step'=>2,'m_sec'=>'对方信息','pc_id'=>'partyAPhone','m_id'=>'f_party_a_phone'],
             // v2.40.0：甲方客户ID——移动端「我方=乙方」时对方为甲方，客户关联落此字段（原 skip_mobile 移除）；
             // m_sec 保持「对方信息」防止移动端分区标题断档重复输出
             ['name'=>'party_a_customer_id','label'=>'甲方客户ID','type'=>'hidden','group'=>'party','pc_step'=>2,'m_sec'=>'对方信息','m_id'=>'f_party_a_cid','pc_id'=>'partyACustId'],
@@ -53,8 +56,11 @@ class ContractFormConfig
             ['name'=>'party_b_name','label'=>'乙方名称','type'=>'party_name','group'=>'party','required'=>true,
              'side'=>'B','placeholder'=>'乙方名称','col_pc'=>6,'pc_step'=>2,'m_sec'=>'对方信息',
              'pc_id'=>'partyBName','m_id'=>'f_party_b_name'],
-            ['name'=>'party_b_contact','label'=>'乙方联系人/电话','type'=>'text','group'=>'party',
+            ['name'=>'party_b_contact','label'=>'乙方联系人','type'=>'text','group'=>'party',
              'placeholder'=>'选填','col_pc'=>3,'pc_step'=>2,'m_sec'=>'对方信息','pc_id'=>'partyBContact','m_id'=>'mPartyBContact'],
+            // v2.47.x：乙方电话独立字段（原与联系人合并填写，对齐移动端拆分）
+            ['name'=>'party_b_phone','label'=>'乙方电话','type'=>'text','group'=>'party',
+             'placeholder'=>'选填','col_pc'=>3,'pc_step'=>2,'m_sec'=>'对方信息','pc_id'=>'partyBPhone','m_id'=>'f_party_b_phone'],
             ['name'=>'party_b_customer_id','label'=>'搜索对方','type'=>'party_search','group'=>'party',
              'party_type'=>'customer','col_pc'=>6,'pc_step'=>2,'m_sec'=>'对方信息',
              'pc_id'=>'partyBCustId','m_id'=>'f_party_b_cid'],
@@ -263,9 +269,9 @@ class ContractFormConfig
                 . '<div class="d-flex align-items-center gap-2 mb-3"><span class="text-muted small">我方身份</span>'
                 . '<div class="btn-group btn-group-sm" role="group" aria-label="我方身份">'
                 . '<input type="radio" class="btn-check" name="pc_our_side_radio" id="pcOurSideB" value="B" autocomplete="off" checked>'
-                . '<label class="btn btn-outline-primary" for="pcOurSideB" data-action="pc-our-side" data-side="B">我方=乙方</label>'
+                . '<label class="btn btn-outline-primary" for="pcOurSideB" data-action="pc-our-side" data-side="B">我是合同乙方</label>'
                 . '<input type="radio" class="btn-check" name="pc_our_side_radio" id="pcOurSideA" value="A" autocomplete="off">'
-                . '<label class="btn btn-outline-primary" for="pcOurSideA" data-action="pc-our-side" data-side="A">我方=甲方</label>'
+                . '<label class="btn btn-outline-primary" for="pcOurSideA" data-action="pc-our-side" data-side="A">我是合同甲方</label>'
                 . '</div></div></div>';
         }
         if ($group === 'terms') {
@@ -417,14 +423,20 @@ class ContractFormConfig
                 $searchId = 'party' . $side . 'Search';
                 $suggId = 'party' . $side . 'Suggestions';
                 $nameId = $id;
-                $row = '<div class="col-12 col-md-6"><label class="form-label">' . ($side == 'A' ? '甲方' : '乙方') . '</label>'
-                    . '<div class="position-relative"><div class="input-group">'
-                    . '<input type="text" class="form-control party-search" id="' . $searchId . '" placeholder="输入名称搜索客户/供应商..." autocomplete="off" data-side="' . $side . '" value="' . self::h($contract[($side == 'A' ? 'party_a_name' : 'party_b_name')] ?? '') . '">'
-                    . '<button type="button" class="btn btn-outline-primary btn-sm party-self-btn" data-side="' . $side . '" title="快速选择本公司"><i class="bi bi-building"></i> 本公司</button>'
-                    . '</div><div class="party-suggestions" id="' . $suggId . '"></div></div></div>';
-                $row .= '<div class="col-6 col-md-3"><label class="form-label">' . self::h($label) . $req . '</label>'
-                    // v2.46.0：名称框常驻只读——名称仅可通过搜索选择/快速新建/本公司按钮填充（防自由输入绕过客户治理）
-                    . '<input type="text" name="' . $name . '" class="form-control" id="' . $nameId . '" readonly' . $reqAttr . ' value="' . self::h($val) . '" placeholder="' . self::h($ph) . '"></div>';
+                $sideName = $side == 'A' ? '甲方' : '乙方';
+                // v2.47.x：对齐移动端——双形态：我方=主体名+切换按钮（只读展示，可切换签约主体）、
+                // 对方=搜索式输入（搜索客户/供应商）；显隐由 create.php applyOurSidePC 按我方身份切换
+                $mine = '<div class="pc-party-mine d-none" data-mine="' . $side . '">'
+                    . '<span class="pc-party-mine-name" data-mine-name="' . $side . '">' . self::h($val) . '</span>'
+                    . '<button type="button" class="btn btn-outline-primary btn-sm pc-party-switch" data-side="' . $side . '" title="选择签约主体"><i class="bi bi-arrow-repeat"></i> 切换</button></div>';
+                $other = '<div class="pc-party-other" data-other="' . $side . '"><div class="input-group">'
+                    . '<input type="text" class="form-control party-search" id="' . $searchId . '" placeholder="搜索客户/供应商…" autocomplete="off" data-side="' . $side . '" value="' . self::h($contract[($side == 'A' ? 'party_a_name' : 'party_b_name')] ?? '') . '">'
+                    . '</div><div class="party-suggestions" id="' . $suggId . '"></div></div>';
+                $row = '<div class="col-12 col-md-6"><label class="form-label">' . $sideName . '</label>'
+                    . '<div class="position-relative">' . $mine . $other . '</div></div>';
+                // v2.47.x：对齐移动端——「甲方名称/乙方名称」独立栏移除，名称改为 hidden 提交
+                // （我方侧由签约主体带出，对方侧选择客户/供应商后回显）
+                $row .= '<input type="hidden" name="' . $name . '" id="' . $nameId . '" value="' . self::h($val) . '"' . $reqAttr . '>';
                 if ($side == 'B') {
                     $row .= '<div class="col-6 col-md-3" id="partyBContactWrap" style="display:none"><label class="form-label">从客户联系人选择</label>'
                         . '<select class="form-select" id="partyBContactSelect" onchange="onPartyBContactPick()"><option value="">— 手动输入 —</option></select></div>';
@@ -468,8 +480,8 @@ class ContractFormConfig
     private static function mobileOrderedFields(): array
     {
         $order = ['title','content','file_url',
-            'party_a_name','party_a_contact','party_a_customer_id','party_a_type',
-            'party_b_name','party_b_contact','party_b_customer_id','supplier_id','our_side',
+            'party_a_name','party_a_contact','party_a_phone','party_a_customer_id','party_a_supplier_id','party_a_type',
+            'party_b_name','party_b_contact','party_b_phone','party_b_customer_id','supplier_id','our_side',
             'amount','effective_date','expiry_date',
             'category','trade_attr','direction','our_company_id',
             'keywords','parent_id','project_id'];
@@ -488,8 +500,8 @@ class ContractFormConfig
     {
         return '<div class="m-field"><label>我方身份</label>'
             . '<div class="m-seg" role="group">'
-            . '<button type="button" class="m-seg-btn on" data-action="our-side" data-side="B">我方=乙方</button>'
-            . '<button type="button" class="m-seg-btn" data-action="our-side" data-side="A">我方=甲方</button>'
+            . '<button type="button" class="m-seg-btn on" data-action="our-side" data-side="B">我是合同乙方</button>'
+            . '<button type="button" class="m-seg-btn" data-action="our-side" data-side="A">我是合同甲方</button>'
             . '</div></div>';
     }
 

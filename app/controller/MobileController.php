@@ -950,6 +950,11 @@ class MobileController extends BaseController
         // M13：字段配置化——供 ContractFormConfig 渲染器使用（项目/框架合同下拉）
         View::assign('projects', \app\common\logic\ProjectLogic::options());
         View::assign('parent_contracts', \app\common\logic\ContractLogic::getFrameworkOptions(500));
+        // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
+        View::assign('current_user', [
+            'name'   => $this->user['name'] ?? '',
+            'mobile' => $this->user['mobile'] ?? '',
+        ]);
         return View::fetch('mobile/contract_form');
     }
 

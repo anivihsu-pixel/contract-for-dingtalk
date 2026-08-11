@@ -87,7 +87,7 @@ $__aType = !empty($contract['party_a_customer_id']) ? '客户' : (!empty($contra
 $__bType = !empty($contract['party_b_customer_id']) ? '客户' : (!empty($contract['supplier_id']) ? '供应商' : '外部');
 ?>
 <tr><td class="text-muted">甲方</td><td><?=htmlspecialchars($contract['party_a_name']??'-')?> <span class="pc-tag pc-tag-muted" style="font-size:10px"><?=$__aType?></span></td><td class="text-muted">联系人</td><td><?=htmlspecialchars($contract['party_a_contact']??'-')?><?php if(!empty($contract['party_a_phone'])): ?> · <?=phone_link($contract['party_a_phone'], false)?><?php endif; ?></td></tr>
-<tr><td class="text-muted">乙方</td><td><?=htmlspecialchars($contract['party_b_name']??'-')?> <span class="pc-tag pc-tag-muted" style="font-size:10px"><?=$__bType?></span></td><td class="text-muted">联系人</td><td><?=htmlspecialchars($contract['party_b_contact']??'-')?></td></tr>
+<tr><td class="text-muted">乙方</td><td><?=htmlspecialchars($contract['party_b_name']??'-')?> <span class="pc-tag pc-tag-muted" style="font-size:10px"><?=$__bType?></span></td><td class="text-muted">联系人</td><td><?=htmlspecialchars($contract['party_b_contact']??'-')?><?php if(!empty($contract['party_b_phone'])): ?> · <?=phone_link($contract['party_b_phone'], false)?><?php endif; ?></td></tr>
 <?php // v2.38.14：乙方往来摘要（360 能力内嵌 PC 详情，与移动端同源）——乙方客户/关联供应商时显示信用+余额+往来全景入口
 if(!empty($party360['customer']) || !empty($party360['supplier'])):
     $__p = $party360['customer'] ?? $party360['supplier'];

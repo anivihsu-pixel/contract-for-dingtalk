@@ -171,6 +171,8 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
   // P0-3【严重·C2】防御：$companies 未注入时降级为 {}，避免输出 "var COMPANY_MAP = ;" 造成 JS 语法错误、
   // 整段 IIFE 无法解析、表单全部交互失效（等效死页）。缺失时仅在「本公司」名称解析上降级，不影响提交。
   var COMPANY_MAP = <?=json_encode(isset($companies) ? array_column($companies, 'name', 'id') : [])?>;
+  // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
+  var CURRENT_USER = <?=json_encode(isset($current_user) ? $current_user : ['name'=>'','mobile'=>''], JSON_UNESCAPED_UNICODE)?>;
   function companyName(){
     var el = document.getElementById('f_company');
     var id = el ? String(el.value) : '0';
@@ -470,12 +472,14 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
   function selectParty(p, side){
     var nameInput = document.getElementById(side === 'A' ? 'f_party_a' : 'f_party_b_name');
     var contactInput = document.querySelector(side === 'A' ? 'input[name="party_a_contact"]' : 'input[name="party_b_contact"]');
+    var phoneInput = document.querySelector(side === 'A' ? 'input[name="party_a_phone"]' : 'input[name="party_b_phone"]');
     var aCid = document.getElementById('f_party_a_cid');
     var bCid = document.getElementById('f_party_b_cid');
     var aSid = document.getElementById('f_party_a_supid');
     var bSid = document.getElementById('f_supplier_id');
     if(nameInput) nameInput.value = p.name;
     if(contactInput) contactInput.value = p.contact_name || '';
+    if(phoneInput) phoneInput.value = p.contact_mobile || '';   // v2.47.x：选择客户/供应商带出电话
     var cidEl = (side === 'A') ? aCid : bCid;
     var sidEl = (side === 'A') ? aSid : bSid;
     if(p.party_type === 'supplier'){
@@ -497,6 +501,10 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     if(input){ input.value = p.name; }   // v2.46.0：名称仅回显到搜索框，搜索框保持可编辑（可随时重新搜索）
     mPartyLinked[side] = true;
     hidePartySuggest(side);
+    // M9 修复：JS 赋值不触发 f_party_b_cid 的 attributes 观察器，须手动刷新客户联系人下拉
+    if (side === 'B' && typeof window.mLoadPartyBContacts === 'function') {
+      window.mLoadPartyBContacts(p.party_type === 'customer' ? p.id : 0);
+    }
     ensureMineFilled();
     toast('已选' + (p.party_type === 'customer' ? '客户' : '供应商') + '（对方）');
   }
@@ -559,7 +567,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     updateLabels();
     ensureMineFilled();
   }
-  // 我方侧自动带出签约主体名（新建默认主体 / 编辑已有值）
+  // 我方侧自动带出签约主体名 + 登录用户联系人/电话（空则填，不覆盖已有回显）
   function ensureMineFilled(){
     var meEl = document.getElementById(ourSide === 'A' ? 'f_party_a' : 'f_party_b_name');
     if(!meEl) return;
@@ -567,6 +575,11 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     if(!meEl.value.trim() && cn){ meEl.value = cn; }
     var mn = document.querySelector('[data-mine-name="' + ourSide + '"]');
     if(mn) mn.textContent = meEl.value || cn || '';
+    // v2.47.x：我方侧联系人/电话按登录用户带出
+    var ctEl = document.querySelector('input[name="' + (ourSide === 'A' ? 'party_a_contact' : 'party_b_contact') + '"]');
+    var phEl = document.querySelector('input[name="' + (ourSide === 'A' ? 'party_a_phone' : 'party_b_phone') + '"]');
+    if(ctEl && !ctEl.value.trim() && CURRENT_USER.name) ctEl.value = CURRENT_USER.name;
+    if(phEl && !phEl.value.trim() && CURRENT_USER.mobile) phEl.value = CURRENT_USER.mobile;
   }
   // 我方身份切换控件绑定
   // v2.46.0 修复：切换我方身份时清空两侧名称/关联档案——原「对方」侧变「我方」后若沿用上一步
@@ -586,10 +599,17 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
         mPartyLinked[s] = false;
         if(aCid) aCid.value = 0; if(bCid) bCid.value = 0;
         if(aSid) aSid.value = 0; if(bSid) bSid.value = 0;
+        var ctEl = document.querySelector(s === 'A' ? 'input[name="party_a_contact"]' : 'input[name="party_b_contact"]');
+        if(ctEl) ctEl.value = '';
+        var phEl = document.querySelector(s === 'A' ? 'input[name="party_a_phone"]' : 'input[name="party_b_phone"]');
+        if(phEl) phEl.value = '';   // v2.47.x：联系人/电话拆分后一并清空
       });
+      // M9 联系人下拉只监听 value 属性，JS 清空客户ID不触发观察器，须手动隐藏
+      var mSel = document.getElementById('mPartyBContactSelect');
+      if(mSel){ mSel.style.display = 'none'; mSel.innerHTML = '<option value="">— 手动输入 —</option>'; }
       ourSide = newSide;
       applyOurSide();   // 内部 ensureMineFilled 给新我方侧带出签约主体名
-      toast('我方已设为' + (newSide === 'A' ? '甲方' : '乙方'));
+      toast('已设为：我是合同' + (newSide === 'A' ? '甲方' : '乙方'));
     });
   });
 
@@ -939,11 +959,16 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     );
   });
 
-  /* M9：乙方选择客户后，加载该客户联系人供下拉选择，选中后回填乙方联系人/电话 */
+  /* M9：乙方选择客户后，加载该客户联系人供下拉选择，选中后回填乙方联系人/电话（拆分填写） */
   function mOnPartyBContactPick(){
     var sel = document.getElementById('mPartyBContactSelect');
     var txt = document.getElementById('mPartyBContact');
-    if(sel && sel.value){ try{ var c = JSON.parse(decodeURIComponent(sel.value)); txt.value = c.name + (c.phone?(' / '+c.phone):''); }catch(e){} }
+    var ph = document.getElementById('f_party_b_phone');
+    if(sel && sel.value){ try{
+      var c = JSON.parse(decodeURIComponent(sel.value));
+      if(txt) txt.value = c.name || '';
+      if(ph) ph.value = c.phone || '';   // v2.47.x：联系人/电话拆分填写
+    }catch(e){} }
   }
   (function(){
     function loadMPartyBContacts(custId){
@@ -960,6 +985,9 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
           sel.style.display = list.length ? 'block' : 'none';
         }).catch(function(){ sel.style.display='none'; });
     }
+    // M9 修复：selectParty 用 JS 赋值设置 f_party_b_cid 不触发下方 attributes 观察器，
+    // 暴露本函数供 selectParty 选中后手动调用（客户→加载联系人；非客户/清空→隐藏下拉）
+    window.mLoadPartyBContacts = loadMPartyBContacts;
     var cidEl = document.getElementById('f_party_b_cid');
     if(cidEl){
       new MutationObserver(function(){ loadMPartyBContacts(parseInt(cidEl.value,10)||0); }).observe(cidEl, { attributes:true, attributeFilter:['value'] });
