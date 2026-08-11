@@ -1,0 +1,325 @@
+/* ============================================================
+   合同管理系统 — 自定义样式
+   ============================================================ */
+
+/* ===== 设计 Token（P0 视觉底座：与移动端 mobile.css :root 同源真源，PC 已引 mobile.css 可直接用 --m-*；此处为 PC 语义别名 + PC 专用补充） ===== */
+:root{
+  --primary: #0b5ed7;                 /* 主题蓝（= --m-brand） */
+  --primary-weak: rgba(11, 94, 215, .08);   /* 主题蓝弱背景（hover/选中） */
+  --primary-weak-2: rgba(11, 94, 215, .1);  /* 主题蓝更弱背景 */
+  --text-main: #1f2329;               /* 正文（= --m-text） */
+  --text-muted: #6b7280;              /* 次要文本（≥4.5:1 对比度） */
+  --text-2: #646a73;                  /* 次级文本（= --m-text-2） */
+  --text-3: #8a9099;                  /* 弱文本（= --m-text-3） */
+  --bg-page: #f2f3f5;                 /* 页面底色（= --m-bg） */
+  --card-bg: #ffffff;                 /* 卡片底（= --m-card） */
+  --line: #ebedf0;                    /* 分隔线（= --m-line） */
+  --success: #07c160;                 /* 成功（= --m-success） */
+  --danger: #fa5151;                  /* 危险（= --m-danger） */
+  --warn: #ff9d00;                    /* 警示（= --m-warn） */
+  --brand-light: #e8f1ff;             /* 品牌浅底（= --m-brand-light） */
+  --radius-card: 14px;                /* 卡片圆角（= --m-radius） */
+  --radius-sm: 10px;                  /* 小圆角（= --m-radius-sm） */
+  --radius-lg: 16px;                  /* 大圆角（PC 专用：模态/抽屉） */
+  --border-light: #ebedf0;            /* 浅边框（= --m-line） */
+  --shadow-card: 0 1px 3px rgba(0,0,0,.05);   /* 卡片轻阴影（= m-card） */
+  --shadow-pop: 0 8px 24px rgba(0,0,0,.12);   /* 浮层阴影（下拉/弹层） */
+  --stat-icon-size: 48px;                     /* 统计图标容器尺寸（KPI 卡等复用） */
+  --stat-icon-radius: 12px;                   /* 统计图标容器圆角 */
+}
+
+/* ===== 品牌顶栏（P0-1：复刻移动端 .m-nav——品牌蓝实底 + 白字 + 轻阴影，替代 Bootstrap bg-primary 默认蓝 #0d6efd） ===== */
+.navbar-app{background:var(--primary)!important;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+.navbar-app .navbar-brand{font-weight:600;letter-spacing:.2px}
+.navbar-app .navbar-toggler{color:#fff;border-color:rgba(255,255,255,.4)}
+.navbar-app .navbar-toggler-icon{filter:brightness(0) invert(1)}
+
+/* 甲乙方搜索建议 */
+.party-suggestions{display:none;position:absolute;top:100%;left:0;right:0;z-index:1050;background:#fff;border:1px solid var(--line);border-radius:0 0 8px 8px;box-shadow:var(--shadow-pop);max-height:240px;overflow-y:auto}
+.party-item{display:flex;align-items:center;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
+.party-item:last-child{border-bottom:none}
+.party-item:hover,.party-item.active{background:var(--brand-light)}
+.party-item .badge{font-weight:400}
+.party-self-btn{font-size:13px;white-space:nowrap}
+/* 搜索选择器（v2.41.0：客户/账号由下拉改搜索——cs-wrap 内输入框 + 浮层建议 + 隐藏 id） */
+.cs-wrap{position:relative}
+.cs-suggestions{display:none;position:absolute;top:100%;left:0;right:0;z-index:1050;background:#fff;border:1px solid var(--line);border-radius:0 0 8px 8px;box-shadow:var(--shadow-pop);max-height:240px;overflow-y:auto}
+.cs-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
+.cs-item:last-child{border-bottom:none}
+.cs-item:hover,.cs-item.active{background:var(--brand-light)}
+.cs-item small{color:var(--text-muted);flex:none}
+
+/* 侧边栏（桌面端）样式统一由 layout/header.php 内联 style 承载（fixed 布局），此处不再重复定义 */
+/* 移动端适配 */
+@media (max-width: 767.98px) {
+    .navbar-brand { font-size: 16px; }
+    h4 { font-size: 18px; }
+    h2 { font-size: 22px; }
+    .table-responsive { font-size: 13px; }
+    .sidebar { display: none; }
+    .main-content { padding-bottom: 70px; }
+}
+
+/* 统计卡片 */
+.stat-card {
+    border-radius: var(--radius-card);
+    border: none;
+    box-shadow: var(--shadow-card);
+    transition: transform .15s ease;
+    /* 2026-08-03 修复①：等高规则收窄为「栅格列内」——原 height:100% 作用于全局 stat-card，
+       导致直接挂在 main-content 下的独立卡片（仪表盘今日提醒/按项目 TOP、项目管理页卡片）被
+       Bootstrap .card-body flex:1 撑满父容器高度（1350px → 卡片 1310px 异常超高）。
+       仅 row > col > stat-card 的 KPI 等高场景需要 height:100%
+       2026-08-03 修复②：追加 :only-child——原 .row > [class*=col-] > .stat-card 会命中
+       栅格列内「垂直堆叠」的全部卡片（合同详情 col-lg-8 内 5 卡 / col-lg-4 内 2 卡被全部
+       强制拉伸到列高 1035px，内容下方大片空白，用户反馈"所有模块高度都有问题"）。
+       等高语义仅对「列内唯一卡片」（仪表盘 KPI 四卡、客户详情统计 4 卡）成立 */
+}
+.row > [class*="col-"] > .stat-card:only-child { height: 100%; }
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-pop);
+}
+.stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--stat-icon-size);
+    height: var(--stat-icon-size);
+    border-radius: var(--stat-icon-radius);
+    flex: 0 0 auto;
+}
+
+/* 2026-08-03 修复：仪表盘 KPI 卡在窄内容区（侧边栏 fixed 220px 存在 + 窗口缩小）金额/图标溢出——
+   ①侧边栏存在的视口 768-1199.98（内容区仅 548-980px）时 KPI 行降级为 2×2 两列布局
+   （每卡 ≥274px，长金额/图标/副标题从容放下，视觉整齐等高）；
+   ②金额字号 clamp 视口自适应兜底（≥1200px 四列时窄端不溢出）；③内容允许换行防挤压 */
+.stat-card h3 {
+    font-size: clamp(1rem, 2vw, 1.75rem);
+    white-space: nowrap;
+}
+.stat-card .d-flex {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.stat-card .stat-icon { flex: 0 0 auto; }
+@media (min-width: 768px) and (max-width: 1199.98px) {
+    /* 侧边栏在 + 视口窄：KPI 四卡 4 列→2×2，避免 130-155px 极窄列金额/图标溢出 */
+    .kpi-row > .col-md-3 { width: 50%; }
+}
+
+/* 卡片/模态圆角统一（P0-3：对齐移动端 --m-radius 14px） */
+.card { border-radius: var(--radius-card); }
+.card > .card-header:first-child { border-radius: var(--radius-card) var(--radius-card) 0 0; }
+.modal-content { border-radius: var(--radius-card); }
+.card-header { background: var(--card-bg); border-color: var(--line); }
+
+/* 表格增强 */
+.table > :not(caption) > * > * {
+    padding: 0.6rem 0.75rem;
+}
+.table thead th {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-3);
+    border-color: var(--line);
+    background: var(--bg-page);   /* 2026-08-03：#fafbfc → token（对齐 --bg-page 页面底） */
+    white-space: nowrap;
+}
+.table td { border-color: var(--line); vertical-align: middle; }
+.table tbody tr:hover {
+    background-color: var(--brand-light);
+}
+/* 金额/数字列：等宽数字对齐（P1-3，对齐移动端 .pay-amt 强调的克制版） */
+.text-num { font-variant-numeric: tabular-nums; }
+
+/* 分页增强 */
+.pagination .page-link {
+    border-radius: 8px;
+    margin: 0 2px;
+}
+
+/* 审批步骤条 */
+.step-item {
+    position: relative;
+}
+.step-item + .step-item::before {
+    content: '';
+    position: absolute;
+    top: 18px;
+    left: -50%;
+    width: 100%;
+    height: 3px;
+    background: #e9ecef;
+    z-index: 0;
+}
+.step-circle {
+    position: relative;
+    z-index: 1;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* 模态框圆角（P0-3：12px → 14px 对齐移动端；border 取消保留 Bootstrap 默认） */
+.modal-content {
+    border-radius: var(--radius-card);
+    border: none;
+    box-shadow: var(--shadow-pop);
+}
+
+/* Toast */
+.toast-container {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    z-index: 9999;
+}
+
+/* ===== PC 端状态标签：浅底深字（与移动端 .m-tag 配色对齐，避免实底 badge 视觉割裂） ===== */
+.pc-tag{display:inline-block;padding:2px 8px;font-size:12px;font-weight:500;line-height:1.5;border-radius:6px;white-space:nowrap}
+.pc-tag-warn  { background:#fff4e5; color:#d4860b; }
+.pc-tag-info  { background:#e8f1ff; color:var(--primary); }
+.pc-tag-danger{ background:#ffeaea; color:#e23b3b; }
+.pc-tag-ok    { background:#e7f8ee; color:#07a050; }
+.pc-tag-muted { background:#f2f3f5; color:var(--text-muted); }
+/* 资料库卡片右上角删除按钮（v2.39.x：删除收敛为角标图标，卡片主体仅展示） */
+.res-del-btn{position:absolute;top:8px;right:8px;border:none;background:transparent;color:#adb5bd;padding:2px 6px;line-height:1;font-size:14px}
+.res-del-btn:hover{color:#dc3545}
+/* 信用评分梯度文本色（v2.38.14：与移动端 .m-tag-credit-* 同梯度，分高色深；用于详情页评分数字） */
+.credit-a { color: #0b6b35; }
+.credit-b { color: #07a050; }
+.credit-c { color: #1f6feb; }
+.credit-d { color: #d4860b; }
+.credit-e { color: #e23b3b; }
+
+/* ===== 表单 focus 品牌蓝描边（P2-2，对齐移动端 focus 风格） ===== */
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 0.2rem var(--primary-weak);
+}
+
+/* ===== PC 交互控件对齐移动端 VI（2026-08-03 补全：v2.38.8 视觉重构漏了按钮/表单控件，
+   仍是 Bootstrap 默认样式——主按钮 #0d6efd 蓝 3.75px 圆角、表单 5.625px 圆角，与品牌 VI 和
+   移动端基准（按钮 #0b5ed7 + 12px、输入 10px + 44px 高）不一致） ===== */
+/* 按钮：主操作统一品牌蓝（= --m-brand，对齐移动端 .m-btn-brand），圆角 10px 接近移动端 12px */
+.btn { border-radius: 10px; }
+.btn-primary {
+    --bs-btn-bg: var(--primary);
+    --bs-btn-border-color: var(--primary);
+    --bs-btn-hover-bg: #0a53be;          /* 品牌蓝 hover 加深（对齐移动端按压态） */
+    --bs-btn-hover-border-color: #0a53be;
+    --bs-btn-active-bg: #094aab;
+    --bs-btn-active-border-color: #094aab;
+    --bs-btn-disabled-bg: var(--primary);
+    --bs-btn-disabled-border-color: var(--primary);
+}
+/* 主操作语义统一品牌蓝：Bootstrap success(绿) 用于"保存/提交"时对齐移动端主操作蓝（保存/提交=主操作） */
+.btn-success {
+    --bs-btn-bg: var(--primary);
+    --bs-btn-border-color: var(--primary);
+    --bs-btn-hover-bg: #0a53be;
+    --bs-btn-hover-border-color: #0a53be;
+    --bs-btn-active-bg: #094aab;
+    --bs-btn-active-border-color: #094aab;
+}
+/* 表单控件：10px 圆角 + 品牌边框 + 44px 高（对齐移动端 .m-input/.m-select） */
+.form-control, .form-select {
+    border-radius: 10px;
+    border-color: var(--line);
+    min-height: 40px;
+}
+.form-control:focus, .form-select:focus { border-color: var(--primary); }
+
+/* ===== 客户生命周期漏斗阶段选中态（2026-08-03：原 outline 描边框生硬 → 浅品牌蓝底+圆角，对齐 pc-chips active 风格） ===== */
+.lc-stage {
+    padding: 8px 12px;
+    border-radius: 10px;
+    transition: background .15s ease;
+}
+.lc-stage:hover { background: var(--brand-light); }
+.lc-stage.lc-active { background: var(--brand-light); }
+.lc-stage.lc-active .text-muted { color: var(--primary); }
+
+/* ===== 新建/编辑合同表单响应式列宽（2026-08-03 修复：侧边栏 fixed 220px 存在时内容区=视口-220，
+   Bootstrap 断点按视口算导致 col-md-3(25%)/col-md-4(33%) 在 768-1199px 视口下列宽仅 137-245px，
+   长文本 select（签约主体/关联项目）与输入框内容截断显示不全；≤767px 侧边栏消失+col-md 失效单列所以正常。
+   修复：该视口区间内字段统一升级为 50% 两列，保证内容完整显示） ===== */
+@media (min-width: 768px) and (max-width: 1199.98px) {
+    #contractForm .col-md-3,
+    #contractForm .col-md-4 {
+        width: 50%;
+    }
+}
+
+/* ===== 空态（P2-2：对齐移动端 .m-empty 克制风格） ===== */
+.pc-empty { text-align:center; padding: 40px 16px; color: var(--text-3); }
+.pc-empty i { font-size: 40px; opacity:.45; display:block; margin-bottom:10px; }
+.pc-empty .t { font-weight:500; color: var(--text-2); margin-bottom:4px; }
+
+/* ===== PC 筛选芯片条（P1-1：复用移动端 .m-chip 胶囊风格，active 品牌蓝实底） ===== */
+.pc-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.pc-chips a { flex:none; font-size:13px; padding:6px 14px; border-radius:16px; background:#fff; color:var(--text-2);
+    text-decoration:none; border:1px solid var(--line); white-space:nowrap; transition:all .15s ease; }
+.pc-chips a:hover { border-color: var(--primary); color: var(--primary); }
+.pc-chips a.active { background: var(--primary); color:#fff; border-color: var(--primary); }
+
+/* ===== 暗色模式（P2-3：PC 端跟随系统；移动端钉钉/微信 webview 保持 light 防反色） ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-page: #1c1d21;
+        --card-bg: #26272c;
+        --text-main: #e6e6e6;
+        --text-2: #b0b3b8;
+        --text-3: #8a8f98;
+        --line: #3a3c42;
+        --brand-light: rgba(11, 94, 215, .18);
+        --primary-weak: rgba(11, 94, 215, .25);
+        --primary-weak-2: rgba(11, 94, 215, .3);
+    }
+    body { background: var(--bg-page); color: var(--text-main); }
+    .sidebar, .card, .modal-content, .navbar-app .dropdown-menu { background: var(--card-bg); border-color: var(--line); }
+    .sidebar .nav-link { color: var(--text-main); }
+    .table thead th { background: #2c2d33; color: var(--text-3); }
+    .table td, .table th { border-color: var(--line); }
+    .card-header { background: var(--card-bg); }
+    .stat-card, .card { box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .pc-tag-muted { background: #33343a; color: var(--text-2); }
+    /* 2026-08-03 复查修复：暗色下 pc-tag 全色系改用暗色浅底，避免亮色浅底在暗色系统刺眼 */
+    .pc-tag-warn  { background: #3d3222; color: #ffb84d; }
+    .pc-tag-info  { background: #1d2f4d; color: #7cb0ff; }
+    .pc-tag-danger{ background: #462626; color: #ff8a8a; }
+    .pc-tag-ok    { background: #1e3a2c; color: #52d68b; }
+    /* 信用评分梯度文本色（暗色等价色，对齐暗色 pc-tag 色系） */
+    .credit-a, .credit-b { color: #52d68b; }
+    .credit-c { color: #7cb0ff; }
+    .credit-d { color: #ffb84d; }
+    .credit-e { color: #ff8a8a; }
+    .pc-chips a { background: #2c2d33; border-color: var(--line); color: var(--text-2); }
+    /* 2026-08-03 复查修复：暗色下补齐 Bootstrap 组件底色，避免表单/分页/下拉/步骤条白底残留 */
+    .form-control, .form-select, .input-group-text, .dropdown-menu, .dropdown-item { background-color: #2c2d33; border-color: var(--line); color: var(--text-main); }
+    .dropdown-item:hover { background: var(--brand-light); color: var(--text-main); }
+    .form-control::placeholder { color: var(--text-3); }
+    .page-link { background: var(--card-bg); border-color: var(--line); color: var(--primary); }
+    .page-item.disabled .page-link { background: #26272c; color: var(--text-3); }
+    .step-item + .step-item::before { background: var(--line); }
+    .step-circle { background: var(--card-bg); border-color: var(--line); }
+    .step-item.done .step-circle, .step-item.active .step-circle { background: var(--primary); }
+    /* 2026-08-03 复查修复：bg-white（Bootstrap 白底，21 页 56 处）暗色统一转卡片底色 */
+    .bg-white { background-color: var(--card-bg) !important; }
+    /* 语义浅底行/标签在暗色下的等价色（dashboard 回款行、客户标签等） */
+    .payment-row.overdue { background: #462626 !important; }
+    .payment-row.paid { background: #1e3a2c !important; }
+    .party-suggestions { background: var(--card-bg); border-color: var(--line); }
+    .party-item { border-color: var(--line); }
+    .party-item:hover { background: var(--brand-light); }
+    .cs-suggestions { background: var(--card-bg); border-color: var(--line); }
+    .cs-item { border-color: var(--line); }
+    .cs-item:hover { background: var(--brand-light); }
+}
+
+/* 响应式 */
+@media (max-width: 767.98px) {
+    .navbar-brand { font-size: 14px; }
+    h4 { font-size: 18px; }
+    .table-responsive { font-size: 13px; }
+}

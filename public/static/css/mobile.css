@@ -1,0 +1,1057 @@
+/* ============================================================
+   移动端设计系统 (v2.20)
+   适用于所有 /m/ 独立移动视图（S 级）。脱离 Bootstrap 布局，
+   仅保留少量工具类；主题色与桌面端统一。
+   设计基准：375px 宽（iPhone SE/12/13/14），自适应至 430px+。
+   ============================================================ */
+
+:root {
+  --m-brand: #0b5ed7;
+  --m-brand-light: #e8f1ff;
+  --m-bg: #f2f3f5;
+  --m-card: #ffffff;
+  --m-text: #1f2329;
+  --m-text-2: #646a73;
+  --m-text-3: #7a828c;   /* 辅助文字色：加深提升弱网/低亮度下的可读性对比度 */
+  --m-line: #ebedf0;
+  --m-success: #07c160;   /* 微信绿：通过 */
+  --m-danger: #fa5151;    /* 微信红：驳回 */
+  --m-warn: #ff9d00;
+  --m-radius: 14px;
+  --m-radius-sm: 10px;
+  --m-gap: 12px;
+  --m-pad: 16px;
+  --m-tabbar-h: 56px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;   /* 声明页面仅浅色：阻止钉钉/微信 webview 强制深色模式把白底弹窗/toast 反色成黑底 */
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--m-bg);
+  color: var(--m-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 全局链接去下划线：显式覆盖 iOS Safari 的 a:-webkit-any-link（含 :visited / :hover / :focus 态），
+   否则 iOS 会给所有 <a href> 链接（底部 Tab 合同/客户/审批、合同列表卡片等）强制加下划线。
+   注意：color 不能写在此高特异性选择器内——a:-webkit-any-link 特异性为 (0,1,1)，会压制
+   .m-fab / .m-btn / .m-chip 等组件自身配色（类选择器仅 (0,1,0)），导致图标/文字被强制
+   继承成深色。color 统一放到下方低特异性 a 规则，仅作默认继承、不压制组件。 */
+a, a:link, a:visited, a:hover, a:focus, a:active, a:-webkit-any-link {
+  text-decoration: none;
+  outline: none;
+}
+/* 链接默认继承文字色（低特异性 0,0,1，不压制组件自身配色） */
+a { color: inherit; }
+/* 电话号码链接：品牌色，提示可点击拨打 */
+.phone-link{color:var(--m-brand,#0b5ed7);text-decoration:none}
+
+/* ===== 顶部导航栏 ===== */
+.m-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--m-brand);
+  color: #fff;
+  padding: calc(var(--safe-top) + 12px) var(--m-pad) 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,.06);
+}
+.m-nav .back {
+  font-size: 22px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;
+}
+.m-nav .title {
+  font-size: 17px;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-nav .right {
+  font-size: 14px;
+  opacity: .9;
+  min-width: 32px;
+  text-align: right;
+}
+.m-nav .badge-dot {
+  background: #fff;
+  color: var(--m-brand);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 2px;
+}
+
+/* ===== 页面容器 ===== */
+.m-page {
+  min-height: 100vh;
+  padding-bottom: calc(var(--m-tabbar-h) + var(--safe-bottom) + 16px);
+}
+.m-page.no-tabbar { padding-bottom: calc(var(--safe-bottom) + 24px); }
+/* 详情页：底部含操作栏(m-actionbar) + 全局 Tab，需额外留白
+   2026-08-03 方案：状态动作收进动作面板后操作栏仅单行（~60px），留白 76px 恢复 */
+.m-page.detail { padding-bottom: calc(var(--m-tabbar-h) + 76px + var(--safe-bottom)); }
+/* 含底部提交栏的页面（合同新建/编辑），为 m-submitbar 预留空间避免遮挡上传区 */
+.m-page.has-submitbar { padding-bottom: calc(var(--m-tabbar-h) + var(--safe-bottom) + 16px + 72px); }
+
+/* ===== 卡片 ===== */
+.m-card {
+  background: var(--m-card);
+  border-radius: var(--m-radius);
+  margin: var(--m-gap);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.m-card-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px var(--m-pad) 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--m-text);
+}
+.m-card-bd { padding: 4px var(--m-pad) 12px; }
+
+/* v2.44.4：草稿卡片浅琥珀底 + 左侧 3px 琥珀竖条（方案 A：合同列表区分草稿）
+   v2.45.1：移除 color-mix 依赖——钉钉旧 WebView 不支持该特性导致 background 失效（部署后只见灰底）；
+   统一设计规范琥珀纯色 #fff4e5 底 / #d4860b 竖条（与草稿徽标 m-tag-warn 同色系，任何 WebView 均生效） */
+.m-card.is-draft {
+  background: #fff4e5;
+  box-shadow: inset 3px 0 0 #d4860b, 0 1px 3px rgba(0,0,0,.05);
+}
+
+/* ===== 宫格（更多页：图标 + 文字，4 列；区别于工作台数据看板的紧凑单行） ===== */
+.palace-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:2px 0; }
+.palace-item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 0; color:var(--m-text); text-decoration:none; position:relative; }
+.palace-item i{ font-size:22px; color:var(--m-brand); }
+.palace-item span{ font-size:12px; color:var(--m-text-2); }
+/* v2.38.26：待交接入口红点（有待交接员工时显示） */
+.palace-dot{ position:absolute; top:9px; right:20%; width:9px; height:9px; border-radius:50%; background:#e3342f; box-shadow:0 0 0 2px #fff; }
+
+/* ===== 列表行（卡片内） ===== */
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--m-line);
+  min-height: 44px;   /* 触控最小高度 */
+}
+.m-row:last-child { border-bottom: none; }
+.m-row .pic {
+  width: 42px; height: 42px; flex: none;
+  border-radius: 10px;
+  background: var(--m-brand-light);
+  color: var(--m-brand);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.m-row .main { flex: 1; min-width: 0; }
+.m-row .main .t {
+  font-size: 15px; font-weight: 500; color: var(--m-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.m-row .main .s {
+  font-size: 12px; color: var(--m-text-3); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.m-row .aside { flex: none; text-align: right; font-size: 13px; color: var(--m-text-3); }
+.m-row .aside .amt { font-size: 15px; font-weight: 600; }
+/* 回款/报表金额强化（与 .fin-card .fin-amt 视觉一致：17px 700 bold） */
+.m-row .aside .pay-amt { font-size: 17px; font-weight: 700; }
+
+/* 回款计划行：顶对齐 + 右侧标签纵向紧凑排列 */
+.pay-row { align-items: flex-start !important; }
+.pay-row .aside { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+/* 搜索条统一类（抽取六处重复内联 box-shadow） */
+.m-search-bar { display: flex; align-items: center; background: #fff; border-radius: var(--m-radius-sm); padding: 0 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+/* 回款/付款记录图标底色（按方向抽类，替代内联 background/color） */
+.m-row .pic.pay-recv { background: #e8f1ff; color: #0b5ed7; }
+.m-row .pic.pay-pay  { background: #e7f8ee; color: #07a050; }
+
+/* 金额配色：应收=红(进钱)，应付=绿 */
+.amt-in  { color: var(--m-danger); }
+.amt-out { color: var(--m-success); }
+.amt { font-size: 15px; font-weight: 600; }
+/* 金额强化：独立工具类，跨结构通用（17px/700，与 .fin-amt 视觉对齐）；!important 确保覆盖 .m-kv .v 等容器字号；颜色交由 .amt-in/.amt-out 控制 */
+.pay-amt { font-size: 17px !important; font-weight: 700 !important; }
+
+/* ===== 标签 / 状态徽章 ===== */
+.m-tag {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  line-height: 1.6;
+  font-weight: 500;
+}
+.m-tag-warn  { background: #fff4e5; color: #d4860b; }
+.m-tag-info  { background: var(--m-brand-light); color: var(--m-brand); }
+.m-tag-danger{ background: #ffeaea; color: #e23b3b; }
+.m-tag-ok    { background: #e7f8ee; color: #07a050; }
+.m-tag-muted { background: #f2f3f5; color: var(--m-text-3); }
+.m-tag-rest  { background: #fff3e0; color: #e65100; font-size: 11px; }
+/* 收付款方向标签（与 应收红/应付绿 语义对齐；非交易用灰） */
+.m-tag-recv { background: rgba(250,81,81,.12); color: var(--m-danger); }
+.m-tag-pay  { background: rgba(7,193,96,.12); color: var(--m-success); }
+/* 信用评分梯度标签（v2.38.14：分高色深 90+深绿/80+绿/60+蓝/40+橙/<40红，替代原灰标） */
+.m-tag-credit-a { background: #cdeeda; color: #0b6b35; }
+.m-tag-credit-b { background: #e7f8ee; color: #07a050; }
+.m-tag-credit-c { background: #e6f0ff; color: #1f6feb; }
+.m-tag-credit-d { background: #fff4e5; color: #d4860b; }
+.m-tag-credit-e { background: #ffeaea; color: #e23b3b; }
+
+/* ===== 状态筛选 chips（移动端列表筛选条） ===== */
+.m-chip {
+  flex: none;
+  display: inline-flex;          /* a 标签默认 inline，min-height 需配合 inline-flex 生效 */
+  align-items: center;
+  font-size: 13px;
+  padding: 6px 14px;
+  min-height: 38px;              /* 触控最小高度：行内操作与顶部状态筛选 chips 通用 */
+  border-radius: 16px;
+  background: #fff;
+  color: var(--m-text-2);
+  text-decoration: none;
+  border: 1px solid var(--m-line);
+  white-space: nowrap;
+}
+.m-chip.active { background: var(--m-brand); color: #fff; border-color: var(--m-brand); }
+
+/* v2.40.1：筛选入口「图标+文字」按钮（移动端合同列表） */
+.m-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 10px;
+  min-height: 40px;              /* 触控最小高度 */
+  border-radius: 16px;
+  border: 1px solid var(--m-line);
+  background: #fff;
+  color: var(--m-text-2);
+  cursor: pointer;
+}
+.m-filter-btn:active { background: var(--m-bg); }
+
+/* v2.40.1（方案 A）：已选筛选条件标签行 */
+.m-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 45vw;               /* v2.40.1：相对方等长名称截断，避免标签行过长 */
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--m-brand);
+  background: var(--m-brand-light);
+  border-radius: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.m-filter-tag-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-filter-tag i { font-size: 12px; color: var(--m-brand); flex: none; }
+.m-filter-tag:active { opacity: .7; }
+
+/* ===== 摘要信息行（详情页 key-value） ===== */
+.m-kv { padding: 11px 0; border-bottom: 1px solid var(--m-line); display: flex; }
+.m-kv:last-child { border-bottom: none; }
+.m-kv .k { width: 84px; flex: none; color: var(--m-text-3); font-size: 14px; }
+.m-kv .v { flex: 1; font-size: 14px; color: var(--m-text); word-break: break-all; }
+
+/* 合同正文：概要 + 附件 */
+.m-content { font-size: 14px; line-height: 1.7; color: var(--m-text); white-space: pre-wrap; word-break: break-all; background: var(--m-bg); border-radius: 10px; padding: 10px 12px; }
+.m-attach { display: flex; flex-direction: column; gap: 8px; }
+.m-attach-item { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--m-brand); text-decoration: none; background: var(--m-bg); border-radius: 10px; padding: 10px 12px; }
+.m-attach-item:active { background: var(--m-brand-light); }
+.m-attach-row { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--m-bg); border-radius: 10px; text-decoration: none; color: var(--m-text); }
+.m-attach-row:active { background: var(--m-brand-light); }
+.m-attach-ic { font-size: 22px; color: var(--m-brand); flex: none; }
+.m-attach-nm { flex: 1 1 auto; font-size: 14px; line-height: 1.4; word-break: break-all; }
+.m-attach-sz { flex: none; font-size: 12px; color: var(--m-text-3); margin-left: 4px; }
+.m-attach-go { flex: none; font-size: 16px; color: var(--m-text-3); margin-left: 4px; }
+
+/* ===== 提交审批流程预览 ===== */
+.m-float-tip { font-size: 13px; color: var(--m-text-2); background: var(--m-fill); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.6; }
+.m-float-tip.danger { color: #b42318; background: #fef3f2; }
+.m-flow { list-style: none; margin: 0; padding: 0; }
+.m-flow li { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--m-line); font-size: 14px; }
+.m-flow li:last-child { border-bottom: none; }
+.m-flow-name { font-weight: 600; color: var(--m-text); margin-right: 4px; }
+
+/* ===== 底部操作栏（固定） ===== */
+.m-actionbar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(var(--m-tabbar-h) + var(--safe-bottom));
+  z-index: 60;
+  display: flex;
+  gap: 12px;
+  padding: 10px var(--m-pad) calc(10px + var(--safe-bottom));
+  background: #fff;
+  border-top: 1px solid var(--m-line);
+  box-shadow: 0 -2px 10px rgba(0,0,0,.04);
+}
+
+/* 2026-08-03 方案：状态变更动作面板（m-sheet 内列表项）
+   —— 破坏性操作（终止/归档）红色，普通操作默认深色；整行可点 */
+.m-sheet-item {
+  display: block;
+  width: 100%;
+  padding: 14px 4px;
+  border: none;
+  border-bottom: 1px solid var(--m-line);
+  background: transparent;
+  font-size: 16px;
+  color: var(--m-text);
+  text-align: center;
+  cursor: pointer;
+}
+.m-sheet-item:last-of-type { border-bottom: none; }
+.m-sheet-item:active { background: var(--m-bg); }
+.m-sheet-item-danger { color: var(--m-danger); }
+
+/* ===== 大按钮 ===== */
+.m-btn {
+  flex: 1;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.m-btn:active { opacity: .85; }
+.m-btn-ok   { background: var(--m-success); color: #fff; }
+.m-btn-danger { background: var(--m-danger); color: #fff; }
+.m-btn-ghost { background: #f2f3f5; color: var(--m-text); }
+.m-btn-brand { background: var(--m-brand); color: #fff; }
+.m-btn-sm { flex: none; width: auto; height: auto; min-height: 40px; padding: 5px 14px; font-size: 13px; border-radius: 8px; }
+.m-btn:disabled { opacity: .5; cursor: default; }
+
+/* ===== 顶部 Tab 标签（m-tabs 下划线式，审批中心/待办中心共用，v2.38.18 公共化） ===== */
+.m-tabs {
+  display: flex;
+  background: var(--m-card-bg);
+  border-bottom: 1px solid var(--m-line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.m-tab {
+  flex: 1;
+  text-align: center;
+  padding: 13px 0;
+  font-size: 15px;
+  color: var(--m-text-3);
+  position: relative;
+  text-decoration: none;
+}
+.m-tab.active {
+  color: var(--m-brand);
+  font-weight: 600;
+}
+.m-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--m-brand);
+}
+.m-tab .badge {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  margin-left: 3px;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: 8px;
+  background: var(--m-brand);
+  color: #fff;
+  vertical-align: middle;
+}
+.m-tab .badge.zero {
+  background: var(--m-line);
+  color: var(--m-text-3);
+}
+
+/* ===== 底部 Tab 导航 ===== */
+.m-tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 60;
+  height: calc(var(--m-tabbar-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: #fff;
+  border-top: 1px solid var(--m-line);
+  display: flex;
+}
+.m-tabbar a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--m-text-3);
+  font-size: 11px;
+  min-height: 44px;
+  text-decoration: none;   /* 兜底：Tab 链接（含已访问/聚焦态）不加下划线 */
+}
+.m-tabbar a.active { color: var(--m-brand); }
+.m-tabbar a i { font-size: 21px; }
+
+/* ===== 空态 ===== */
+.m-empty {
+  text-align: center;
+  color: var(--m-text-3);
+  font-size: 14px;
+  padding: 48px 0;
+}
+.m-empty i { font-size: 42px; display: block; margin-bottom: 10px; opacity: .5; }
+
+/* ===== 加载更多 ===== */
+.m-loadmore {
+  text-align: center;
+  color: var(--m-text-3);
+  font-size: 13px;
+  padding: 16px 0;
+}
+.m-loadmore:active { opacity: .7; }
+
+/* ===== 审批进度时间线 ===== */
+.m-timeline { padding: 6px 0; }
+.m-step {
+  position: relative;
+  padding: 10px 0 10px 26px;
+  border-left: 2px solid var(--m-line);
+  margin-left: 6px;
+}
+.m-step:last-child { border-left-color: transparent; }
+.m-step .dot {
+  position: absolute;
+  left: -8px; top: 14px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--m-line);
+  border: 2px solid #fff;
+}
+.m-step.done .dot { background: var(--m-success); }
+.m-step.reject .dot { background: var(--m-danger); }
+.m-step.current .dot { background: var(--m-brand); box-shadow: 0 0 0 3px var(--m-brand-light); }
+.m-step .node { font-size: 13px; font-weight: 600; color: var(--m-text); }
+.m-step .who { font-size: 13px; color: var(--m-text-3); margin-top: 2px; }
+.m-step .cmt { font-size: 13px; color: var(--m-text-2); margin-top: 4px; }
+.m-step .time { font-size: 11px; color: var(--m-text-3); margin-top: 2px; }
+
+/* ===== 意见输入框 ===== */
+.m-textarea {
+  width: 100%;
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  padding: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  min-height: 84px;
+  outline: none;
+}
+.m-textarea:focus { border-color: var(--m-brand); }
+
+/* ===== 确认弹窗（驳回） ===== */
+.m-sheet-mask {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 100;
+  display: flex; align-items: flex-end;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+.m-sheet-mask.show { opacity: 1; pointer-events: auto; }
+.m-sheet {
+  background: #fff;
+  color-scheme: light;   /* 浮层双保险：不被钉钉/微信 webview 强制深色反色成黑底 */
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  padding: 20px var(--m-pad) calc(20px + var(--safe-bottom));
+  transform: translateY(100%);
+  transition: transform .25s;
+}
+.m-sheet-mask.show .m-sheet { transform: translateY(0); }
+.m-sheet h3 { font-size: 17px; margin: 0 0 6px; }
+.m-sheet p { font-size: 14px; color: var(--m-text-2); margin: 0 0 16px; }
+.m-sheet .m-textarea { margin-bottom: 14px; }
+.m-sheet-actions { display: flex; gap: 12px; }
+.m-sheet-actions .m-btn { flex: 1; }
+
+/* ===== 用户选择器（m-sheet 内用户列表）——审批转交 / 客户转移共用（2026-08-03 抽取自 approval_detail） ===== */
+.m-sheet { max-height: 82vh; overflow: auto; }
+.m-user-list { max-height: 38vh; overflow: auto; -webkit-overflow-scrolling: touch; margin: 0 0 14px; border: 1px solid var(--m-line); border-radius: 12px; }
+.m-user-opt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--m-line); font-size: 15px; cursor: pointer; }
+.m-user-opt:last-child { border-bottom: none; }
+.m-user-opt input { width: 18px; height: 18px; accent-color: var(--m-brand); }
+.m-user-empty { text-align: center; padding: 24px 0; color: var(--m-text-3); font-size: 14px; }
+
+/* ===== 移动表单（新建/编辑页） ===== */
+.m-form { padding: var(--m-gap); }
+.m-field { margin-bottom: 14px; }
+.m-field > label {
+  display: block;
+  font-size: 14px;
+  color: var(--m-text-2);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.m-field .req { color: var(--m-danger); margin-left: 2px; }
+.m-input, .m-select, .m-textarea {
+  width: 100%;
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  padding: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--m-text);
+  background: #fff;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.m-input:focus, .m-select:focus, .m-textarea:focus { border-color: var(--m-brand); }
+.m-textarea { resize: none; min-height: 84px; line-height: 1.5; }
+/* 移动端 select 右侧箭头 */
+.m-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'><path fill='%238a9099' d='M4 6l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+}
+/* 开关（是否本公司等） */
+.m-switch { display: flex; align-items: center; gap: 10px; }
+.m-switch input { width: 20px; height: 20px; accent-color: var(--m-brand); }
+
+/* 底部固定提交栏（表单页：含全局 Tab 时一并留白） */
+.m-submitbar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(var(--m-tabbar-h) + var(--safe-bottom));
+  z-index: 60;
+  display: flex;             /* v2.44.4：补 flex——子按钮 .m-btn flex:1 撑满全宽（此前缺 display:flex 导致按钮收缩为居左窄块） */
+  gap: 12px;
+  padding: 10px var(--m-pad) calc(10px + var(--safe-bottom));
+  background: #fff;
+  border-top: 1px solid var(--m-line);
+  box-shadow: 0 -2px 10px rgba(0,0,0,.04);
+}
+
+/* ===== 悬浮按钮（FAB） ===== */
+.m-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--m-tabbar-h) + var(--safe-bottom) + 16px);
+  z-index: 55;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: var(--m-brand);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 4px 14px rgba(11,94,215,.4);
+  border: none;
+}
+.m-fab i { color: #fff; }   /* 显式锁定图标白色，避免被全局 a 规则继承成深色 */
+.m-fab:active { opacity: .85; transform: scale(.96); }
+
+/* ===== 合同表单专用（创建/编辑页） ===== */
+/* 分组标题 */
+.m-sec-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--m-text-3);
+  margin: 18px 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--m-brand);
+}
+/* 甲方「本公司」快捷按钮行 */
+.m-party-row { display: flex; gap: 8px; align-items: stretch; }
+.m-party-row .m-input { flex: 1; }
+.m-btn-ghost {
+  flex: 0 0 auto;
+  border: 1px solid var(--m-line);
+  background: #fff;
+  color: var(--m-brand);
+  border-radius: var(--m-radius-sm);
+  padding: 0 14px;
+  font-size: 14px;
+}
+.m-btn-ghost:active { background: var(--m-brand-light); }
+/* 乙方搜索下拉 */
+.m-party-search { position: relative; }
+.m-party-suggest {
+  display: none;
+  position: absolute;
+  left: 0; right: 0; top: calc(100% + 4px);
+  z-index: 70;
+  background: #fff;
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.m-party-item {
+  padding: 11px 12px;
+  font-size: 14px;
+  color: var(--m-text);
+  border-bottom: 1px solid var(--m-line);
+  display: flex; align-items: center; gap: 8px;
+}
+.m-party-item:last-child { border-bottom: none; }
+.m-party-item:active { background: var(--m-brand-light); }
+.m-party-tag {
+  font-size: 11px;
+  color: var(--m-text-3);
+  background: var(--m-bg);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+/* 搜索选择器（v2.41.0：客户/账号由下拉改搜索——与 .m-party-suggest 同构的通用浮层） */
+.cs-wrap { position: relative; }
+.cs-suggestions {
+  display: none;
+  position: absolute;
+  left: 0; right: 0; top: calc(100% + 4px);
+  z-index: 70;
+  background: #fff;
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.cs-item {
+  padding: 11px 12px;
+  font-size: 14px;
+  color: var(--m-text);
+  border-bottom: 1px solid var(--m-line);
+  display: flex; align-items: center; gap: 8px;
+}
+.cs-item:last-child { border-bottom: none; }
+.cs-item:active { background: var(--m-brand-light); }
+.cs-item small { color: var(--m-text-3); font-size: 12px; flex: none; }
+/* 附件上传 */
+.m-upload {
+  border: 1.5px dashed var(--m-line);
+  border-radius: var(--m-radius-sm);
+  background: var(--m-bg);
+  padding: 22px 12px;
+  text-align: center;
+  color: var(--m-text-2);
+  font-size: 13px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.m-upload:active { background: var(--m-brand-light); }
+.m-upload i { font-size: 26px; color: var(--m-brand); }
+/* 双上传入口（文档 + 图片）横向排列 */
+.m-upload-row { display: flex; gap: 10px; }
+.m-upload-half { flex: 1; min-width: 0; }
+/* 2026-08-05：文档/图片/拍照三入口改为三等分网格，替代原 2+1 上下堆叠 */
+.m-upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.m-upload-third {
+  padding: 18px 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+.m-upload-third i { font-size: 22px; }
+.m-upload-third small {
+  display: block;
+  font-size: 10px;
+  color: var(--m-text-3);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+/* 2026-08-05：上传入口大小限制提示 */
+.m-upload-tip {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--m-text-3);
+}
+/* 折叠面板（更多选项：关键词 / 关联框架 / 关联项目） */
+.m-fold {
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  margin: 14px 0;
+  background: #fff;
+  overflow: hidden;
+}
+.m-fold summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--m-text-2);
+  cursor: pointer;
+  list-style: none;
+}
+.m-fold summary::-webkit-details-marker { display: none; }
+.m-fold summary i { color: var(--m-text-3); font-size: 12px; transition: transform .2s; }
+.m-fold[open] summary i { transform: rotate(180deg); }
+.m-fold-body { padding: 0 14px 8px; border-top: 1px dashed var(--m-line); padding-top: 12px; }
+.m-upload-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.m-upload-item {
+  display: flex; align-items: center; gap: 8px;
+  background: #fff;
+  border: 1px solid var(--m-line);
+  border-radius: var(--m-radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.m-upload-item i { color: var(--m-text-3); }
+.m-upload-item.m-uploading i { color: var(--m-brand); }
+/* 附件上传大优化：完成态、进度态、错误态三种样式 */
+.m-upload-item.m-up-done i { color: var(--m-text-3); }
+.m-upload-item.m-up-progress,
+.m-upload-item.m-up-error { flex-direction: column; align-items: stretch; gap: 6px; }
+.m-up-head { display: flex; align-items: center; gap: 8px; }
+.m-up-head .m-up-name { margin-right: 0; }
+.m-up-bar {
+  position: relative; height: 6px; background: var(--m-bg);
+  border-radius: 3px; overflow: hidden;
+}
+.m-up-bar-fill {
+  height: 100%; background: linear-gradient(90deg, var(--m-brand-light), var(--m-brand));
+  transition: width .2s ease;
+}
+.m-up-bar-text {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: var(--m-text-3); line-height: 1;
+}
+.m-up-status { font-size: 12px; color: var(--m-text-3); }
+.m-up-error-actions { display: flex; gap: 8px; margin-top: 4px; }
+.m-up-error .m-up-head i { color: var(--m-danger); }
+.m-up-error .m-up-name { color: var(--m-danger); }
+.m-btn-sm { font-size: 12px; padding: 4px 10px; }
+
+.m-up-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-up-del {
+  flex: 0 0 auto;
+  border: none; background: transparent;
+  color: var(--m-danger);
+  font-size: 20px; line-height: 1;
+  padding: 0 4px;
+}
+.spin { animation: mspin 1s linear infinite; }
+@keyframes mspin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ===== 财务回款卡片（.fin-card 三段式：标题/金额/操作） ===== */
+.fin-card {
+  display: block;
+  background: var(--m-card);
+  border-radius: var(--m-radius-sm);
+  margin: 0 var(--m-gap) 8px;
+  padding: 14px var(--m-pad);
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  text-decoration: none;
+  color: inherit;
+}
+.fin-card:active { background: #f8f9fb; }
+/* 标题行：合同名 + 状态标签 */
+.fin-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fin-t {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--m-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-tags {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+/* 金额行：大字金额 + 日期/备注 */
+.fin-mid {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.fin-amt {
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fin-meta {
+  font-size: 12px;
+  color: var(--m-text-3);
+  text-align: right;
+  line-height: 1.4;
+}
+/* 操作按钮行 */
+.fin-act {
+  margin-top: 10px;
+  text-align: right;
+}
+
+/* ===== 财务统计：收支概览 ===== */
+.m-stat-row {
+  display: flex;
+  gap: 10px;
+  padding: 0 var(--m-gap);
+  margin-top: 14px;   /* 2026-08-01：与上方回款预测卡拉开间距，避免顶部三块数字挤在一起 */
+}
+.m-stat {
+  flex: 1;
+  background: #fff;
+  border-radius: var(--m-radius, 14px);
+  padding: 14px 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  text-align: center;
+}
+.m-stat .n {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-all;
+}
+.m-stat .n.in  { color: var(--m-danger); }  /* 应收=红 */
+.m-stat .n.out { color: var(--m-success); }  /* 应付=绿 */
+.m-stat .l { font-size: 12px; color: var(--m-text-2); margin-top: 4px; }
+.m-stat .c { font-size: 12px; color: var(--m-text-3); margin-top: 2px; }
+
+/* 回款预测卡（2026-08-01 改横排）：左侧大数字 + 右侧标签列，紧凑不叠行 */
+.m-forecast-card {
+  margin: var(--m-gap) var(--m-gap) 0;
+  background: linear-gradient(135deg, #fff6f6, #ffffff);
+  border: 1px solid #ffd9d9;
+  border-radius: var(--m-radius, 14px);
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.m-forecast-card .hero { font-size: 24px; font-weight: 800; color: var(--m-danger); line-height: 1.15; }
+.m-forecast-card .info { text-align: right; flex-shrink: 0; }
+.m-forecast-card .sub  { font-size: 13px; color: var(--m-text-2); }
+.m-forecast-card .sub2 { font-size: 12px; color: var(--m-text-3); margin-top: 3px; }
+
+/* ===== 顶部吐司（轻量卡片：白底圆角 + 品牌色图标，与系统移动端 UI 对齐，去除旧版黑色块） ===== */
+.m-toast {
+  position: fixed;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(.96);
+  display: flex; align-items: center; gap: 8px;
+  background: #fff;
+  color-scheme: light;   /* 浮层双保险：不被钉钉/微信 webview 强制深色反色成黑底 */
+  color: var(--m-text);
+  font-size: 15px; line-height: 1.4;
+  padding: 14px 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  border: 1px solid rgba(0,0,0,.05);
+  z-index: 999;
+  max-width: 78%;
+  text-align: left;
+  opacity: 0;
+  transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none;
+}
+.m-toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.m-toast .m-toast-ic {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; font-weight: 700; line-height: 1;
+}
+.m-toast .m-toast-ic.success { background: var(--m-success); }
+.m-toast .m-toast-ic.error   { background: var(--m-danger); }
+.m-toast .m-toast-ic.info    { background: var(--m-brand); }
+.m-toast .m-toast-ic.warning { background: #ff9f0a; }
+
+/* ===== 加载态 ===== */
+.m-loading {
+  position: fixed; inset: 0;
+  background: rgba(255,255,255,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.m-spinner {
+  width: 30px; height: 30px;
+  border: 3px solid var(--m-brand-light);
+  border-top-color: var(--m-brand);
+  border-radius: 50%;
+  animation: m-spin .7s linear infinite;
+}
+@keyframes m-spin { to { transform: rotate(360deg); } }
+
+/* ===== A/B 级页面全局响应式增强（Bootstrap 表格/按钮/卡片移动端适配） ===== */
+@media (max-width: 768px){
+  /* 表格：缩小字号，适配窄屏阅读 */
+  .table{font-size:13px}
+  .table td,.table th{padding:.45rem .35rem}
+  .table thead th{font-size:12px}
+  /* 按钮触控适配（最低 44px 接近） */
+  .btn-sm{font-size:13px;padding:.3rem .55rem}
+  /* 卡片内边距调紧 */
+  .stat-card .card-body{padding:.75rem}
+  /* 标题字号 */
+  h4{font-size:18px}
+  /* 表单控件 */
+  .form-select-sm,.form-control-sm{font-size:14px}
+  /* 导航标签触控 */
+  .nav-tabs .nav-link{font-size:13px;padding:.5rem .65rem}
+  /* 表格横滑优先（含税务多级表头等宽表） */
+  .table-responsive .table{min-width:500px}
+}
+
+/* ===== 自定义确认弹窗（替代原生 confirm，避免移动端 webview 误关闭网页） ===== */
+/* 修复：原生 confirm 在微信/iOS webview 中「取消」常被宿主识别为关闭网页手势；
+   自定义 DOM 弹窗的取消/确定均为普通按钮，不会触发宿主关闭行为，并自带防叠加锁。 */
+.m-modal-mask {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 28px;
+}
+
+/* ===== 审批消息列表（2026-08-05 自原消息中心 mobile/notifications.php 迁移，供待办中心 Tab3 复用） ===== */
+.notif-list{ padding:8px 0; }
+.notif-item{ background:#fff; margin:10px 12px; border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.08); position:relative; transition:transform .12s; }
+.notif-item:active{ transform:scale(.99); }
+.notif-item.unread{ border-left:3px solid #0b5ed7; background:#f5f9ff; }
+.notif-item.read{ opacity:.7; }
+.notif-item .notif-row{ display:flex; align-items:flex-start; gap:10px; }
+.notif-item .notif-icon{ width:36px; height:36px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:18px; }
+.notif-item.unread .notif-icon{ background:#e7f0ff; color:#0b5ed7; }
+.notif-item.read .notif-icon{ background:#f0f1f3; color:#9ca3af; }
+.notif-item .notif-body{ flex:1; min-width:0; }
+.notif-item .notif-title{ font-size:15px; font-weight:600; color:#1a1a2e; margin-bottom:4px; line-height:1.4; }
+.notif-item.read .notif-title{ font-weight:400; color:#6b7280; }
+.notif-item .notif-desc{ font-size:13px; color:#6b7280; line-height:1.5; margin-bottom:8px; word-break:break-word; }
+.notif-item .notif-meta{ font-size:11px; color:#9ca3af; display:flex; justify-content:space-between; align-items:center; }
+.notif-item .notif-tag{ display:inline-block; font-size:12px; padding:1px 6px; border-radius:4px; font-weight:500; }
+.notif-tag-APPROVAL_SUBMITTED{ background:#dbeafe; color:#1d4ed8; }
+.notif-tag-APPROVAL_REJECTED{ background:#fee2e2; color:#dc2626; }
+.notif-tag-APPROVAL_APPROVED{ background:#d1fae5; color:#059669; }
+.notif-tag-APPROVAL_TRANSFERRED{ background:#fef3c7; color:#d97706; }
+.notif-tag-APPROVAL_CC{ background:#e0e7ff; color:#4f46e5; }
+.notif-tag-APPROVAL_OVERDUE{ background:#fee2e2; color:#dc2626; }
+.notif-item .notif-action{ font-size:12px; color:#0b5ed7; cursor:pointer; padding:4px 8px; border-radius:4px; background:#e7f0ff; }
+/* 图标圆底 / 标签颜色变体（待办中心 Tab1/Tab2 与审批消息同风格，2026-08-05） */
+.notif-icon-approval{ background:#e7f0ff; color:#0b5ed7; }
+.notif-icon-danger{ background:#fee2e2; color:#dc2626; }
+.notif-icon-warn{ background:#fef3c7; color:#d97706; }
+.notif-icon-info{ background:#e7f0ff; color:#0b5ed7; }
+.notif-tag-approval{ background:#fee2e2; color:#dc2626; }
+.notif-tag-danger{ background:#fee2e2; color:#dc2626; }
+.notif-tag-warn{ background:#fef3c7; color:#d97706; }
+.notif-tag-info{ background:#dbeafe; color:#1d4ed8; }
+.m-modal-box {
+  width: 100%; max-width: 320px;
+  background: #fff; border-radius: 14px; overflow: hidden;
+  color-scheme: light;   /* 浮层双保险：不被钉钉/微信 webview 强制深色反色成黑底 */
+  animation: m-modal-in .18s ease;
+}
+@keyframes m-modal-in { from { transform: scale(.92); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+.m-modal-msg { font-size: 14px; color: #666; text-align: center; padding: 22px 18px 18px; line-height: 1.6; word-break: break-all; }
+.m-modal-actions { display: flex; border-top: 1px solid #f0f0f0; }
+.m-modal-actions button {
+  flex: 1; border: none; background: #fff;
+  padding: 14px 0; font-size: 16px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.m-modal-actions button + button { border-left: 1px solid #f0f0f0; }
+.m-modal-actions .m-modal-cancel { color: #888; }
+.m-modal-actions .m-modal-cancel:active { background: #f5f7fa; }
+.m-modal-actions .m-modal-ok { color: var(--m-brand, #3b6cff); font-weight: 600; }
+.m-modal-actions .m-modal-ok:active { background: #f5f7fa; }
+.m-modal-input { width: calc(100% - 36px); margin: 0 18px 18px; padding: 10px 12px; border: 1px solid #e3e6eb; border-radius: 10px; font-size: 15px; box-sizing: border-box; outline: none; -webkit-appearance: none; }
+.m-modal-input:focus { border-color: var(--m-brand, #3b6cff); box-shadow: 0 0 0 3px rgba(59,108,255,.12); }
+
+/* ===== 通用按钮：撑满容器（表单提交/主操作） ===== */
+.m-btn-block { width: 100%; }
+
+/* ===== 列表项 / 空状态 / 软色徽章（原 index.php 私有，上提全局复用，供 reminders 等页） ===== */
+.m-item { display: block; padding: 10px 0; border-bottom: 1px solid #f5f5f5; }
+.m-item:last-child { border-bottom: none; }
+.m-item .t { font-size: 14px; color: #1f2329; font-weight: 500; }
+.m-item .d { font-size: 12px; color: #8a9099; margin-top: 3px; }
+.empty { text-align: center; color: #b0b5bd; font-size: 13px; padding: 18px 0; }
+/* 提升特异性以压过 Bootstrap 完整 CSS 的 .badge 默认暗底（首页加载了 bootstrap.min.css） */
+.badge.badge-soft-warn   { background: #fff4e5; color: #e08600; }
+.badge.badge-soft-info   { background: #e8f1ff; color: #0b5ed7; }
+.badge.badge-soft-danger { background: rgba(250,81,81,.12); color: var(--m-danger); }
+
+/* 账龄配色：90天以上为最高风险(红)，61-90天为橙色预警 */
+.bg-orange   { background-color: #fd7e14 !important; }
+.text-orange { color: #fd7e14 !important; }
+
+/* v2.38.11 修复：移动端未引 Bootstrap，_foot.php 的 text-center 类无定义 → 版权信息不居中 */
+.m-footer-copyright { text-align: center; }
+
+/* v2.38.11：客户生命周期漏斗阶段选中态（点击筛选，与 lcChips 联动） */
+.lc-funnel-stage.active { background: var(--m-brand-light); }
+
+/* ===== Bootstrap 工具类子集（v2.42.0 本地化：移动端不再加载完整 bootstrap.min.css，
+   PC/工作台等仍用 Bootstrap 的页面由 app.css/header.php 覆盖；此处补齐移动端用到的工具类语义） ===== */
+.badge{display:inline-block;padding:2px 8px;font-size:12px;font-weight:600;line-height:1.6;white-space:nowrap;vertical-align:baseline;border-radius:6px}
+.rounded-pill{border-radius:999px!important}
+.text-muted{color:var(--m-text-3)}
+.text-warning{color:var(--m-warn)}
+.text-primary{color:var(--m-brand)}
+.text-danger{color:var(--m-danger)}
+.text-success{color:var(--m-success)}
+.text-center{text-align:center}
+.w-100{width:100%}
+.d-block{display:block}
+.d-inline-block{display:inline-block}
+.d-flex{display:flex}
+.mt-1{margin-top:4px}.mt-2{margin-top:8px}.mt-3{margin-top:16px}
+.mb-1{margin-bottom:4px}.mb-2{margin-bottom:8px}
+.me-1{margin-right:4px}.me-2{margin-right:8px}
+.ms-1{margin-left:4px}.ms-2{margin-left:8px}
+

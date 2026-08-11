@@ -1,0 +1,6 @@
+# 视图公共 JS 符号白名单（可选扩展）
+# 这些符号必须在所有 $tab 分支之外的「公共脚本块」中全局声明，
+# 禁止落入某个 tab 分支内的 <script>，否则访问其他 tab 时符号缺失 → 运行时 ReferenceError。
+# 内置默认值（check_view_globals.sh 的 DEFAULT_PUBLIC）：allRoles / allUsers / flowCats / esc
+# 以下为项目追加的全局符号：
+allDepts

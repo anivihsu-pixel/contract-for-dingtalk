@@ -1,0 +1,35 @@
+{
+    "name": "app/contract-dingtalk",
+    "description": "DingTalk Contract Management System - ThinkPHP 6.1",
+    "type": "project",
+    "keywords": ["thinkphp", "dingtalk", "contract"],
+    "require": {
+        "php": ">=7.2.5",
+        "topthink/framework": "^6.1.4",
+        "topthink/think-multi-app": "^1.0",
+        "topthink/think-view": "^1.0",
+        "topthink/think-helper": "^3.0",
+        "vlucas/phpdotenv": "^5.0",
+        "predis/predis": "^1.1",
+        "firebase/php-jwt": "^6.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "app\\": "app"
+        },
+        "files": ["app/common.php"]
+    },
+    "config": {
+        "preferred-install": "dist",
+        "policy": {
+            "advisories": {
+                "block": false
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

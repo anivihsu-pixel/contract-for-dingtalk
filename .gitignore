@@ -1,0 +1,54 @@
+# ===== 敏感文件 =====
+.env
+# 含密钥的备份文件：.env.bak / .env.bak2 可能包含 JWT_SECRET / DB_PASS，
+# 严禁提交版本库或打入发布包（泄露等同于明文暴露生产密钥）。
+.env.bak
+.env.bak2
+*.bak
+
+# ===== 自动生成（不入库）=====
+# config/version.php 由 scripts/release.sh 打包时自动写入当前版本号，
+# 本地开发时 app_version() 回退到 VERSION.md，无需手动维护此文件。
+/config/version.php
+
+# ===== 运行时产物 =====
+/runtime/
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# ===== 依赖 =====
+# vendor 是否入库按团队策略；发布包会包含 vendor 以便免装部署
+# /vendor/
+/node_modules/
+# 测试工具（由 composer install 或下载获取，不入库）
+/phpunit.phar
+.phpunit.cache
+
+# ===== 发布与备份产物（体积大，不入库）=====
+/releases/
+/backups/
+
+# ===== 系统与编辑器 =====
+.DS_Store
+*.swp
+*.log
+.idea/
+.vscode/
+
+# ===== 开发临时产物（不入库）=====
+/outputs/
+/合同类型/
+/e2e_*.py
+/e2e_*.js
+/tests/
+/phpunit.xml.dist
+/phpunit.phar
+.phpunit.cache
+/watchdog.ps1
+/setup-firewall.bat
+/loginpage.html
+
+# ===== 内部开发文档（公开仓库不入库；如需共享请放 wiki）=====
+/UPGRADE_*.md
+/PM审查报告_*.md
+/续接开发checklist.md
