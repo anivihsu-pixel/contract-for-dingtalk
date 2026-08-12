@@ -437,7 +437,7 @@ window.__ATTACHMENTS__ = <?php
     <h5 class="mb-0">发票记录</h5>
     <div class="d-flex align-items-center">
       <span class="text-muted small me-2" id="invoiceSum"></span>
-      <?php if(!empty($can_apply_invoice)): ?><button class="btn btn-primary btn-sm" onclick="showAddInvoice()" <?= $__isNonTrade ? 'disabled title="非交易合同无需开票"' : '' ?>><i class="bi bi-plus-lg"></i> 申请开票</button><?php endif; ?>
+      <?php if(!empty($can_apply_invoice) && ($contract['direction'] ?? '') === 'sales' && (int)($contract['trade_attr'] ?? 1) === 1): ?><button class="btn btn-primary btn-sm" onclick="showAddInvoice()"><i class="bi bi-plus-lg"></i> 申请开票</button><?php endif; ?>
     </div>
   </div>
   <div class="card-body p-0" id="invoiceList" style="max-height:260px;overflow-y:auto"><div class="text-center py-3 text-muted small">加载中...</div></div>
@@ -770,10 +770,29 @@ function loadInvoices(){
 function showAddInvoice(){
   document.getElementById('applyErr').textContent = '';
   var f = document.getElementById('applyFields');
-  // v2.41.0：开票客户搜索选择器重置（隐藏 id 归 0，输入框清空）
+  // v2.41.0：开票客户搜索选择器重置——2026-08-11 起按服务端预填恢复
+  // （合同详情申请开票默认带出合同客户方 data-default-id>0；独立申请页无预填则清空，行为不变）
+  // 2026-08-12：同步恢复 data-fill 的抬头/税号（data-default-title/credit），
+  // 防止改选过其他客户后重开弹窗残留上次抬头/税号与选中客户不一致
   f.querySelectorAll('.cs-wrap').forEach(function(w){
-    var ci = w.querySelector('.cs-input'); if(ci) ci.value = '';
-    var hid = w.querySelector('.cs-id'); if(hid) hid.value = '0';
+    var ci = w.querySelector('.cs-input'); if(!ci) return;
+    var hid = w.querySelector('.cs-id');
+    var fn = w.getAttribute('data-fill-name');
+    var fc = w.getAttribute('data-fill-credit');
+    var ft = fn ? f.querySelector('[name="'+fn+'"]') : null;
+    var tx = fc ? f.querySelector('[name="'+fc+'"]') : null;
+    var defId = w.getAttribute('data-default-id') || '0';
+    if(defId !== '0'){
+      ci.value = w.getAttribute('data-default-name') || '';
+      if(hid) hid.value = defId;
+      if(ft) ft.value = w.getAttribute('data-default-title') || '';
+      if(tx) tx.value = w.getAttribute('data-default-credit') || '';
+    } else {
+      ci.value = '';
+      if(hid) hid.value = '0';
+      if(ft) ft.value = '';
+      if(tx) tx.value = '';
+    }
   });
   // 金额清空；开票内容改为下拉（v2.38.22）：合同标题命中某选项则预选，否则保持「请选择」；开票主体默认合同主体
   var amt = f.querySelector('input[name="amount"]'); if(amt) amt.value = '';

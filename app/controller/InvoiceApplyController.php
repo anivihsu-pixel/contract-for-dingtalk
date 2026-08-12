@@ -19,22 +19,22 @@ class InvoiceApplyController extends BaseController
     {
         $this->requirePermission('invoice:view');
         $companies = CompanyLogic::getListWithDefault();
-        // H2：开票客户下拉数据源（客户复用开票信息：联动 fill 自动带出抬头/税号）
-        $customers = \app\common\logic\CustomerLogic::getInvoiceOptions();
+        // 2026-08-11：开票客户数据源改为后端搜索（/ajax/party/search，cs-wrap data-cs-url），
+        // 不再向前端注入全量客户（原 getInvoiceOptions 全量注入 __formData.customer_id）
 
         View::assign('title', '发票申请');
         View::assign('menu_active', 'invoice_apply');
         View::assign('companies', $companies);
-        View::assign('customers', $customers);
+        View::assign('customers', []);
         View::assign('can_apply', $this->hasPermission('invoice:apply'));
         View::assign('can_create', $this->hasPermission('invoice:create'));
         View::assign('status_labels', InvoiceLogic::STATUS_LABELS);
         // 申请表单字段（服务端渲染到申请弹窗；后台「系统设置→发票表单」可配置字段组合）
-        View::assign('apply_fields', InvoiceFormConfig::pcRender([], ['companies' => $companies, 'customers' => $customers]));
+        View::assign('apply_fields', InvoiceFormConfig::pcRender([], ['companies' => $companies]));
         // F9：字段联动规则（通用组件 form-linkage.js 消费；后台设计器可配置）
         View::assign('invoice_form_rules', InvoiceFormConfig::rules());
-        // H3：客户数据源注入（联动 fill 动作消费：选客户 → 带出抬头/税号）
-        View::assign('invoice_customers', $customers);
+        // 客户数据源：已改后端搜索，__formData 不再注入全量客户
+        View::assign('invoice_customers', []);
         return View::fetch();
     }
 }

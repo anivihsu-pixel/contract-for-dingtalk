@@ -61,6 +61,10 @@ class InvoiceController extends BaseController
             if ((int)$contract['trade_attr'] === 0) {
                 return json_error('该合同为非交易合同，不计入收支，无需开具发票');
             }
+            // 2026-08-11：仅销售合同（我方收款方，向客户开票）可申请开票；采购合同（我方付款方）不开放
+            if (($contract['direction'] ?? '') !== 'sales') {
+                return json_error('仅销售合同（我方收款）可申请开票');
+            }
             if (!InvoiceLogic::canRegister($contractId)) {
                 return json_error('该合同当前状态不可登记开票');
             }

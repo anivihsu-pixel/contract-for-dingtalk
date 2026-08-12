@@ -132,6 +132,9 @@ if ($__can('library:view')) {
     $__blocks['library'] = ob_get_clean();
 }
 
+// 使用手册块（所有登录用户可见，不依赖任何权限码；输出在资料库菜单之后，见下方输出循环）
+$__blocks['manual'] = '<a href="/manual" class="nav-link' . ($menu_active == 'manual' ? ' active' : '') . '"><i class="bi bi-journal-text"></i> 使用手册</a>';
+
 // 系统设置块（P3：回收站/审计降级为子菜单，内部分高频/低频两组）
 $__canUserManage  = $__can('system:user');
 $__canRoleManage  = $__can('system:role');
@@ -186,6 +189,10 @@ foreach ($__order as $__key) {
     }
     if (isset($__blocks[$__key])) {
         echo $__blocks[$__key];
+    }
+    // 使用手册：紧随「资料库」菜单输出（各角色排序均含 library 位，保证位置一致）
+    if ($__key === 'library' && isset($__blocks['manual'])) {
+        echo $__blocks['manual'];
     }
 }
 if (isset($__blocks['admin'])) {

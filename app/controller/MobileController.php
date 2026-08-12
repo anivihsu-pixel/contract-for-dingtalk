@@ -234,6 +234,8 @@ class MobileController extends BaseController
         $notif  = ['/m/remind', 'bi-bell', '待办中心', true];
         // v2.39.0：我的业绩（所有用户可见，个人自视，置顶位置靠前）
         $mystats = ['/m/my-stats', 'bi-person-vcard', '我的业绩', true];
+        // 使用手册（所有用户可见的全局帮助入口，PC 页面自带响应式布局）
+        $manual = ['/manual', 'bi-journal-text', '使用手册', true];
         $finance= ['/m/finance',  'bi-cash-coin',        '财务概览', true];
         $reports= ['/m/reports',  'bi-bar-chart-line',   '报表概览', true];
         $proj   = ['/m/projects', 'bi-folder2',          '项目列表', $canViewProject];
@@ -244,16 +246,16 @@ class MobileController extends BaseController
 
         // P1：4 档排序——按角色高频场景重排，财务前置财务/报表，经理前置项目，普通员工前置归档
         if ($isAdmin) {
-            $order = [$notif, $mystats, $handover, $finance, $reports, $proj, $res, $arch, $party];
+            $order = [$notif, $mystats, $manual, $handover, $finance, $reports, $proj, $res, $arch, $party];
         } elseif ($isFinance) {
             // 财务：财务→报表→往来档案（移除项目/资料库/归档低频项）
-            $order = [$notif, $mystats, $finance, $reports, $party, $arch, $res, $proj, $handover];
+            $order = [$notif, $mystats, $manual, $finance, $reports, $party, $arch, $res, $proj, $handover];
         } elseif ($isManager) {
             // 部门经理：项目→归档→报表→财务→资料库→往来
-            $order = [$notif, $mystats, $proj, $arch, $reports, $finance, $res, $party, $handover];
+            $order = [$notif, $mystats, $manual, $proj, $arch, $reports, $finance, $res, $party, $handover];
         } else {
             // 普通员工：归档→项目→资料库→报表→往来（财务低频后置）
-            $order = [$notif, $mystats, $arch, $proj, $res, $reports, $party, $finance, $handover];
+            $order = [$notif, $mystats, $manual, $arch, $proj, $res, $reports, $party, $finance, $handover];
         }
         $modules = array_values(array_filter($order, function ($m) { return $m[3]; }));
         View::assign('modules', $modules);
@@ -822,6 +824,9 @@ class MobileController extends BaseController
         View::assign('g360', !empty($g360['ok']) ? $g360 : null);
         // v2.45.0：移动端共享成员（只读展示）+ 集团归属（管理动作在 PC 端）
         View::assign('share_list', CustomerLogic::getShares($id));
+        // 2026-08-11：移动端补共享/集团管理入口（负责人/超管可设，复用 PC 端 AJAX 接口 share/unshare/join-group/group-info）
+        View::assign('share_can_manage', $this->isSuperAdmin() || ((int)($customer['owner_id'] ?? 0) === $this->userId));
+        View::assign('share_departments', Db::name('department')->field('id, name')->order('id', 'asc')->select()->toArray());
         $parentName = '';
         if (!empty($customer['parent_id'])) {
             $parentName = (string)Db::name('customer')->where('id', (int)$customer['parent_id'])->value('name');
@@ -980,17 +985,16 @@ class MobileController extends BaseController
         View::assign('fin_summary', $sum);
         // F7：移动端发票申请（申请→审批→开票；申请表单字段由 InvoiceFormConfig 渲染，后台可配）
         $companies = \app\common\logic\CompanyLogic::getListWithDefault();
-        // H2：移动端开票客户下拉数据源（客户复用开票信息）
-        $mCustomers = \app\common\logic\CustomerLogic::getInvoiceOptions();
+        // 2026-08-11：开票客户数据源改后端搜索，不再向前端注入全量客户
         View::assign('m_can_apply_invoice', $this->hasPermission('invoice:apply') || $this->hasPermission('invoice:create'));
         View::assign('m_can_create_invoice', $this->hasPermission('invoice:create'));
         // UX 门控：登记回款/确认收款入口按 payment:create 权限渲染（与工作台快捷操作口径一致）
         View::assign('m_can_pay', $this->hasPermission('payment:create'));
-        View::assign('m_invoice_fields', \app\common\form\InvoiceFormConfig::mobileRender([], ['companies' => $companies, 'customers' => $mCustomers]));
+        View::assign('m_invoice_fields', \app\common\form\InvoiceFormConfig::mobileRender([], ['companies' => $companies]));
         // F9：移动端发票申请表单字段联动（form-linkage.js 通用组件）
         View::assign('m_invoice_form_rules', \app\common\form\InvoiceFormConfig::rules());
-        // H3：移动端客户数据源注入（联动 fill 动作消费）
-        View::assign('m_invoice_customers', $mCustomers);
+        // 客户数据源：已改后端搜索，__formData 不再注入全量客户
+        View::assign('m_invoice_customers', []);
         return View::fetch('mobile/finance');
     }
 
@@ -1033,11 +1037,12 @@ class MobileController extends BaseController
         $this->requirePermission('invoice:view');
         $canApply = $this->hasPermission('invoice:apply') || $this->hasPermission('invoice:create');
         $companies = \app\common\logic\CompanyLogic::getListWithDefault();
-        $mCustomers = \app\common\logic\CustomerLogic::getInvoiceOptions();
+        // 2026-08-11：开票客户数据源改后端搜索，不再向前端注入全量客户
         View::assign('m_can_apply_invoice', $canApply);
-        View::assign('m_invoice_fields', \app\common\form\InvoiceFormConfig::mobileRender([], ['companies' => $companies, 'customers' => $mCustomers]));
+        View::assign('m_invoice_fields', \app\common\form\InvoiceFormConfig::mobileRender([], ['companies' => $companies]));
         View::assign('m_invoice_form_rules', \app\common\form\InvoiceFormConfig::rules());
-        View::assign('m_invoice_customers', $mCustomers);
+        // 客户数据源：已改后端搜索，__formData 不再注入全量客户
+        View::assign('m_invoice_customers', []);
         return View::fetch('mobile/invoice_apply');
     }
 

@@ -195,9 +195,11 @@ class InvoiceFormConfig
                     $html .= '</select></div>';
                     break;
                 case 'customer':
-                    // v2.41.0：开票客户由下拉改为搜索选择器（涉及客户的一律不用下拉菜单）。
-                    // 数据源 window.__formData.customer_id（全量客户含 credit_code）由控制器注入，前端内存过滤；
-                    // 选中后派发 hidden change → form-linkage.js fill 动作带出抬头/税号（规则由后台设计器配置）。
+                    // 2026-08-11：开票客户数据源统一后端搜索（/ajax/party/search，与新建合同同源，含供应商），
+                    // 不再向前端注入全量客户（原 v2.41.0 data-cs-src 内存过滤）；
+                    // 选中后由 search-picker.js data-fill-* 内建带出抬头=客户名/税号=信用代码（不再依赖后台联动规则）。
+                    // data-quick：搜索无匹配时提供「快速新建客户」入口（与新建合同一致，建档后回填并带出抬头/税号），
+                    // 弹层与提交由 search-picker.js 内建（POST data-quick-url，复用 /ajax/customer/save 查重与数据权限）。
                     $selName = '';
                     foreach (($maps['customers'] ?? []) as $__cu) {
                         $__cid = is_array($__cu) ? ($__cu['id'] ?? 0) : $__cu;
@@ -207,7 +209,13 @@ class InvoiceFormConfig
                         }
                     }
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<div class="cs-wrap" data-cs-src="window.__formData.customer_id">'
+                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="invoice_title" data-fill-credit="tax_no"'
+                        . ' data-quick="customer" data-quick-url="/ajax/customer/save"'
+                        // data-default-*：服务端预填值（合同详情申请开票默认带出合同客户方）；
+                        // 页面打开弹窗重置选择器时按此恢复，data=0 时与旧行为一致清空；
+                        // data-default-title/credit 承载默认客户抬头/税号，重开弹窗同步恢复（防残留上次改选值）
+                        . ' data-default-id="' . self::h($val) . '" data-default-name="' . self::h($selName) . '"'
+                        . ' data-default-title="' . self::h($data['invoice_title'] ?? '') . '" data-default-credit="' . self::h($data['tax_no'] ?? '') . '">'
                         . '<input type="text" class="form-control cs-input" placeholder="' . self::h($ph) . '" autocomplete="off" value="' . self::h($selName) . '">'
                         . '<div class="cs-suggestions"></div>'
                         . '<input type="hidden" class="cs-id" name="' . $name . '" value="' . self::h($val) . '"></div></div>';
@@ -293,7 +301,8 @@ class InvoiceFormConfig
                     $html .= '</select></div>';
                     break;
                 case 'customer':
-                    // v2.41.0：开票客户由下拉改为搜索选择器（与 PC 端同构，数据源同为 window.__formData.customer_id）
+                    // 2026-08-11：同 PC 端——后端搜索 + data-fill-* 内建带出抬头/税号；
+                    // data-quick：搜索无匹配时可快速新建客户（与新建合同一致，建档后回填带出抬头/税号）
                     $selName = '';
                     foreach (($maps['customers'] ?? []) as $__cu) {
                         $__cid = is_array($__cu) ? ($__cu['id'] ?? 0) : $__cu;
@@ -303,7 +312,10 @@ class InvoiceFormConfig
                         }
                     }
                     $html .= '<div class="m-field">' . $label
-                        . '<div class="cs-wrap" data-cs-src="window.__formData.customer_id">'
+                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="invoice_title" data-fill-credit="tax_no"'
+                        . ' data-quick="customer" data-quick-url="/ajax/customer/save"'
+                        . ' data-default-id="' . self::h($val) . '" data-default-name="' . self::h($selName) . '"'
+                        . ' data-default-title="' . self::h($data['invoice_title'] ?? '') . '" data-default-credit="' . self::h($data['tax_no'] ?? '') . '">'
                         . '<input type="text" class="m-input cs-input" placeholder="' . self::h($ph) . '" autocomplete="off" value="' . self::h($selName) . '">'
                         . '<div class="cs-suggestions"></div>'
                         . '<input type="hidden" class="cs-id" name="' . $name . '" value="' . self::h($val) . '"></div></div>';

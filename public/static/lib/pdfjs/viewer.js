@@ -75,6 +75,7 @@
       var base = page.getViewport({ scale: 1 });
       // 页面宽度适配容器（留 8px 边距），整页可见不遮挡
       var fit = Math.min(2.5, Math.max(0.5, (cw - 8) / base.width));
+      lastFit = fit; // 记录当前页适配比例（双击切换「原始大小」用）
       var viewport = page.getViewport({ scale: fit });
       // v2.43.6：高 DPR 屏幕（钉钉移动端 WebView 通常 DPR≥2）按物理像素渲染——
       // canvas 内部像素 × devicePixelRatio 并固定 CSS 尺寸，避免 PDF 被放大显示时文字/线条发虚模糊
@@ -132,6 +133,72 @@
   btnNext.addEventListener('click', function () {
     if (pageNum < totalPages) { queueRenderPage(pageNum + 1); }
   });
+
+  // ===== 缩放控制（按钮 + 双指 pinch + 双击切换，对齐 docx 逻辑） =====
+  // 基准=适配状态（canvas CSS 尺寸已按容器宽度 fit 渲染），CSS zoom 叠加放大/缩小。
+  // 钉钉 WebView 是 Chromium 内核，原生支持 zoom（影响布局流，非 transform:scale）。
+  var lastFit = 1;      // 当前页适配比例（renderPage 内更新）
+  var baseZoom = 1;     // 适配状态 = 100%
+  var currentZoom = 1;
+  var zoomMin = 0.8;
+  var zoomMax = 3;
+  var zoomValEl = document.getElementById('zoomVal');
+
+  function applyZoom(z) {
+    currentZoom = Math.min(Math.max(z, zoomMin), zoomMax);
+    canvas.style.zoom = currentZoom;
+    // 放大时贴左上（flex 布局下 margin:0 auto 会使超宽 canvas 两侧溢出、左侧不可达），
+    // 适配/缩小时保持居中
+    canvas.style.margin = currentZoom > baseZoom ? '0' : '0 auto';
+    if (zoomValEl) { zoomValEl.textContent = Math.round(currentZoom / baseZoom * 100) + '%'; }
+  }
+  applyZoom(baseZoom);
+
+  // 按钮：每次 ±20%（相对 baseZoom）
+  var btnIn = document.getElementById('zoomIn');
+  var btnOut = document.getElementById('zoomOut');
+  if (btnIn) btnIn.addEventListener('click', function () { applyZoom(currentZoom + baseZoom * 0.2); });
+  if (btnOut) btnOut.addEventListener('click', function () { applyZoom(currentZoom - baseZoom * 0.2); });
+
+  // 双指 pinch 缩放
+  var pdfContainer = document.getElementById('pdfContainer');
+  var pinchDist = 0;
+  var pinchStartZoom = 1;
+  if (pdfContainer) {
+    pdfContainer.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 2) {
+        pinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        pinchStartZoom = currentZoom;
+      }
+    }, { passive: true });
+    pdfContainer.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 2 && pinchDist > 0) {
+        e.preventDefault();
+        var d = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        applyZoom(pinchStartZoom * d / pinchDist);
+      }
+    }, { passive: false });
+    pdfContainer.addEventListener('touchend', function (e) {
+      if (e.touches.length < 2) pinchDist = 0;
+    }, { passive: true });
+
+    // 双击切换：适配屏幕 / 原始大小(100%)
+    var lastTap = 0;
+    pdfContainer.addEventListener('touchend', function () {
+      var now = Date.now();
+      if (now - lastTap < 300) {
+        if (currentZoom < baseZoom * 1.1) { applyZoom(lastFit > 0 ? 1 / lastFit : 1); }
+        else { applyZoom(baseZoom); }
+      }
+      lastTap = now;
+    }, { passive: true });
+  }
 
   // 手势滑动翻页（可选：简化实现，暂不做）
 })();

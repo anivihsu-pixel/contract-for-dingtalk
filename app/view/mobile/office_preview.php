@@ -28,28 +28,35 @@ $isXlsx   = $ext === 'xlsx';
     .m-nav .back { color:#fff; text-decoration:none; font-size:14px; line-height:44px; margin-right:8px; }
     .m-nav .title { flex:1; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .m-nav .dl { color:#fff; font-size:13px; text-decoration:none; margin-left:8px; }
+    .m-nav .zoom-btns { display:flex; align-items:center; gap:2px; margin-left:6px; }
+    .m-nav .zoom-btns button { width:28px; height:28px; border:none; border-radius:4px; background:rgba(255,255,255,.2); color:#fff; font-size:16px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .m-nav .zoom-btns button:active { background:rgba(255,255,255,.35); }
+    .m-nav .zoom-btns .zoom-val { color:rgba(255,255,255,.8); font-size:11px; min-width:30px; text-align:center; }
     /* 加载/错误层（公共） */
-    .doc-area { position:relative; flex:1; overflow:auto; background:#404040; }
+    .doc-area { position:relative; flex:1; overflow:auto; background:#525659; }
     .doc-loading, .doc-error { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:14px; z-index:5; }
     .doc-loading { color:#ccc; }
     .doc-loading::before { content:''; display:inline-block; width:18px; height:18px; border:2px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; margin-right:8px; }
     @keyframes spin { to { transform:rotate(360deg); } }
     .doc-error { display:none; color:#ff6b6b; }
     /* PDF：Canvas 容器（v2.43.5 补丁④：flex-start——居中 + overflow 时超宽内容左侧溢出不可达） */
-    .pdf-container { flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:flex-start; background:#404040; position:relative; }
+    .pdf-container { flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:flex-start; background:#525659; position:relative; }
     .pdf-container canvas { display:block; margin:0 auto; }
     .pdf-loading, .pdf-error { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:14px; }
     .pdf-loading { color:#ccc; }
     .pdf-loading::before { content:''; display:inline-block; width:18px; height:18px; border:2px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; margin-right:8px; }
     .pdf-error { display:none; color:#ff6b6b; }
-    /* docx 渲染容器（docx-preview 自带 wrapper 样式，这里只做滚动与留白）
-       v2.44.3 移动端修复：docx-preview 默认 wrapper align-items:center 居中，窄屏下超宽页面
-       居中溢出且左侧不可达（与 PDF 曾出现的遮挡同因）。强制左对齐 + 页面宽度由 JS 渲染时固化，
-       保证 A4 原宽 + 横向滚动可达（与 PDF 预览交互一致）。 */
-    .office-container { flex:1; overflow:auto; background:#6b6b6b; padding:16px 0; }
-    #officeContainer .docx-wrapper { align-items: flex-start !important; }
+    /* docx 渲染容器：统一深灰背景 + 白色页面阴影，docx-preview 按 Word 原始页面宽度渲染后
+       JS 用 CSS zoom 等比缩小到屏幕宽度，无需横向滚动 */
+    #officeContainer .docx-wrapper { background:transparent !important; padding:12px 0 !important; align-items:center !important; }
+    #officeContainer section.docx { box-shadow:0 1px 6px rgba(0,0,0,.35); margin:0 12px 12px; }
+    /* docx 表格兜底边框：仅对原文档无边框的表格补浅灰边框（有边框的不覆盖，保原样式） */
+    #officeContainer .docx-table-no-border td, #officeContainer .docx-table-no-border th { border:1px solid #d9d9d9 !important; padding:4px 8px; }
     /* xlsx 表格容器（SheetJS sheet_to_html 生成的 table 富样式，加壳防溢出） */
     .xlsx-wrap { overflow:auto; background:#fff; margin:0 auto; max-width:100%; }
+    .xlsx-wrap table { border-collapse:collapse; }
+    .xlsx-wrap td, .xlsx-wrap th { border:1px solid #d9d9d9; padding:6px 10px; font-size:12px; color:#333; }
+    .xlsx-wrap th { background:#f5f7fa; font-weight:600; }
     .xlsx-sheet-title { background:#fff; color:#333; font-size:13px; font-weight:600; padding:10px 14px 4px; }
     /* 底部工具栏（仅 PDF） */
     .toolbar { display:flex; align-items:center; justify-content:center; height:48px; background:#fff; border-top:1px solid #e5e5e5; gap:16px; flex-shrink:0; user-select:none; }
@@ -63,6 +70,13 @@ $isXlsx   = $ext === 'xlsx';
     <a class="back" href="javascript:history.back()">← 返回</a>
     <span class="title"><?=htmlspecialchars($fileName)?></span>
     <a class="dl" href="<?=htmlspecialchars($fileUrl)?>" download="<?=htmlspecialchars($fileName)?>">下载</a>
+    <?php if ($isDocx || $isPdf || $isXlsx): ?>
+    <div class="zoom-btns">
+      <button type="button" id="zoomOut" aria-label="缩小">−</button>
+      <span class="zoom-val" id="zoomVal">100%</span>
+      <button type="button" id="zoomIn" aria-label="放大">+</button>
+    </div>
+    <?php endif; ?>
   </div>
 
   <?php if ($fileUrl): ?>
@@ -129,28 +143,107 @@ $isXlsx   = $ext === 'xlsx';
 
     if (EXT === 'docx') {
       // docx-preview：Blob 直接渲染（HTML 语义还原，样式近似 Word）
-      // v2.44.3 移动端修复：docx-preview 以容器宽度排版（段落/表格按容器宽计算），
-      // 窄屏下 A4 内容被压缩变形（两侧挤压）。先撑宽容器以桌面宽度渲染，完成后
-      // 固化每页渲染宽度并恢复容器——页面保持原宽 + 横向滚动查看（与 PDF 预览一致）。
+      // docx-preview 按容器宽度排版，窄屏下 A4 内容被压缩变形。先撑宽容器以 A4
+      // 原始宽度（~850px）渲染，恢复容器后用 CSS zoom 等比缩小到屏幕宽度。
+      // 钉钉 WebView 是 Chromium 内核，原生支持 zoom（影响布局流，非 transform:scale）。
       if (!window.docx || !window.JSZip) { showError('预览组件加载失败，请下载查看'); return; }
-      var renderWidth = Math.max(box.offsetWidth || 390, 850);
+      var renderWidth = 850;
       box.style.width = renderWidth + 'px';
       fetchFile().then(function (r) { return r.blob(); }).then(function (blob) {
         return window.docx.renderAsync(blob, box, null, { className: 'docx', inWrapper: true });
       }).then(function () {
+        // 在恢复容器宽度前，先测量并固定 section 宽度（否则容器收窄后 section 会被重新压缩）
         var secs = box.querySelectorAll('section.docx');
         var pageW = 0;
         for (var i = 0; i < secs.length; i++) {
-          pageW = Math.max(pageW, secs[i].getBoundingClientRect().width);
+          pageW = Math.max(pageW, secs[i].offsetWidth || secs[i].getBoundingClientRect().width);
         }
         if (pageW > 0) {
-          // 固化页面宽度，避免恢复容器后被 docx-preview 的 flex 布局重新压缩
           for (var j = 0; j < secs.length; j++) {
             secs[j].style.width = pageW + 'px';
             secs[j].style.flex = 'none';
           }
         }
+        // 表格兜底边框：原文档（如 python-docx 生成）无边框样式时补浅灰边框，方便辨认单元格
+        var docxTables = box.querySelectorAll('section.docx table');
+        for (var ti = 0; ti < docxTables.length; ti++) {
+          var firstCell = docxTables[ti].querySelector('td, th');
+          if (firstCell && getComputedStyle(firstCell).borderTopStyle === 'none') {
+            docxTables[ti].classList.add('docx-table-no-border');
+          }
+        }
         box.style.width = '';
+        // CSS zoom 等比缩小到屏幕宽度（减去两侧 12px 留白，Chromium 原生支持）
+        var wrapper = box.querySelector('.docx-wrapper');
+        var baseZoom = 1;
+        if (pageW > 0) {
+          var containerW = box.clientWidth || window.innerWidth;
+          var availW = containerW - 24; // 两侧各 12px margin
+          if (pageW > availW) {
+            baseZoom = availW / pageW;
+          }
+        }
+
+        // ===== 缩放控制（按钮 + 双指 pinch + 双击切换） =====
+        var currentZoom = baseZoom;
+        var zoomMin = baseZoom * 0.8;
+        var zoomMax = 3;
+        var zoomValEl = document.getElementById('zoomVal');
+
+        function applyZoom(z) {
+          currentZoom = Math.min(Math.max(z, zoomMin), zoomMax);
+          if (wrapper) { wrapper.style.zoom = currentZoom; }
+          else { for (var i = 0; i < secs.length; i++) { secs[i].style.zoom = currentZoom; } }
+          if (zoomValEl) { zoomValEl.textContent = Math.round(currentZoom / baseZoom * 100) + '%'; }
+        }
+        applyZoom(baseZoom);
+
+        // 按钮：每次 ±20%（相对 baseZoom）
+        var btnIn = document.getElementById('zoomIn');
+        var btnOut = document.getElementById('zoomOut');
+        if (btnIn) btnIn.addEventListener('click', function () { applyZoom(currentZoom + baseZoom * 0.2); });
+        if (btnOut) btnOut.addEventListener('click', function () { applyZoom(currentZoom - baseZoom * 0.2); });
+
+        // 双指 pinch 缩放
+        var docArea = document.getElementById('docArea');
+        var pinchDist = 0;
+        var pinchStartZoom = 1;
+        if (docArea) {
+          docArea.addEventListener('touchstart', function (e) {
+            if (e.touches.length === 2) {
+              pinchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              pinchStartZoom = currentZoom;
+            }
+          }, { passive: true });
+          docArea.addEventListener('touchmove', function (e) {
+            if (e.touches.length === 2 && pinchDist > 0) {
+              e.preventDefault();
+              var d = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              applyZoom(pinchStartZoom * d / pinchDist);
+            }
+          }, { passive: false });
+          docArea.addEventListener('touchend', function (e) {
+            if (e.touches.length < 2) pinchDist = 0;
+          }, { passive: true });
+
+          // 双击切换：适配屏幕 / 原始大小(100%)
+          var lastTap = 0;
+          docArea.addEventListener('touchend', function () {
+            var now = Date.now();
+            if (now - lastTap < 300) {
+              if (currentZoom < baseZoom * 1.1) { applyZoom(1); }
+              else { applyZoom(baseZoom); }
+            }
+            lastTap = now;
+          }, { passive: true });
+        }
+
         if (loadingEl) loadingEl.style.display = 'none';
       }).catch(function () { box.style.width = ''; showError('文档解析失败，请下载后用 Word 查看'); });
     } else if (EXT === 'xlsx') {
@@ -176,6 +269,78 @@ $isXlsx   = $ext === 'xlsx';
         box.innerHTML = '';
         box.appendChild(frag);
         if (loadingEl) loadingEl.style.display = 'none';
+
+        // ===== xlsx 缩放控制（按钮 + 双指 pinch + 双击切换，同 docx） =====
+        // 表格按原始宽度渲染（可能远超屏宽），CSS zoom 等比缩小到屏幕宽度适配
+        var xlsxWraps = box.querySelectorAll('.xlsx-wrap');
+        var tblW = 0;
+        for (var i = 0; i < xlsxWraps.length; i++) {
+          var w = xlsxWraps[i].scrollWidth || xlsxWraps[i].offsetWidth;
+          if (w > tblW) tblW = w;
+        }
+        var baseZoom = 1;
+        if (tblW > 0) {
+          var containerW = box.clientWidth || window.innerWidth;
+          var availW = containerW - 24; // 两侧各 12px 留白
+          if (tblW > availW) baseZoom = availW / tblW;
+        }
+        var currentZoom = baseZoom;
+        var zoomMin = baseZoom * 0.8;
+        var zoomMax = 3;
+        var zoomValEl = document.getElementById('zoomVal');
+
+        function applyZoom(z) {
+          currentZoom = Math.min(Math.max(z, zoomMin), zoomMax);
+          box.style.zoom = currentZoom;
+          if (zoomValEl) { zoomValEl.textContent = Math.round(currentZoom / baseZoom * 100) + '%'; }
+        }
+        applyZoom(baseZoom);
+
+        // 按钮：每次 ±20%（相对 baseZoom）
+        var btnIn = document.getElementById('zoomIn');
+        var btnOut = document.getElementById('zoomOut');
+        if (btnIn) btnIn.addEventListener('click', function () { applyZoom(currentZoom + baseZoom * 0.2); });
+        if (btnOut) btnOut.addEventListener('click', function () { applyZoom(currentZoom - baseZoom * 0.2); });
+
+        // 双指 pinch 缩放
+        var docArea = document.getElementById('docArea');
+        var pinchDist = 0;
+        var pinchStartZoom = 1;
+        if (docArea) {
+          docArea.addEventListener('touchstart', function (e) {
+            if (e.touches.length === 2) {
+              pinchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              pinchStartZoom = currentZoom;
+            }
+          }, { passive: true });
+          docArea.addEventListener('touchmove', function (e) {
+            if (e.touches.length === 2 && pinchDist > 0) {
+              e.preventDefault();
+              var d = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              applyZoom(pinchStartZoom * d / pinchDist);
+            }
+          }, { passive: false });
+          docArea.addEventListener('touchend', function (e) {
+            if (e.touches.length < 2) pinchDist = 0;
+          }, { passive: true });
+
+          // 双击切换：适配屏幕 / 原始大小(100%)
+          var lastTap = 0;
+          docArea.addEventListener('touchend', function () {
+            var now = Date.now();
+            if (now - lastTap < 300) {
+              if (currentZoom < baseZoom * 1.1) { applyZoom(1); }
+              else { applyZoom(baseZoom); }
+            }
+            lastTap = now;
+          }, { passive: true });
+        }
       }).catch(function () { showError('表格解析失败，请下载后用 Excel 查看'); });
     }
   })();

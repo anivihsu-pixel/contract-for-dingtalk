@@ -246,7 +246,7 @@ class ResourceController extends BaseController
         $ext = resolve_library_attachment_ext($realMime, $file->getOriginalExtension());
         if ($ext === null) {
             @unlink($tmpPath); // 类型被拒同样清理临时文件（含 $realMime 为空/不可识别）
-            return ['ok' => false, 'msg' => '文件真实类型不被支持（' . ($realMime ?: '未知') . '），上传被拒绝'];
+            return ['ok' => false, 'msg' => '文件真实类型不被支持（' . ($realMime ?: '未知') . '），请转换为 jpg/png/pdf/doc/xls 等标准格式后重新上传'];
         }
         try {
             $saveName = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;

@@ -491,10 +491,26 @@ class ContractController extends BaseController
         // H6c：合同详情「申请开票」复用 InvoiceFormConfig 配置化表单（字段/联动/自定义由后台「发票表单」设计器统一维护，
         // 与独立入口 /invoice-apply 单源一致；开票主体默认合同主体，关联合同固定为当前合同）
         $invCompanies = \app\common\logic\CompanyLogic::getListWithDefault();
-        $invCustomers = \app\common\logic\CustomerLogic::getInvoiceOptions();
-        View::assign('apply_fields', \app\common\form\InvoiceFormConfig::pcRender([], ['companies' => $invCompanies, 'customers' => $invCustomers]));
+        // 2026-08-11：开票客户数据源改后端搜索，不再向前端注入全量客户
+        // 2026-08-11：合同内开票默认带出合同本身的客户方（销售=我方甲方→对方乙方；采购=我方乙方→对方甲方），
+        // 仍可搜索/快速新建修改成别的开票信息（cs-input 可编辑解锁重选，或直接改抬头/税号）
+        $invData = [];
+        $invCustomers = [];
+        $invCustId = (($contract['direction'] ?? '') === 'purchase')
+            ? (int)($contract['party_a_customer_id'] ?? 0)
+            : (int)($contract['party_b_customer_id'] ?? 0);
+        if ($invCustId > 0) {
+            $invCust = Db::name('customer')->where('id', $invCustId)->where('is_deleted', 0)->find();
+            if ($invCust) {
+                $invData['customer_id'] = $invCustId;
+                $invData['invoice_title'] = (string)($invCust['name'] ?? '');
+                $invData['tax_no'] = (string)($invCust['credit_code'] ?? '');
+                $invCustomers = [['id' => $invCustId, 'name' => (string)($invCust['name'] ?? '')]];
+            }
+        }
+        View::assign('apply_fields', \app\common\form\InvoiceFormConfig::pcRender($invData, ['companies' => $invCompanies, 'customers' => $invCustomers]));
         View::assign('invoice_form_rules', \app\common\form\InvoiceFormConfig::rules());
-        View::assign('invoice_customers', $invCustomers);
+        View::assign('invoice_customers', []);
         // P2-15【M-A5】视图 timeline 注入：原 detail.php 顶层直查 ContractTimelineService（3 条查询）下沉控制器
         View::assign('timeline', \app\common\service\ContractTimelineService::getTimeline((int)$id));
         return View::fetch();
@@ -845,7 +861,7 @@ class ContractController extends BaseController
         $ext     = resolve_attachment_ext($realMime, $origExt);
         if ($ext === null) {
             @unlink($tmpPath); // 2026-08-05：类型被拒同样清理临时文件（含 $realMime 为空/不可识别）
-            return json_error('文件真实类型不被支持（' . ($realMime ?: '未知') . '），上传被拒绝');
+            return json_error('文件真实类型不被支持（' . ($realMime ?: '未知') . '），请转换为 jpg/png/pdf/doc/xls 等标准格式后重新上传');
         }
 
         try {

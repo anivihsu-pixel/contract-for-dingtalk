@@ -238,15 +238,25 @@ include __DIR__ . '/_head.php';
     </div>
   </div>
 
-  <!-- v2.45.0：共享与集团（共享成员只读展示；集团汇总懒加载；管理动作在 PC 端） -->
+  <!-- v2.45.0：共享与集团（共享成员只读展示；集团汇总懒加载；2026-08-11 起负责人/超管可在移动端直接设置共享与集团归属） -->
   <div class="m-card">
-    <div class="m-card-hd"><span><i class="bi bi-people me-1 text-primary"></i>共享与集团</span></div>
+    <div class="m-card-hd"><span><i class="bi bi-people me-1 text-primary"></i>共享与集团</span>
+      <?php if(!empty($share_can_manage)): ?><span style="font-size:13px;color:var(--m-brand);font-weight:400;cursor:pointer" onclick="mOpenShareSheet()">+ 添加共享</span><?php endif; ?>
+    </div>
     <div class="m-card-bd">
       <div class="m-kv"><div class="k">共享成员</div><div class="v" id="mShareNames">
         <?php if(empty($share_list)): ?><span class="text-muted">暂无（负责人可见；签过合同的同事自动可见）</span>
-        <?php else: $mNames=array(); foreach($share_list as $s){ $mNames[]=($s['target_type']==='DEPT'?'[部门]':'').$s['target_name']; } echo htmlspecialchars(implode('、', $mNames)); endif; ?>
+        <?php else: foreach($share_list as $s): $sKey=htmlspecialchars($s['target_type']).':'.(int)$s['target_id']; ?>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0">
+            <span><?=htmlspecialchars(($s['target_type']==='DEPT'?'[部门]':'').$s['target_name'])?></span>
+            <?php if(!empty($share_can_manage)): ?><a href="javascript:;" style="font-size:12px;color:#fa5151" data-share-key="<?=$sKey?>" onclick="mRemoveShare(this)">撤销</a><?php endif; ?>
+          </div>
+        <?php endforeach; endif; ?>
       </div></div>
-      <div class="m-kv"><div class="k">集团归属</div><div class="v"><?=htmlspecialchars($parent_name ?: '独立客户（非集团成员）')?></div></div>
+      <div class="m-kv"><div class="k">集团归属</div><div class="v">
+        <?=htmlspecialchars($parent_name ?: '独立客户（非集团成员）')?>
+        <?php if(!empty($share_can_manage)): ?><a href="javascript:;" style="margin-left:8px;font-size:13px;color:var(--m-brand)" onclick="mOpenGroupSheet()">设置</a><?php endif; ?>
+      </div></div>
       <div class="m-kv"><div class="k">集团合同</div><div class="v" id="mGroupSummary"><span class="text-muted">加载中…</span></div></div>
     </div>
   </div>
@@ -271,8 +281,52 @@ include __DIR__ . '/_head.php';
     </div>
     <div id="transferMore" style="text-align:center;padding:10px;color:var(--m-brand);font-size:14px;display:none">加载更多…</div>
     <div class="m-sheet-actions">
-      <button class="m-btn m-btn-ghost" id="transferCancel">取消</button>
-      <button class="m-btn m-btn-brand" id="transferConfirm">确认转移</button>
+    <button class="m-btn m-btn-ghost" id="transferCancel">取消</button>
+    <button class="m-btn m-btn-brand" id="transferConfirm">确认转移</button>
+  </div>
+</div></div>
+
+<!-- 2026-08-11：添加共享弹层（负责人/超管；用户/部门二选一，复用 /ajax/customer/{id}/share） -->
+<div class="m-sheet-mask" id="shareSheetMask">
+  <div class="m-sheet">
+    <h3>添加共享</h3>
+    <p>共享成员可查看本客户并关联合同（只读，不可编辑档案）</p>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <label style="flex:1;text-align:center;padding:8px 0;border:1px solid var(--m-line);border-radius:8px;font-size:14px;cursor:pointer">
+        <input type="radio" name="shareTypeRad" value="USER" checked onchange="mSetShareType(this.value)"> 用户
+      </label>
+      <label style="flex:1;text-align:center;padding:8px 0;border:1px solid var(--m-line);border-radius:8px;font-size:14px;cursor:pointer">
+        <input type="radio" name="shareTypeRad" value="DEPT" onchange="mSetShareType(this.value)"> 部门
+      </label>
+    </div>
+    <div class="m-user-list" id="shareUserList">
+      <?php if(empty($transfer_users)): ?><div class="m-user-empty">暂无可用用户</div>
+      <?php else: foreach($transfer_users as $u): ?>
+      <label class="m-user-opt"><input type="radio" name="shareTo" value="<?=intval($u['id'])?>"><span><?=htmlspecialchars($u['name'])?></span></label>
+      <?php endforeach; endif; ?>
+    </div>
+    <div class="m-user-list" id="shareDeptList" style="display:none">
+      <?php if(empty($share_departments)): ?><div class="m-user-empty">暂无部门</div>
+      <?php else: foreach($share_departments as $d): ?>
+      <label class="m-user-opt"><input type="radio" name="shareTo" value="<?=intval($d['id'])?>"><span><?=htmlspecialchars($d['name'])?></span></label>
+      <?php endforeach; endif; ?>
+    </div>
+    <div class="m-sheet-actions">
+      <button class="m-btn m-btn-ghost" id="shareCancel">取消</button>
+      <button class="m-btn m-btn-brand" id="shareConfirm">确认共享</button>
+    </div>
+  </div>
+</div>
+
+<!-- 2026-08-11：设置集团归属弹层（负责人/超管；父客户可多级，复用 /ajax/customer/{id}/join-group） -->
+<div class="m-sheet-mask" id="groupSheetMask">
+  <div class="m-sheet">
+    <h3>设置集团归属</h3>
+    <p>选择父客户（可多级）；不选则为独立客户</p>
+    <select class="m-input" id="groupParentSel" style="margin-bottom:14px;width:100%"><option value="0">加载中…</option></select>
+    <div class="m-sheet-actions">
+      <button class="m-btn m-btn-ghost" id="groupCancel">取消</button>
+      <button class="m-btn m-btn-brand" id="groupConfirm">保存</button>
     </div>
   </div>
 </div>
@@ -508,6 +562,94 @@ function mDeleteContact(id) {
     }).catch(function() { toast('网络错误'); });
   });
 }
+/* ===== 2026-08-11：共享 / 集团管理（移动端，复用 PC 端 AJAX：share/unshare/join-group/group-info） ===== */
+var mCustId = <?=(int)$customer['id']?>;
+var shareType = 'USER';
+function mSetShareType(t){
+  shareType = t;
+  document.getElementById('shareUserList').style.display = (t === 'USER') ? '' : 'none';
+  document.getElementById('shareDeptList').style.display = (t === 'DEPT') ? '' : 'none';
+}
+function mOpenShareSheet(){ document.getElementById('shareSheetMask').classList.add('show'); }
+function mConfirmShare(){
+  var sel = document.querySelector('#shareSheetMask input[name="shareTo"]:checked');
+  if(!sel){ toast('请选择共享对象'); return; }
+  document.getElementById('shareSheetMask').classList.remove('show');
+  var fd = new URLSearchParams();
+  fd.append('target_type', shareType);
+  fd.append('target_id', sel.value);
+  fetch('/ajax/customer/' + mCustId + '/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+    body: fd.toString()
+  }).then(r => r.json()).then(function(d) {
+    if (d.code === 0) { toast('共享成功'); location.reload(); }
+    else toast(d.msg || '共享失败');
+  }).catch(function(){ toast('网络错误'); });
+}
+function mRemoveShare(link){
+  var key = link.getAttribute('data-share-key'); // TYPE:id
+  if(!key) return;
+  var parts = key.split(':');
+  mConfirm('确定撤销该共享？撤销后对方不再可见此客户。', function(){
+    var fd = new URLSearchParams();
+    fd.append('target_type', parts[0]);
+    fd.append('target_id', parts[1]);
+    fetch('/ajax/customer/' + mCustId + '/unshare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+      body: fd.toString()
+    }).then(r => r.json()).then(function(d) {
+      if (d.code === 0) { toast('已撤销共享'); location.reload(); }
+      else toast(d.msg || '撤销失败');
+    }).catch(function(){ toast('网络错误'); });
+  });
+}
+var groupOptionsLoaded = false;
+function mOpenGroupSheet(){
+  var mask = document.getElementById('groupSheetMask');
+  if (groupOptionsLoaded) { mask.classList.add('show'); return; }
+  fetch('/ajax/customer/' + mCustId + '/group-info', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.json()).then(function(d) {
+      if (d.code !== 0 || !d.data) { toast('集团信息加载失败'); return; }
+      groupOptionsLoaded = true;
+      var opts = '<option value="0">（独立客户，不属于集团）</option>';
+      (d.data.options || []).forEach(function(o){
+        if (o.id === mCustId) return;
+        opts += '<option value="' + o.id + '"' + (d.data.current_parent_id === o.id ? ' selected' : '') + '>' + esc(o.name) + '</option>';
+      });
+      document.getElementById('groupParentSel').innerHTML = opts;
+      mask.classList.add('show');
+    }).catch(function(){ toast('网络错误'); });
+}
+function mConfirmGroup(){
+  var sel = document.getElementById('groupParentSel');
+  var pid = parseInt(sel.value || '0', 10);
+  document.getElementById('groupSheetMask').classList.remove('show');
+  var fd = new URLSearchParams();
+  fd.append('parent_id', pid);
+  fetch('/ajax/customer/' + mCustId + '/join-group', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+    body: fd.toString()
+  }).then(r => r.json()).then(function(d) {
+    if (d.code === 0) { toast(d.msg || '已保存'); location.reload(); }
+    else toast(d.msg || '保存失败');
+  }).catch(function(){ toast('网络错误'); });
+}
+(function(){
+  var sm = document.getElementById('shareSheetMask');
+  if (sm) {
+    document.getElementById('shareCancel').addEventListener('click', function(){ sm.classList.remove('show'); });
+    document.getElementById('shareConfirm').addEventListener('click', mConfirmShare);
+  }
+  var gm = document.getElementById('groupSheetMask');
+  if (gm) {
+    document.getElementById('groupCancel').addEventListener('click', function(){ gm.classList.remove('show'); });
+    document.getElementById('groupConfirm').addEventListener('click', mConfirmGroup);
+  }
+})();
+
 // v2.45.0：集团合同汇总懒加载
 (function(){
   var sumEl = document.getElementById('mGroupSummary');
