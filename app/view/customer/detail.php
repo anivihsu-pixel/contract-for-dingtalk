@@ -1,4 +1,16 @@
 <?php $title='客户详情'; $menu_active='customer'; include __DIR__.'/../layout/header.php'; ?>
+<style>
+/* v2.47.9：共享搜索下拉结果项——自定义样式，不依赖 .list-group 组件上下文
+   （钉钉 WebView 中 .list-group-item 脱离 .list-group 后边框/底色不渲染） */
+.share-user-item{
+  display:block;padding:6px 12px;font-size:13px;color:#1f2329;text-decoration:none;
+  border-bottom:1px solid #f0f1f3;cursor:pointer;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.share-user-item:last-child{border-bottom:0}
+.share-user-item:hover{background:#f2f3f5;color:#1f2329}
+.share-user-item.active{background:#e8f3ff;color:#3370ff}
+</style>
 <div class="d-flex justify-content-between align-items-center mb-3"><h4><?=htmlspecialchars($customer['name']??'')?></h4>
 <div>
   <!-- 2026-08-03：PC 端客户操作（与移动端 REV-31 对齐）。公海客户可认领；本人客户可释放/转移 -->
@@ -168,10 +180,12 @@
           <select id="shareTargetType" class="form-select form-select-sm" style="width:100px" onchange="fillShareTargets()">
             <option value="USER">用户</option><option value="DEPT">部门</option>
           </select>
-          <!-- v2.47.8：用户类型=全公司搜索式选择器（负责人主动授权，审计留痕） -->
+          <!-- v2.47.8：用户类型=全公司搜索式选择器（负责人主动授权，审计留痕）
+               v2.47.9 后：下拉显式 top:100%/left:0 定位 + 自定义浮层样式（替代 list-group），
+               避免绝对定位静态位置歧义与组件边框样式溢出弹窗范围 -->
           <div class="position-relative" id="shareUserWrap">
             <input type="text" id="shareUserSearch" class="form-control form-control-sm" style="width:220px" placeholder="搜索姓名（全公司）…" autocomplete="off">
-            <div id="shareUserList" class="position-absolute list-group" style="z-index:20;width:220px;max-height:200px;overflow:auto;display:none"></div>
+            <div id="shareUserList" style="position:absolute;top:100%;left:0;width:100%;z-index:1050;max-height:220px;overflow:auto;display:none;background:#fff;border:1px solid #d9dde3;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12)"></div>
           </div>
           <select id="shareTargetId" class="form-select form-select-sm" style="width:220px;display:none"><option value="0">选择共享对象…</option></select>
           <button type="button" class="btn btn-primary btn-sm" onclick="addShare()"><i class="bi bi-plus-lg"></i> 添加共享</button>
@@ -484,7 +498,7 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
     if (!list || !list.length) { box.style.display = 'none'; return; }
     var h = '';
     list.forEach(function(it){
-      h += '<a href="javascript:;" class="list-group-item list-group-item-action py-1 px-2" data-share-uid="'+it.id+'" data-share-uname="'+esc(it.name)+'" style="font-size:13px">'+esc(it.name)+'</a>';
+      h += '<a href="javascript:;" class="share-user-item" data-share-uid="'+it.id+'" data-share-uname="'+esc(it.name)+'">'+esc(it.name)+'</a>';
     });
     box.innerHTML = h;
     box.style.display = 'block';

@@ -326,6 +326,8 @@ include __DIR__ . '/_head.php';
         <input type="radio" name="shareTypeRad" value="DEPT" onchange="mSetShareType(this.value)"> 部门
       </label>
     </div>
+    <!-- v2.47.8 后：共享用户选择支持搜索框（本地过滤全公司用户），与客户转移选人同交互 -->
+    <input class="m-input" id="shareUserSearch" placeholder="搜索姓名…" style="margin-bottom:10px">
     <div class="m-user-list" id="shareUserList">
       <?php if(empty($share_target_options)): ?><div class="m-user-empty">暂无可用用户</div>
       <?php else: foreach($share_target_options as $u): ?>
@@ -676,12 +678,49 @@ function mDeleteContact(id) {
 /* ===== 2026-08-11：共享 / 集团管理（移动端，复用 PC 端 AJAX：share/unshare/join-group/group-info） ===== */
 var mCustId = <?=(int)$customer['id']?>;
 var shareType = 'USER';
+// v2.47.8 后：共享用户搜索框——仅搜索后列出匹配结果（无关键词不列用户，与 PC 端共享搜索口径一致）
+function filterShareUsers(q){
+  var list = document.getElementById('shareUserList');
+  if(!list) return;
+  var opts = list.querySelectorAll('.m-user-opt');
+  var hit = 0;
+  q = (q || '').trim();
+  opts.forEach(function(l){
+    var t = (l.querySelector('span') || l).textContent || '';
+    var show = !!q && t.indexOf(q) !== -1;   // 必须有关键词才显示
+    l.style.display = show ? '' : 'none';
+    if(show) hit++;
+  });
+  var empty = list.querySelector('.m-share-empty');
+  var msg = '';
+  if(!q){ msg = '输入姓名搜索用户'; }
+  else if(hit === 0 && opts.length){ msg = '未找到匹配用户'; }
+  if(msg){
+    if(!empty){
+      empty = document.createElement('div');
+      empty.className = 'm-user-empty m-share-empty';
+      list.appendChild(empty);
+    }
+    empty.textContent = msg;
+  } else if(empty){
+    empty.remove();
+  }
+}
 function mSetShareType(t){
   shareType = t;
   document.getElementById('shareUserList').style.display = (t === 'USER') ? '' : 'none';
   document.getElementById('shareDeptList').style.display = (t === 'DEPT') ? '' : 'none';
+  var s = document.getElementById('shareUserSearch');
+  if (s) {
+    s.style.display = (t === 'USER') ? '' : 'none';
+    if (t === 'USER') filterShareUsers(s.value);   // 切回用户模式时按当前关键词刷新
+  }
 }
-function mOpenShareSheet(){ document.getElementById('shareSheetMask').classList.add('show'); }
+function mOpenShareSheet(){
+  var s = document.getElementById('shareUserSearch');
+  if (s) { s.value = ''; filterShareUsers(''); }
+  document.getElementById('shareSheetMask').classList.add('show');
+}
 function mConfirmShare(){
   var sel = document.querySelector('#shareSheetMask input[name="shareTo"]:checked');
   if(!sel){ toast('请选择共享对象'); return; }
@@ -756,6 +795,15 @@ function mRemoveGroup(){
   if (sm) {
     document.getElementById('shareCancel').addEventListener('click', function(){ sm.classList.remove('show'); });
     document.getElementById('shareConfirm').addEventListener('click', mConfirmShare);
+    // v2.47.8 后：共享用户搜索框本地过滤
+    var su = document.getElementById('shareUserSearch');
+    if (su) {
+      var suTimer = null;
+      su.addEventListener('input', function(){
+        clearTimeout(suTimer);
+        suTimer = setTimeout(function(){ filterShareUsers(su.value); }, 200);
+      });
+    }
   }
   var gm = document.getElementById('groupSheetMask');
   if (gm) {

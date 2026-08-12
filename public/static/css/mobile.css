@@ -1115,7 +1115,9 @@ a { color: inherit; }
 .m-phrase{font-size:13px;color:var(--m-text-2);border:1px solid var(--m-line);border-radius:999px;padding:5px 14px;background:var(--m-card);cursor:pointer;-webkit-user-select:none;user-select:none}
 .m-phrase.on{color:var(--m-brand);border-color:var(--m-brand);background:var(--m-brand-light)}
 .m-phrase:active{opacity:.8}
-/* 底部固定「记录跟进」入口（负责人/超管） */
-.m-follow-dock{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:900}
+/* 底部固定「记录跟进」入口（负责人/超管）
+   z-index 90：低于 .m-sheet-mask(100)——弹层打开时 dock 被全屏遮罩覆盖，
+   不再遮挡添加共享/集团归属/记录跟进等弹层底部按钮（v2.47.8 后修复） */
+.m-follow-dock{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:90}
 .m-follow-dock .m-btn{width:100%;box-shadow:0 4px 16px rgba(11,108,246,.25)}
 
