@@ -404,8 +404,13 @@ include __DIR__ . '/_head.php';
 (function(){
   var custId = 0;
   function pickType(gridId, last){
-    var rb = document.querySelector('#' + gridId + ' input[value="' + last + '"]');
-    document.querySelectorAll('#' + gridId + ' input[name="actType"]').forEach(function(i){ i.checked = (i === rb); });
+    // v2.47.9 后：同步 .on 类（JS 控制高亮，不再依赖 :has(input:checked)——钉钉老 WebView 不支持）
+    document.querySelectorAll('#' + gridId + ' .m-act-btn').forEach(function(b){
+      var i = b.querySelector('input');
+      var on = (i.value === last);
+      b.classList.toggle('on', on);
+      i.checked = on;
+    });
   }
   function clearPhrases(rowId){
     document.getElementById(rowId).querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
@@ -418,9 +423,16 @@ include __DIR__ . '/_head.php';
   }
   function setActNext(days, elId, rowId){
     var el = document.getElementById(elId);
-    document.getElementById(rowId).querySelectorAll('.m-phrase').forEach(function(p){
-      p.classList.toggle('on', String(p.getAttribute('data-next')) === String(days));
-    });
+    var chips = document.getElementById(rowId).querySelectorAll('.m-phrase');
+    var wasOn = document.querySelector('#' + rowId + ' .m-phrase.on[data-next="' + days + '"]');
+    if (wasOn) {           // v2.47.9：再点已选中的快捷选项 → 取消下次跟进
+      chips.forEach(function(p){ p.classList.remove('on'); });
+      el.value = '';
+      return;
+    }
+    chips.forEach(function(p){ p.classList.remove('on'); });
+    var self = document.querySelector('#' + rowId + ' .m-phrase[data-next="' + days + '"]');
+    if (self) self.classList.add('on');
     if (String(days) === '0') { el.focus(); return; }
     var d = new Date();
     d.setDate(d.getDate() + parseInt(days, 10));
@@ -482,9 +494,21 @@ include __DIR__ . '/_head.php';
       else { toast(d.msg || '记录失败'); mask.classList.add('show'); }
     }).catch(function(){ toast('网络错误'); mask.classList.add('show'); });
   });
+  // v2.47.9：跟进方式改 JS 事件委托（钉钉 WebView 兼容）+ 点已选中可取消；
+  // preventDefault 阻止 label 激活产生第二次合成 click（否则选中后立即被翻转取消）
+  document.getElementById('qActTypeGrid').addEventListener('click', function(e){
+    var label = e.target.closest ? e.target.closest('.m-act-btn') : null;
+    if (!label) return;
+    e.preventDefault();
+    var input = label.querySelector('input');
+    pickType('qActTypeGrid', label.classList.contains('on') ? '' : input.value);
+  });
   document.getElementById('qActPhraseRow').addEventListener('click', function(e){
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;
-    if (p) { p.classList.add('on'); insertPhrase('qActContent', p.getAttribute('data-phrase')); }
+    if (!p) return;
+    if (p.classList.contains('on')) { p.classList.remove('on'); return; }  // 再点取消高亮
+    p.classList.add('on');
+    insertPhrase('qActContent', p.getAttribute('data-phrase'));
   });
   document.getElementById('qActNextRow').addEventListener('click', function(e){
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;

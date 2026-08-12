@@ -409,11 +409,21 @@ include __DIR__ . '/_head.php';
 var ACT_ICON  = {phone:'电', visit:'拜', meeting:'会', wechat:'微'};
 var ACT_LABEL = {phone:'电话', visit:'拜访', meeting:'会议', wechat:'微信'};
 var ME_NAME = <?=json_encode($me_name ?? '我', JSON_UNESCAPED_UNICODE)?>;
+// v2.47.9 后：跟进方式选中态由 JS 控制（.on 类 + radio.checked 同步），
+// 不再依赖 :has(input:checked)——钉钉老 WebView 不支持该选择器，点击无反馈被误认为「无法选择」
+function setActType(input) {
+  document.querySelectorAll('#actTypeGrid .m-act-btn').forEach(function(b){
+    var i = b.querySelector('input');
+    var on = (i === input);
+    b.classList.toggle('on', on);
+    i.checked = on;
+  });
+}
 function openActSheet() {
   var last = 'phone';
   try { last = localStorage.getItem('mActType') || 'phone'; } catch(e) {}
   var rb = document.querySelector('#actTypeGrid input[value="'+last+'"]');
-  document.querySelectorAll('#actTypeGrid input[name="actType"]').forEach(function(i){ i.checked = (i === rb); });
+  setActType(rb);
   document.getElementById('actContent').value = '';
   document.getElementById('actNextFollow').value = '';
   document.getElementById('actPhraseRow').querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
@@ -428,9 +438,16 @@ function insertPhrase(phrase) {
 }
 function setActNext(days) {
   var el = document.getElementById('actNextFollow');
-  document.getElementById('actNextRow').querySelectorAll('.m-phrase').forEach(function(p){
-    p.classList.toggle('on', String(p.getAttribute('data-next')) === String(days));
-  });
+  var chips = document.getElementById('actNextRow').querySelectorAll('.m-phrase');
+  var wasOn = document.querySelector('#actNextRow .m-phrase.on[data-next="' + days + '"]');
+  if (wasOn) {           // v2.47.9：再点已选中的快捷选项 → 取消下次跟进
+    chips.forEach(function(p){ p.classList.remove('on'); });
+    el.value = '';
+    return;
+  }
+  chips.forEach(function(p){ p.classList.remove('on'); });
+  var self = document.querySelector('#actNextRow .m-phrase[data-next="' + days + '"]');
+  if (self) self.classList.add('on');
   if (String(days) === '0') { el.focus(); return; }
   var d = new Date();
   d.setDate(d.getDate() + parseInt(days, 10));
@@ -493,9 +510,22 @@ function initActSheet() {
   if (!mask) return;
   document.getElementById('actCancel').addEventListener('click', function() { mask.classList.remove('show'); });
   document.getElementById('actConfirm').addEventListener('click', doSaveAct);
+  // v2.47.9：跟进方式改 JS 事件委托（不依赖 label 隐式激活隐藏 radio——钉钉 WebView 中不可靠）；
+  // preventDefault 阻止 label 激活产生第二次合成 click（否则选中后立即被翻转取消）；
+  // 点已选中的方式可取消选择，保存时回退 phone
+  document.getElementById('actTypeGrid').addEventListener('click', function(e) {
+    var label = e.target.closest ? e.target.closest('.m-act-btn') : null;
+    if (!label) return;
+    e.preventDefault();
+    var input = label.querySelector('input');
+    setActType(label.classList.contains('on') ? null : input);
+  });
   document.getElementById('actPhraseRow').addEventListener('click', function(e) {
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;
-    if (p) { p.classList.add('on'); insertPhrase(p.getAttribute('data-phrase')); }
+    if (!p) return;
+    if (p.classList.contains('on')) { p.classList.remove('on'); return; }  // 再点取消高亮
+    p.classList.add('on');
+    insertPhrase(p.getAttribute('data-phrase'));
   });
   document.getElementById('actNextRow').addEventListener('click', function(e) {
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;
