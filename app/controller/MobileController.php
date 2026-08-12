@@ -93,6 +93,22 @@ class MobileController extends BaseController
         View::assign('can_library', $isAdmin || $this->hasPermission('library:view'));
         View::assign('can_customer_pool', $isAdmin || $this->hasPermission('customer:view'));
         View::assign('can_report', $isAdmin || $this->hasPermission('payment:view') || $this->hasPermission('invoice:view'));
+        // v2.48.0：工作台「记录跟进」——负责人/超管可见（有 customer:edit 者）；可选客户=超管全部/普通=本人负责（均排除公海，公海需先认领）
+        $canFollow = $isAdmin || $this->hasPermission('customer:edit');
+        View::assign('can_follow', $canFollow);
+        $quickFollowCust = [];
+        if ($canFollow) {
+            try {
+                $q = Db::name('customer')->where('is_deleted', 0)->where('owner_id', '>', 0);
+                if (!$isAdmin) {
+                    $q->where('owner_id', $this->userId);
+                }
+                $quickFollowCust = $q->field('id,name')->limit(200)->order('id', 'desc')->select()->toArray();
+            } catch (\Throwable $e) {
+                $quickFollowCust = [];
+            }
+        }
+        View::assign('quick_follow_customers', $quickFollowCust);
         View::assign('is_admin', $isAdmin); // 今日提醒折叠逻辑（导航优化 Phase2：管理员全公司提醒默认折叠）
         // v2.40.0：管理层差异化卡片——总经理看全公司部门排名（不显示我的业绩），
         // 部门经理看本部门汇总+成员排名（同时显示我的业绩），普通商务仅显示我的业绩
@@ -807,11 +823,22 @@ class MobileController extends BaseController
         View::assign('is_owner', $isOwner);
         // v2.40.0 P0-2：手动记录跟进权限（复用 customer:edit）
         View::assign('can_edit', $this->hasPermission('customer:edit'));
+        // v2.48.0：详情页超管标记（记录跟进入口=负责人或超管）+ 当前用户名（保存后局部插入列表用）
+        View::assign('is_super_admin', $this->isSuperAdmin());
+        View::assign('me_name', $this->user['name'] ?? '我');
         // 2026-08-03：转移选人弹窗初始列表（非管理员仅同部门、排除本人；与审批转交同权限范围）
         View::assign('transfer_users', UserLogic::getTransferTargets(
             $this->userId,
             !empty($this->user['is_admin']),
             (int)($this->user['dept_id'] ?? 0)
+        ));
+        // v2.47.8：移动端「添加共享」弹层用户放开全公司（$scopeAll=true，与 PC 共享选人一致）
+        View::assign('share_target_options', UserLogic::getTransferTargets(
+            $this->userId,
+            !empty($this->user['is_admin']),
+            (int)($this->user['dept_id'] ?? 0),
+            '',
+            true
         ));
         // v2.38.3：M9 独立联系人矩阵
         // v2.38.11: 主联系人字段兜底（customer_contact 空时展示 customer.contact_name）
@@ -830,6 +857,8 @@ class MobileController extends BaseController
             $parentName = (string)Db::name('customer')->where('id', (int)$customer['parent_id'])->value('name');
         }
         View::assign('parent_name', $parentName);
+        // v2.47.8：集团归属可选父客户服务端注入（移动端弹层打开即就绪，不依赖 AJAX 往返）
+        View::assign('group_options', CustomerLogic::getOptionsForSelect(100));
         return View::fetch('mobile/customer_detail');
     }
 

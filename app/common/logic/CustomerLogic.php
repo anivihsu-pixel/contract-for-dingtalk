@@ -506,9 +506,12 @@ class CustomerLogic
     /** 客户列表（含归属人姓名，v2.38.2） */
     public static function getList(int $page, int $pageSize, array $filter = [], array $sort = ['id', 'desc']): array
     {
+        // v2.47.8：child_count（子客户数=集团根标记）+ parent_name（集团成员 tooltip 用）
         $query = Db::name('customer')->alias('c')->where('c.is_deleted', 0)
             ->leftJoin('user u', 'c.owner_id = u.id')
-            ->field('c.*, u.name as owner_name');
+            ->leftJoin('customer p', 'p.id = c.parent_id')
+            ->field('c.*, u.name as owner_name, p.name as parent_name, '
+                . '(select count(*) from customer cc where cc.parent_id = c.id and cc.is_deleted = 0) as child_count');
         // M4 修复：join user 后 owner_id/dept_id 两表都有，必须带别名，否则 MySQL 下非管理员列表报 ambiguous column
         AuthLogic::appendDataScope($query, 'c.owner_id', 'c.dept_id');
         // v2.45.0：追加共享客户（白名单放行，仅客户列表；has_all 无需追加）

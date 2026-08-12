@@ -84,12 +84,14 @@ class UserLogic
      * @param string $keyword 姓名关键词（可选）
      * @return array [['id'=>int, 'name'=>string], ...] 最多 200 条
      */
-    public static function getTransferTargets(int $userId, bool $isAdmin, int $deptId, string $keyword = ''): array
+    public static function getTransferTargets(int $userId, bool $isAdmin, int $deptId, string $keyword = '', bool $scopeAll = false): array
     {
         $q = Db::name('user')
             ->where('status', 1)
             ->where('id', '<>', $userId);
-        if (!$isAdmin) {
+        // v2.47.8：共享选人场景（$scopeAll=true）放开为全公司（负责人主动授权+审计留痕）；
+        // 转移/转交等既有调用默认仍限同部门（安全边界，不破坏原行为）
+        if (!$isAdmin && !$scopeAll) {
             $q->where('dept_id', $deptId);
         }
         $kw = trim($keyword);

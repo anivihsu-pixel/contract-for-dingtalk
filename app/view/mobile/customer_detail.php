@@ -86,7 +86,7 @@ include __DIR__ . '/_head.php';
     <div class="m-card-bd">
       <?php $ctShown = 0; ?>
       <?php if(empty($contracts)): ?>
-        <div class="m-empty" style="padding:28px 0"><i class="bi bi-folder2-open"></i>暂无关联合同</div>
+        <div class="m-empty m-empty-sm"><i class="bi bi-folder2-open"></i>暂无关联合同</div>
       <?php else: foreach($contracts as $ct):
           $ctShown++;
           $isNon = ($ct['trade_attr'] ?? 1) == 0;
@@ -122,7 +122,7 @@ include __DIR__ . '/_head.php';
     <div class="m-card-bd">
       <?php $payShown = 0; ?>
       <?php if(empty($payments)): ?>
-        <div class="m-empty" style="padding:28px 0"><i class="bi bi-receipt"></i>暂无回款记录</div>
+        <div class="m-empty m-empty-sm"><i class="bi bi-receipt"></i>暂无回款记录</div>
       <?php else: foreach($payments as $p):
           $payShown++;
           $isRecv = ($p['payment_type'] ?? 'RECEIVABLE') === 'RECEIVABLE';
@@ -147,17 +147,44 @@ include __DIR__ . '/_head.php';
 
   <!-- 跟进时间轴 -->
   <div class="m-card">
-    <div class="m-card-hd"><span><i class="bi bi-clock-history me-1 text-primary"></i>跟进记录</span><span class="m-tag m-tag-muted"><?=(int)($stats['activity_count'] ?? count($activities))?></span>
-      <?php if(!empty($can_edit) && !empty($is_owner)): ?><span class="m-link" style="margin-left:auto;font-size:13px" onclick="openActSheet()">+ 记录跟进</span><?php endif; ?>
+    <div class="m-card-hd"><span><i class="bi bi-clock-history me-1 text-primary"></i>跟进记录</span><span class="m-tag m-tag-muted" id="actCount"><?=(int)($stats['activity_count'] ?? count($activities))?></span>
+      <?php if(!empty($can_edit) && (!empty($is_owner) || !empty($is_super_admin))): ?><span class="m-act" onclick="openActSheet()"><i class="bi bi-pencil"></i>记录跟进</span><?php endif; ?>
     </div>
-    <div class="m-card-bd">
+    <div class="m-card-bd" id="actList">
       <?php $actShown = 0; ?>
       <?php if(empty($activities)): ?>
-        <div class="m-empty" style="padding:24px 0"><i class="bi bi-clock-history"></i>暂无跟进记录</div>
-      <?php else: foreach($activities as $a):
-          $actShown++; ?>
-        <div class="m-kv<?=$actShown>3?' m-lst-more':''?>"<?=$actShown>3?' style="display:none"':''?>><div class="k"><?=htmlspecialchars(activity_type_label($a['type'] ?? ''))?></div><div class="v"><?=htmlspecialchars($a['content'] ?? '')?><div style="color:var(--m-text-3);font-size:12px"><?=htmlspecialchars($a['user_name'] ?? '')?> · <?=htmlspecialchars(substr($a['created_at'] ?? '', 0, 16))?><?php if(!empty($a['next_follow_at'])): ?> · 下次跟进 <?=htmlspecialchars(substr($a['next_follow_at'], 0, 16))?><?php endif; ?></div></div></div>
-      <?php endforeach; endif; ?>
+        <div class="m-empty m-empty-sm" id="actEmpty"><i class="bi bi-clock-history"></i>暂无跟进记录</div>
+      <?php else:
+        // v2.48.0：按日期分组（今天/昨天/更早）；总经理等有权限用户可见该客户全量跟进记录（不按人过滤）
+        $actGroups = ['today' => [], 'yesterday' => [], 'earlier' => []];
+        foreach($activities as $a){
+            $d = substr($a['created_at'] ?? '', 0, 10);
+            if($d === date('Y-m-d')) $actGroups['today'][] = $a;
+            elseif($d === date('Y-m-d', strtotime('-1 day'))) $actGroups['yesterday'][] = $a;
+            else $actGroups['earlier'][] = $a;
+        }
+        $actGroupLabels = ['today' => '今天', 'yesterday' => '昨天', 'earlier' => '更早'];
+        $actTypeChar = ['phone' => '电', 'visit' => '拜', 'meeting' => '会', 'wechat' => '微'];
+        foreach($actGroupLabels as $gk => $gl):
+          if(empty($actGroups[$gk])) continue; ?>
+        <div class="m-act-grp"><?=$gl?></div>
+          <?php foreach($actGroups[$gk] as $a):
+            $actShown++;
+            $hide = $actShown > 3;
+            $type = $a['type'] ?? '';
+            $tLabel = activity_type_label($type);
+            $tChar = $actTypeChar[$type] ?? '记';
+            $next = !empty($a['next_follow_at']) ? htmlspecialchars(substr($a['next_follow_at'], 0, 16)) : ''; ?>
+        <div class="m-act-item<?=$hide?' m-lst-more':''?>"<?=$hide?' style="display:none"':''?>>
+          <span class="m-act-ic m-act-ic-<?=htmlspecialchars($type)?>" title="<?=htmlspecialchars($tLabel)?>"><?=$tChar?></span>
+          <div class="m-act-bd">
+            <div class="m-act-txt"><?=htmlspecialchars($a['content'] ?? '')?></div>
+            <div class="m-act-meta"><?=htmlspecialchars($a['user_name'] ?? '')?> · <?=htmlspecialchars(substr($a['created_at'] ?? '', 5, 11))?><?php if($next !== ''): ?><span class="m-act-next">下次 <?=$next?></span><?php endif; ?></div>
+          </div>
+        </div>
+          <?php endforeach;
+        endforeach; ?>
+      <?php endif; ?>
       <?php if($actShown>3): ?><div class="m-row m-lst-more-btn" onclick="mShowMore(this)" style="justify-content:center;color:var(--m-brand);font-weight:600;padding:10px 0">展开全部 <?=$actShown?> 条记录 <i class="bi bi-chevron-down"></i></div><?php endif; ?>
     </div>
   </div>
@@ -165,11 +192,11 @@ include __DIR__ . '/_head.php';
   <!-- 联系人 (M9) -->
   <div class="m-card">
     <div class="m-card-hd"><span><i class="bi bi-person-lines-fill me-1 text-primary"></i>联系人</span><span class="m-tag m-tag-muted"><?=count($contacts)?></span>
-      <?php if($is_owner): ?><span class="m-link" style="margin-left:auto;font-size:13px" onclick="mToggleContactForm(0)">+ 添加</span><?php endif; ?>
+      <?php if($is_owner): ?><span class="m-act" onclick="mToggleContactForm(0)"><i class="bi bi-person-plus"></i>添加</span><?php endif; ?>
     </div>
     <div class="m-card-bd">
       <?php if(empty($contacts)): ?>
-        <div class="m-empty" style="padding:24px 0"><i class="bi bi-person"></i>暂无联系人</div>
+        <div class="m-empty m-empty-sm"><i class="bi bi-person"></i>暂无联系人</div>
       <?php else: foreach($contacts as $c): ?>
         <div class="m-kv">
           <div class="k"><?=htmlspecialchars($c['name'])?><?=!empty($c['is_primary'])?' <span class="m-tag m-tag-ok" style="font-size:10px">主</span>':''?><br><span style="font-size:12px;color:var(--m-text-3)"><?=htmlspecialchars($c['role'])?></span></div>
@@ -241,7 +268,7 @@ include __DIR__ . '/_head.php';
   <!-- v2.45.0：共享与集团（共享成员只读展示；集团汇总懒加载；2026-08-11 起负责人/超管可在移动端直接设置共享与集团归属） -->
   <div class="m-card">
     <div class="m-card-hd"><span><i class="bi bi-people me-1 text-primary"></i>共享与集团</span>
-      <?php if(!empty($share_can_manage)): ?><span style="font-size:13px;color:var(--m-brand);font-weight:400;cursor:pointer" onclick="mOpenShareSheet()">+ 添加共享</span><?php endif; ?>
+      <?php if(!empty($share_can_manage)): ?><span class="m-act" onclick="mOpenShareSheet()"><i class="bi bi-people-fill"></i>添加共享</span><?php endif; ?>
     </div>
     <div class="m-card-bd">
       <div class="m-kv"><div class="k">共享成员</div><div class="v" id="mShareNames">
@@ -255,7 +282,7 @@ include __DIR__ . '/_head.php';
       </div></div>
       <div class="m-kv"><div class="k">集团归属</div><div class="v">
         <?=htmlspecialchars($parent_name ?: '独立客户（非集团成员）')?>
-        <?php if(!empty($share_can_manage)): ?><a href="javascript:;" style="margin-left:8px;font-size:13px;color:var(--m-brand)" onclick="mOpenGroupSheet()">设置</a><?php endif; ?>
+        <?php if(!empty($share_can_manage)): ?><a href="javascript:;" class="m-act" onclick="mOpenGroupSheet()"><i class="bi bi-diagram-3"></i>设置</a><?php endif; ?>
       </div></div>
       <div class="m-kv"><div class="k">集团合同</div><div class="v" id="mGroupSummary"><span class="text-muted">加载中…</span></div></div>
     </div>
@@ -300,8 +327,8 @@ include __DIR__ . '/_head.php';
       </label>
     </div>
     <div class="m-user-list" id="shareUserList">
-      <?php if(empty($transfer_users)): ?><div class="m-user-empty">暂无可用用户</div>
-      <?php else: foreach($transfer_users as $u): ?>
+      <?php if(empty($share_target_options)): ?><div class="m-user-empty">暂无可用用户</div>
+      <?php else: foreach($share_target_options as $u): ?>
       <label class="m-user-opt"><input type="radio" name="shareTo" value="<?=intval($u['id'])?>"><span><?=htmlspecialchars($u['name'])?></span></label>
       <?php endforeach; endif; ?>
     </div>
@@ -318,34 +345,55 @@ include __DIR__ . '/_head.php';
   </div>
 </div>
 
-<!-- 2026-08-11：设置集团归属弹层（负责人/超管；父客户可多级，复用 /ajax/customer/{id}/join-group） -->
+<!-- 2026-08-11：设置集团归属弹层（负责人/超管；父客户可多级；v2.47.8 搜索框带出 + 未搜到可快速新建客户） -->
 <div class="m-sheet-mask" id="groupSheetMask">
   <div class="m-sheet">
     <h3>设置集团归属</h3>
-    <p>选择父客户（可多级）；不选则为独立客户</p>
-    <select class="m-input" id="groupParentSel" style="margin-bottom:14px;width:100%"><option value="0">加载中…</option></select>
+    <p>搜索并选择父客户（可多级）；不选则为独立客户</p>
+    <div class="cs-wrap" data-cs-src="window.__groupOptions" data-quick="customer" data-quick-url="/ajax/customer/save" style="margin-bottom:14px">
+      <input type="text" class="cs-input m-input" placeholder="搜索集团客户…未搜到可快速新建" autocomplete="off" value="<?=htmlspecialchars($parent_name ?: '')?>">
+      <div class="cs-suggestions"></div>
+      <input type="hidden" class="cs-id" id="mGroupParentId" value="<?=(int)($customer['parent_id'] ?? 0)?>">
+    </div>
     <div class="m-sheet-actions">
       <button class="m-btn m-btn-ghost" id="groupCancel">取消</button>
       <button class="m-btn m-btn-brand" id="groupConfirm">保存</button>
     </div>
+    <?php // v2.47.8：已设置集团归属时提供「取消集团归属」一键移除（确认+提交+刷新）
+    if(!empty($customer['parent_id'])): ?>
+    <button class="m-btn m-btn-danger" id="groupRemove" style="width:100%;margin-top:10px">取消集团归属</button>
+    <?php endif; ?>
   </div>
 </div>
 
-<!-- v2.40.0 P0-2：记录跟进底部弹层 -->
+<!-- v2.40.0 P0-2 记录跟进底部弹层（v2.48.0 快捷录入：方式图标+快捷短语+下次跟进可选） -->
 <div class="m-sheet-mask" id="actSheetMask">
   <div class="m-sheet">
     <h3>记录跟进</h3>
     <p>跟进方式</p>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
-      <label class="m-user-opt"><input type="radio" name="actType" value="phone" checked><span>电话</span></label>
-      <label class="m-user-opt"><input type="radio" name="actType" value="visit"><span>拜访</span></label>
-      <label class="m-user-opt"><input type="radio" name="actType" value="meeting"><span>会议</span></label>
-      <label class="m-user-opt"><input type="radio" name="actType" value="wechat"><span>微信</span></label>
+    <div class="m-act-grid" id="actTypeGrid">
+      <label class="m-act-btn"><input type="radio" name="actType" value="phone" checked><span>电</span><em>电话</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="visit"><span>拜</span><em>拜访</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="meeting"><span>会</span><em>会议</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="wechat"><span>微</span><em>微信</em></label>
+    </div>
+    <p>快捷短语</p>
+    <div class="m-phrase-row" id="actPhraseRow">
+      <span class="m-phrase" data-phrase="已电话沟通">已电话沟通</span>
+      <span class="m-phrase" data-phrase="确认意向">确认意向</span>
+      <span class="m-phrase" data-phrase="已发资料">已发资料</span>
+      <span class="m-phrase" data-phrase="约定下次">约定下次</span>
     </div>
     <p>跟进内容</p>
     <textarea class="m-input" id="actContent" rows="3" maxlength="500" placeholder="本次沟通要点、客户意向等" style="resize:vertical;height:auto"></textarea>
-    <p>下次跟进时间（可不填）</p>
-    <input class="m-input" type="datetime-local" id="actNextFollow">
+    <p>下次跟进（可选）</p>
+    <div class="m-phrase-row" id="actNextRow">
+      <span class="m-phrase" data-next="1">明天 09:00</span>
+      <span class="m-phrase" data-next="3">3 天后</span>
+      <span class="m-phrase" data-next="7">一周后</span>
+      <span class="m-phrase" data-next="0">自定义</span>
+    </div>
+    <input class="m-input" type="datetime-local" id="actNextFollow" style="margin-top:8px">
     <div class="m-sheet-actions">
       <button class="m-btn m-btn-ghost" id="actCancel">取消</button>
       <button class="m-btn m-btn-brand" id="actConfirm">保存</button>
@@ -355,39 +403,102 @@ include __DIR__ . '/_head.php';
 
 <!-- REV-31：客户操作 JS（认领/释放/转移） -->
 <script>
-/* ===== v2.40.0 P0-2：记录跟进 ===== */
+/* ===== v2.40.0 P0-2 记录跟进（v2.48.0 快捷录入：记住方式/快捷短语/下次跟进可选/局部插入） ===== */
+var ACT_ICON  = {phone:'电', visit:'拜', meeting:'会', wechat:'微'};
+var ACT_LABEL = {phone:'电话', visit:'拜访', meeting:'会议', wechat:'微信'};
+var ME_NAME = <?=json_encode($me_name ?? '我', JSON_UNESCAPED_UNICODE)?>;
 function openActSheet() {
+  var last = 'phone';
+  try { last = localStorage.getItem('mActType') || 'phone'; } catch(e) {}
+  var rb = document.querySelector('#actTypeGrid input[value="'+last+'"]');
+  document.querySelectorAll('#actTypeGrid input[name="actType"]').forEach(function(i){ i.checked = (i === rb); });
   document.getElementById('actContent').value = '';
   document.getElementById('actNextFollow').value = '';
-  var r = document.querySelector('#actSheetMask input[name="actType"]:checked');
-  if (r) r.checked = false;
-  document.querySelector('#actSheetMask input[name="actType"][value="phone"]').checked = true;
+  document.getElementById('actPhraseRow').querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
+  document.getElementById('actNextRow').querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
   document.getElementById('actSheetMask').classList.add('show');
 }
+function insertPhrase(phrase) {
+  var ta = document.getElementById('actContent');
+  var v = ta.value.trim();
+  ta.value = v === '' ? phrase : v + '\n' + phrase;
+  ta.focus();
+}
+function setActNext(days) {
+  var el = document.getElementById('actNextFollow');
+  document.getElementById('actNextRow').querySelectorAll('.m-phrase').forEach(function(p){
+    p.classList.toggle('on', String(p.getAttribute('data-next')) === String(days));
+  });
+  if (String(days) === '0') { el.focus(); return; }
+  var d = new Date();
+  d.setDate(d.getDate() + parseInt(days, 10));
+  if (parseInt(days, 10) === 1) d.setHours(9, 0, 0, 0);
+  function pad(n){ return String(n).padStart(2, '0'); }
+  el.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
 function doSaveAct() {
-  var type = document.querySelector('#actSheetMask input[name="actType"]:checked');
+  var type = document.querySelector('#actTypeGrid input[name="actType"]:checked');
   var content = document.getElementById('actContent').value.trim();
   var next = document.getElementById('actNextFollow').value;
   if (!content) { toast('请填写跟进内容'); return; }
-  document.getElementById('actSheetMask').classList.remove('show');
+  var t = type ? type.value : 'phone';
+  try { localStorage.setItem('mActType', t); } catch(e) {}
+  var mask = document.getElementById('actSheetMask');
+  mask.classList.remove('show');
   var fd = new URLSearchParams();
-  fd.append('type', type ? type.value : 'phone');
+  fd.append('type', t);
   fd.append('content', content);
   fd.append('next_follow_at', next);
-  fetch('/ajax/customer/<?=$customer['id']?>/activity', {
+  fetch('/ajax/customer/' + mCustId + '/activity', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
     body: fd.toString()
   }).then(r => r.json()).then(d => {
-    if (d.code === 0) { toast('已记录跟进'); location.reload(); }
-    else { toast(d.msg || '记录失败'); }
-  }).catch(() => { toast('网络错误'); });
+    if (d.code === 0) { toast('已记录跟进'); insertActRow(t, content, next); }
+    else { toast(d.msg || '记录失败'); mask.classList.add('show'); }
+  }).catch(() => { toast('网络错误'); mask.classList.add('show'); });
+}
+/* v2.48.0：保存成功后局部插入「今天」分组顶部，不整页刷新 */
+function insertActRow(type, content, next) {
+  var list = document.getElementById('actList');
+  if (!list) return;
+  var empty = document.getElementById('actEmpty');
+  if (empty) empty.remove();
+  var now = new Date();
+  function pad(n){ return String(n).padStart(2, '0'); }
+  var hm = pad(now.getHours()) + ':' + pad(now.getMinutes());
+  var nextHtml = next ? '<span class="m-act-next">下次 ' + esc(next.replace('T', ' ').substring(0, 16)) + '</span>' : '';
+  var row = '<div class="m-act-item">'
+    + '<span class="m-act-ic m-act-ic-' + type + '" title="' + esc(ACT_LABEL[type] || '') + '">' + (ACT_ICON[type] || '记') + '</span>'
+    + '<div class="m-act-bd"><div class="m-act-txt">' + esc(content) + '</div>'
+    + '<div class="m-act-meta">' + esc(ME_NAME) + ' · ' + hm + nextHtml + '</div></div></div>';
+  function el(html){ var d = document.createElement('div'); d.innerHTML = html; return d.firstChild; }
+  var nodes = list.children, todayGrp = null, todayFirst = null;
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].className === 'm-act-grp' && nodes[i].textContent.trim() === '今天') { todayGrp = nodes[i]; todayFirst = nodes[i + 1] || null; break; }
+  }
+  if (todayGrp) {
+    list.insertBefore(el(row), todayFirst);
+  } else {
+    list.insertBefore(el('<div class="m-act-grp">今天</div>'), list.firstChild);
+    list.insertBefore(el(row), list.firstChild.nextSibling);
+  }
+  var cnt = document.getElementById('actCount');
+  if (cnt) cnt.textContent = parseInt(cnt.textContent, 10) + 1;
 }
 function initActSheet() {
   var mask = document.getElementById('actSheetMask');
   if (!mask) return;
   document.getElementById('actCancel').addEventListener('click', function() { mask.classList.remove('show'); });
   document.getElementById('actConfirm').addEventListener('click', doSaveAct);
+  document.getElementById('actPhraseRow').addEventListener('click', function(e) {
+    var p = e.target.closest ? e.target.closest('.m-phrase') : null;
+    if (p) { p.classList.add('on'); insertPhrase(p.getAttribute('data-phrase')); }
+  });
+  document.getElementById('actNextRow').addEventListener('click', function(e) {
+    var p = e.target.closest ? e.target.closest('.m-phrase') : null;
+    if (p) setActNext(p.getAttribute('data-next'));
+  });
 }
 initActSheet();
 
@@ -515,7 +626,7 @@ function mToggleContactForm(id) {
         document.getElementById('mContactPrimary').checked = item ? (item.is_primary == 1) : false;
         document.getElementById('mContactRemark').value = item ? (item.remark || '') : '';
         box.style.display = 'block';
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }).catch(function() { toast('加载失败'); });
   } else {
     document.getElementById('mContactId').value = 0;
@@ -526,7 +637,7 @@ function mToggleContactForm(id) {
     document.getElementById('mContactPrimary').checked = false;
     document.getElementById('mContactRemark').value = '';
     box.style.display = 'block';
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 function mSaveContact() {
@@ -605,26 +716,13 @@ function mRemoveShare(link){
     }).catch(function(){ toast('网络错误'); });
   });
 }
-var groupOptionsLoaded = false;
+// v2.47.8：集团归属 options 已由服务端注入，打开弹层即就绪（不再依赖 AJAX 填充）
 function mOpenGroupSheet(){
-  var mask = document.getElementById('groupSheetMask');
-  if (groupOptionsLoaded) { mask.classList.add('show'); return; }
-  fetch('/ajax/customer/' + mCustId + '/group-info', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-    .then(r => r.json()).then(function(d) {
-      if (d.code !== 0 || !d.data) { toast('集团信息加载失败'); return; }
-      groupOptionsLoaded = true;
-      var opts = '<option value="0">（独立客户，不属于集团）</option>';
-      (d.data.options || []).forEach(function(o){
-        if (o.id === mCustId) return;
-        opts += '<option value="' + o.id + '"' + (d.data.current_parent_id === o.id ? ' selected' : '') + '>' + esc(o.name) + '</option>';
-      });
-      document.getElementById('groupParentSel').innerHTML = opts;
-      mask.classList.add('show');
-    }).catch(function(){ toast('网络错误'); });
+  document.getElementById('groupSheetMask').classList.add('show');
 }
 function mConfirmGroup(){
-  var sel = document.getElementById('groupParentSel');
-  var pid = parseInt(sel.value || '0', 10);
+  var hid = document.getElementById('mGroupParentId');
+  var pid = parseInt(hid ? hid.value : '0', 10) || 0;
   document.getElementById('groupSheetMask').classList.remove('show');
   var fd = new URLSearchParams();
   fd.append('parent_id', pid);
@@ -637,6 +735,22 @@ function mConfirmGroup(){
     else toast(d.msg || '保存失败');
   }).catch(function(){ toast('网络错误'); });
 }
+// v2.47.8：取消集团归属（已设置时弹层显示该按钮）——确认后直接提交 parent_id=0 移除并刷新
+function mRemoveGroup(){
+  mConfirm('确定取消该客户的集团归属？取消后将成为独立客户。', function(){
+    document.getElementById('groupSheetMask').classList.remove('show');
+    var fd = new URLSearchParams();
+    fd.append('parent_id', '0');
+    fetch('/ajax/customer/' + mCustId + '/join-group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+      body: fd.toString()
+    }).then(r => r.json()).then(function(d) {
+      if (d.code === 0) { toast(d.msg || '已取消集团归属'); location.reload(); }
+      else toast(d.msg || '操作失败');
+    }).catch(function(){ toast('网络错误'); });
+  });
+}
 (function(){
   var sm = document.getElementById('shareSheetMask');
   if (sm) {
@@ -647,6 +761,9 @@ function mConfirmGroup(){
   if (gm) {
     document.getElementById('groupCancel').addEventListener('click', function(){ gm.classList.remove('show'); });
     document.getElementById('groupConfirm').addEventListener('click', mConfirmGroup);
+    // v2.47.8：取消集团归属（仅已设置时存在该按钮）
+    var gr = document.getElementById('groupRemove');
+    if (gr) gr.addEventListener('click', mRemoveGroup);
   }
 })();
 
@@ -668,4 +785,26 @@ function mConfirmGroup(){
   }).catch(function() { sumEl.innerHTML = '<span class="text-muted">—</span>'; });
 })();
 </script>
+<?php /* v2.47.8：集团归属搜索选择器数据源（全量客户，排除自身） */ ?>
+<script>window.__groupOptions = <?= json_encode(array_values(array_filter(array_map(function($go) use ($customer) {
+    return (int)$go['id'] === (int)$customer['id'] ? null : ['id' => (int)$go['id'], 'name' => (string)$go['name']];
+}, $group_options ?? []))), JSON_UNESCAPED_UNICODE) ?>;</script>
+<script>
+// v2.47.8：移动端补 $ajax 兼容（search-picker 快速新建走带 CSRF 的请求，移动端公共 JS 未定义该全局函数）
+window.$ajax = function(url, opts) {
+  var o = opts || {};
+  var init = { method: o.method || 'GET', headers: { 'X-Requested-With': 'XMLHttpRequest' } };
+  if (o.body) {
+    if (o.body instanceof FormData) { init.body = o.body; }
+    else { init.headers['Content-Type'] = 'application/x-www-form-urlencoded'; init.body = o.body; }
+    init.headers['X-CSRF-TOKEN'] = csrfToken();
+  }
+  return fetch(url, init).then(function(r) { return r.json(); });
+};
+</script>
+<script src="<?=asset_url('js/search-picker.js')?>"></script>
+<!-- v2.48.0：底部固定「记录跟进」快捷入口（负责人/超管可见），任何位置一键可录 -->
+<?php if(!empty($can_edit) && (!empty($is_owner) || !empty($is_super_admin))): ?>
+<div class="m-follow-dock" id="mFollowDock"><button type="button" class="m-btn m-btn-brand" onclick="openActSheet()"><i class="bi bi-pencil"></i> 记录跟进</button></div>
+<?php endif; ?>
 <?php $tab = 'customer'; include __DIR__ . '/_foot.php'; ?>

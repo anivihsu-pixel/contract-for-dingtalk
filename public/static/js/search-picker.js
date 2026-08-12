@@ -91,6 +91,8 @@
         var srcPath = wrap.getAttribute('data-cs-src') || '';
         var urlTpl = wrap.getAttribute('data-cs-url') || '';
         if (srcPath) {
+            // v2.47.8：无输入关键词时不显示建议（原 filterMem 空 kw 返回前 20 条，清空后 250ms 又弹列表）
+            if (!kw) { box.style.display = 'none'; box.innerHTML = ''; return; }
             renderSug(wrap, filterMem(memSource(wrap, srcPath), kw), kw);
             return;
         }

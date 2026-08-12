@@ -255,13 +255,14 @@ include __DIR__ . '/_head.php';
 </div>
 
 <!-- 快捷操作（动作型入口：审批/登记/资料库等常用功能；新建统一收敛到右下角 FAB，模块浏览交给底部 Tab 与「更多」） -->
-<?php if($can_approve || $can_pay || !empty($can_invoice) || !empty($can_library) || !empty($can_customer_pool) || !empty($can_report)): ?>
+<?php if($can_approve || $can_pay || !empty($can_invoice) || !empty($can_library) || !empty($can_customer_pool) || !empty($can_report) || !empty($can_follow)): ?>
 <div class="m-card" id="quick">
   <div class="m-card-hd"><span><i class="bi bi-grid-3x3-gap me-1 text-primary"></i>快捷操作</span><span class="quick-tip" id="quickTip"><i class="bi bi-arrow-left-right"></i>左右滑动</span></div>
   <div class="m-card-bd">
     <div class="quick-grid">
       <?php if($can_approve): ?><a href="/m/approvals" class="quick-item"><i class="bi bi-list-check"></i><span>审批</span></a><?php endif; ?>
       <?php if($can_pay): ?><a href="/m/finance#add" class="quick-item"><i class="bi bi-cash-coin"></i><span>登记回款</span></a><?php endif; ?>
+      <?php if(!empty($can_follow)): ?><a href="javascript:;" class="quick-item" onclick="mOpenQuickFollow()"><i class="bi bi-pencil"></i><span>记录跟进</span></a><?php endif; ?>
       <?php if(!empty($can_invoice)): ?><a href="/m/invoice-apply" class="quick-item"><i class="bi bi-receipt-cutoff"></i><span>申请开票</span></a><?php endif; ?>
       <?php if(!empty($can_library)): ?><a href="/m/resource" class="quick-item"><i class="bi bi-folder2-open"></i><span>资料库</span></a><?php endif; ?>
       <?php if(!empty($can_customer_pool)): ?><a href="/m/customers/pool" class="quick-item"><i class="bi bi-people"></i><span>客户池</span></a><?php endif; ?>
@@ -346,4 +347,151 @@ include __DIR__ . '/_head.php';
   }
 })();
 </script>
+
+<?php if(!empty($can_follow)): ?>
+<!-- v2.48.0：工作台「记录跟进」——选客户（cs-wrap 搜索，无快速新建）+ 快捷录入弹层 -->
+<script>window.__mQuickCust = <?=json_encode(array_map(function($c){return ['id'=>(int)$c['id'],'name'=>(string)$c['name']];}, $quick_follow_customers ?? []), JSON_UNESCAPED_UNICODE)?>;</script>
+<div class="m-sheet-mask" id="qFollowCustMask">
+  <div class="m-sheet">
+    <h3>选择客户</h3>
+    <p>选择要记录跟进的客户</p>
+    <div class="cs-wrap" data-cs-src="window.__mQuickCust" style="margin-bottom:14px">
+      <input type="text" class="cs-input m-input" placeholder="搜索客户…" autocomplete="off">
+      <div class="cs-suggestions"></div>
+      <input type="hidden" class="cs-id" id="qFollowCustId" value="0">
+    </div>
+    <div class="m-sheet-actions">
+      <button class="m-btn m-btn-ghost" id="qCustCancel">取消</button>
+      <button class="m-btn m-btn-brand" id="qCustNext">下一步</button>
+    </div>
+  </div>
+</div>
+<div class="m-sheet-mask" id="qFollowActMask">
+  <div class="m-sheet">
+    <h3>记录跟进</h3>
+    <p id="qFollowCustLabel">客户</p>
+    <div class="m-act-grid" id="qActTypeGrid">
+      <label class="m-act-btn"><input type="radio" name="actType" value="phone" checked><span>电</span><em>电话</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="visit"><span>拜</span><em>拜访</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="meeting"><span>会</span><em>会议</em></label>
+      <label class="m-act-btn"><input type="radio" name="actType" value="wechat"><span>微</span><em>微信</em></label>
+    </div>
+    <p>快捷短语</p>
+    <div class="m-phrase-row" id="qActPhraseRow">
+      <span class="m-phrase" data-phrase="已电话沟通">已电话沟通</span>
+      <span class="m-phrase" data-phrase="确认意向">确认意向</span>
+      <span class="m-phrase" data-phrase="已发资料">已发资料</span>
+      <span class="m-phrase" data-phrase="约定下次">约定下次</span>
+    </div>
+    <p>跟进内容</p>
+    <textarea class="m-input" id="qActContent" rows="3" maxlength="500" placeholder="本次沟通要点、客户意向等" style="resize:vertical;height:auto"></textarea>
+    <p>下次跟进（可选）</p>
+    <div class="m-phrase-row" id="qActNextRow">
+      <span class="m-phrase" data-next="1">明天 09:00</span>
+      <span class="m-phrase" data-next="3">3 天后</span>
+      <span class="m-phrase" data-next="7">一周后</span>
+      <span class="m-phrase" data-next="0">自定义</span>
+    </div>
+    <input class="m-input" type="datetime-local" id="qActNextFollow" style="margin-top:8px">
+    <div class="m-sheet-actions">
+      <button class="m-btn m-btn-ghost" id="qActCancel">取消</button>
+      <button class="m-btn m-btn-brand" id="qActSave">保存</button>
+    </div>
+  </div>
+</div>
+<script>
+/* v2.48.0：工作台「记录跟进」快捷录入（选客户→录入→保存即完成，不跳详情页） */
+(function(){
+  var custId = 0;
+  function pickType(gridId, last){
+    var rb = document.querySelector('#' + gridId + ' input[value="' + last + '"]');
+    document.querySelectorAll('#' + gridId + ' input[name="actType"]').forEach(function(i){ i.checked = (i === rb); });
+  }
+  function clearPhrases(rowId){
+    document.getElementById(rowId).querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
+  }
+  function insertPhrase(taId, phrase){
+    var ta = document.getElementById(taId);
+    var v = ta.value.trim();
+    ta.value = v === '' ? phrase : v + '\n' + phrase;
+    ta.focus();
+  }
+  function setActNext(days, elId, rowId){
+    var el = document.getElementById(elId);
+    document.getElementById(rowId).querySelectorAll('.m-phrase').forEach(function(p){
+      p.classList.toggle('on', String(p.getAttribute('data-next')) === String(days));
+    });
+    if (String(days) === '0') { el.focus(); return; }
+    var d = new Date();
+    d.setDate(d.getDate() + parseInt(days, 10));
+    if (parseInt(days, 10) === 1) d.setHours(9, 0, 0, 0);
+    function pad(n){ return String(n).padStart(2, '0'); }
+    el.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  window.mOpenQuickFollow = function(){
+    custId = 0;
+    document.getElementById('qFollowCustId').value = '0';
+    var wrap = document.querySelector('#qFollowCustMask .cs-wrap');
+    var inp = wrap ? wrap.querySelector('.cs-input') : null;
+    if (inp) inp.value = '';
+    document.getElementById('qFollowCustMask').classList.add('show');
+    setTimeout(function(){ if (inp) inp.focus(); }, 80);
+  };
+  document.getElementById('qCustCancel').addEventListener('click', function(){
+    document.getElementById('qFollowCustMask').classList.remove('show');
+  });
+  document.getElementById('qCustNext').addEventListener('click', function(){
+    var id = parseInt(document.getElementById('qFollowCustId').value, 10);
+    var wrap = document.querySelector('#qFollowCustMask .cs-wrap');
+    var name = wrap ? (wrap.querySelector('.cs-input').value || '') : '';
+    if (!id) { toast('请选择客户'); return; }
+    custId = id;
+    document.getElementById('qFollowCustLabel').textContent = '客户：' + name;
+    document.getElementById('qFollowCustMask').classList.remove('show');
+    document.getElementById('qActContent').value = '';
+    document.getElementById('qActNextFollow').value = '';
+    clearPhrases('qActPhraseRow');
+    clearPhrases('qActNextRow');
+    var last = 'phone';
+    try { last = localStorage.getItem('mActType') || 'phone'; } catch(e) {}
+    pickType('qActTypeGrid', last);
+    document.getElementById('qFollowActMask').classList.add('show');
+  });
+  document.getElementById('qActCancel').addEventListener('click', function(){
+    document.getElementById('qFollowActMask').classList.remove('show');
+  });
+  document.getElementById('qActSave').addEventListener('click', function(){
+    var type = document.querySelector('#qActTypeGrid input[name="actType"]:checked');
+    var content = document.getElementById('qActContent').value.trim();
+    var next = document.getElementById('qActNextFollow').value;
+    if (!content) { toast('请填写跟进内容'); return; }
+    var t = type ? type.value : 'phone';
+    try { localStorage.setItem('mActType', t); } catch(e) {}
+    var mask = document.getElementById('qFollowActMask');
+    mask.classList.remove('show');
+    var fd = new URLSearchParams();
+    fd.append('type', t);
+    fd.append('content', content);
+    fd.append('next_follow_at', next);
+    fetch('/ajax/customer/' + custId + '/activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+      body: fd.toString()
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.code === 0) { toast('已记录跟进'); document.getElementById('qFollowCustMask').classList.remove('show'); }
+      else { toast(d.msg || '记录失败'); mask.classList.add('show'); }
+    }).catch(function(){ toast('网络错误'); mask.classList.add('show'); });
+  });
+  document.getElementById('qActPhraseRow').addEventListener('click', function(e){
+    var p = e.target.closest ? e.target.closest('.m-phrase') : null;
+    if (p) { p.classList.add('on'); insertPhrase('qActContent', p.getAttribute('data-phrase')); }
+  });
+  document.getElementById('qActNextRow').addEventListener('click', function(e){
+    var p = e.target.closest ? e.target.closest('.m-phrase') : null;
+    if (p) setActNext(p.getAttribute('data-next'), 'qActNextFollow', 'qActNextRow');
+  });
+})();
+</script>
+<script src="<?=asset_url('js/search-picker.js')?>"></script>
+<?php endif; ?>
 <?php $tab = 'home'; include __DIR__ . '/_foot.php'; ?>

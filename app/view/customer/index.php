@@ -35,7 +35,7 @@ $stageColors = ['POTENTIAL'=>'#0b5ed7','ACTIVE'=>'#07c160','INACTIVE'=>'#ff9f43'
 </div>
 <!-- 客户列表（v2.38.11：移动到漏斗下方——漏斗提供全局概览与筛选入口，列表承载明细） -->
 <div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0" id="customerTable"><thead class="table-light"><tr><th>名称</th><th>联系人</th><th>手机</th><th>行业</th><th>生命周期</th><th>归属</th><th>状态</th><th>操作</th></tr></thead><tbody id="tableBody"><tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm text-muted"></div> <span class="text-muted small">加载中...</span></td></tr></tbody></table></div><div class="card-footer bg-white" id="pagination"></div></div>
-<script>window._canCreateCustomer=<?=!empty($can_create_customer)?'true':'false'?>;window._lifecycleDict=<?=json_encode($lifecycle_dict??[],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._industryDict=<?=json_encode(dict('customer_industry'),JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._lifecycleActive='';window._mySharedIds=<?=json_encode(array_map('intval',$my_shared_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._myUserId=<?=(int)($user['id']??0)?>;</script>
+<script>window._canCreateCustomer=<?=!empty($can_create_customer)?'true':'false'?>;window._lifecycleDict=<?=json_encode($lifecycle_dict??[],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._industryDict=<?=json_encode(dict('customer_industry'),JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._lifecycleActive='';window._mySharedIds=<?=json_encode(array_map('intval',$my_shared_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._mySharedOutIds=<?=json_encode(array_map('intval',$my_shared_out_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._myUserId=<?=(int)($user['id']??0)?>;window._isAdmin=<?=!empty($is_super_admin)?'true':'false'?>;window._shareTargetOptions=<?=json_encode(array_map(function($u){return ['id'=>(int)$u['id'],'name'=>$u['name']];},$share_target_options??[]),JSON_UNESCAPED_UNICODE)?>;window._shareDepartments=<?=json_encode(array_map(function($d){return ['id'=>(int)$d['id'],'name'=>$d['name']];},$share_departments??[]),JSON_UNESCAPED_UNICODE)?>;</script>
 <script src="<?=asset_url('js/customer.js')?>"></script>
 <style>
 @media (max-width:768px){
@@ -63,6 +63,30 @@ $stageColors = ['POTENTIAL'=>'#0b5ed7','ACTIVE'=>'#07c160','INACTIVE'=>'#ff9f43'
 </style>
 <?=mobile_tabbar('customer')?>
 <?php include __DIR__.'/../layout/footer.php'; ?>
+
+<!-- v2.47.8：列表快捷共享弹层（负责人/超管；复用 /ajax/customer/{id}/share-list、share、unshare） -->
+<div class="modal fade" id="listShareModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h6 class="modal-title" id="listShareTitle">共享设置</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <div class="text-muted small mb-2">共享成员可查看本客户并关联合同（只读），不可编辑档案；撤销后不再可见。</div>
+    <table class="table table-sm mb-2"><thead><tr><th>共享对象</th><th>类型</th><th>级别</th><th>操作</th></tr></thead><tbody id="listShareList"><tr><td colspan="4" class="text-center text-muted py-3">加载中…</td></tr></tbody></table>
+    <div id="listShareAddBox" style="display:none;border-top:1px dashed #e8eaed;padding-top:10px">
+      <div class="d-flex gap-2 mb-2">
+        <select id="listShareType" class="form-select form-select-sm" style="width:90px">
+          <option value="USER">用户</option><option value="DEPT">部门</option>
+        </select>
+        <div class="position-relative" id="listShareUserWrap" style="flex:1">
+          <input type="text" id="listShareSearch" class="form-control form-control-sm" placeholder="搜索姓名（全公司）…" autocomplete="off">
+          <div id="listShareUserList" class="position-absolute list-group" style="z-index:20;width:100%;max-height:180px;overflow:auto;display:none"></div>
+        </div>
+        <div id="listShareDeptWrap" style="flex:1;display:none">
+          <select id="listShareDept" class="form-select form-select-sm" style="width:100%"></select>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-primary" id="listShareAddBtn"><i class="bi bi-plus-lg"></i> 添加共享</button>
+    </div>
+  </div>
+</div></div></div>
 
 <!-- 查重/合并弹窗（v2.38.2，仅管理员可见） -->
 <?php if(!empty($user['is_admin'])): ?>

@@ -47,6 +47,20 @@ class CustomerController extends BaseController
         View::assign('lifecycle_dict', dict('customer_lifecycle'));
         // v2.45.0：共享徽标数据——共享给我的客户 ID（前端据此标记「共享」）
         View::assign('my_shared_ids', CustomerLogic::getSharedCustomerIds($this->userId, (int)($this->user['dept_id'] ?? 0)));
+        // v2.47.8：我共享出去的客户 ID（created_by=本人；前端标记「我共享」方向）
+        View::assign('my_shared_out_ids', array_values(array_unique(array_map('intval',
+            Db::name('customer_share')->where('created_by', $this->userId)->column('customer_id')))));
+        // v2.47.8：超管判定统一走 isSuperAdmin（is_admin=1 ∪ admin 角色），供列表快捷共享按钮可见性
+        View::assign('is_super_admin', AuthLogic::isSuperAdmin($this->userId, $this->user ?? []));
+        // v2.47.8：列表快捷共享弹层数据（全公司用户 + 部门，复用详情页口径）
+        View::assign('share_target_options', \app\common\logic\UserLogic::getTransferTargets(
+            $this->userId,
+            !empty($this->user['is_admin']),
+            (int)($this->user['dept_id'] ?? 0),
+            '',
+            true
+        ));
+        View::assign('share_departments', Db::name('department')->field('id, name')->order('id', 'asc')->select()->toArray());
         return View::fetch();
     }
 
@@ -194,13 +208,18 @@ class CustomerController extends BaseController
         // v2.45.0：共享设置面板数据（共享成员 + 是否可管理；集团树/汇总由前端懒加载 groupInfo）
         View::assign('share_can_manage', $this->canManageCustomer($customer));
         View::assign('share_list', CustomerLogic::getShares((int)$id));
+        // v2.47.8：共享选人放开为全公司（$scopeAll=true，搜索式选择器）；转移/转交仍限同部门
         View::assign('share_target_options', \app\common\logic\UserLogic::getTransferTargets(
             $this->userId,
             !empty($this->user['is_admin']),
-            (int)($this->user['dept_id'] ?? 0)
+            (int)($this->user['dept_id'] ?? 0),
+            '',
+            true
         ));
         View::assign('share_departments', Db::name('department')
             ->field('id, name')->order('id', 'asc')->select()->toArray());
+        // v2.47.8：集团归属搜索选择器数据源（全量客户，排除自身在视图端处理）
+        View::assign('group_options', CustomerLogic::getOptionsForSelect(100));
         return View::fetch();
     }
 
@@ -426,6 +445,7 @@ class CustomerController extends BaseController
             'root_id' => $rootId,
             'is_root' => $rootId === (int)$customerId,
             'current_parent_id' => (int)$customer['parent_id'],
+            'parent_name' => (string)Db::name('customer')->where('id', (int)$customer['parent_id'])->value('name'),
             'root_name' => (string)Db::name('customer')->where('id', $rootId)->value('name'),
             'tree'    => CustomerLogic::getGroupTree($rootId),
             'summary' => CustomerLogic::getGroupSummary($rootId),

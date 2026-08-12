@@ -26,13 +26,21 @@ function load(n){
         var h='';
         // 判断当前是否移动端视口（≤768px）
         var isMobile = window.matchMedia('(max-width: 767.98px)').matches;
-        // v2.45.0：列表徽标（共享 / 分公司）——共享徽标仅标记「共享给我且非本人/非公海」的客户
+        // v2.47.8：列表徽标升级——集团（根/成员）+ 共享（双向）。集团成员 tooltip 带出父客户名
         function custBadges(c){
             var b='';
-            if(Number(c.parent_id||0)>0) b+=' <span class="pc-tag pc-tag-warn" style="font-size:10px">分公司</span>';
+            // 集团根：有子客户（child_count>0）
+            if(Number(c.child_count||0)>0) b+=' <a class="pc-tag pc-tag-info" style="font-size:10px;text-decoration:none;cursor:pointer" href="/customer/'+c.id+'#group" title="该客户为集团根，含 '+c.child_count+' 个成员客户">集团</a>';
+            // 集团成员：有父客户
+            if(Number(c.parent_id||0)>0) b+=' <a class="pc-tag pc-tag-warn" style="font-size:10px;text-decoration:none;cursor:pointer" href="/customer/'+c.id+'#group" title="集团成员 · 所属：'+(c.parent_name?esc(c.parent_name):'#'+c.parent_id)+'">集团成员</a>';
+            // 共享给我且非本人/非公海
             if(window._mySharedIds && window._mySharedIds.indexOf(Number(c.id))>-1
                 && Number(c.owner_id)!==0 && Number(c.owner_id)!==Number(window._myUserId))
-                b+=' <span class="pc-tag pc-tag-info" style="font-size:10px">共享</span>';
+                b+=' <span class="pc-tag pc-tag-info" style="font-size:10px" title="他人共享给我，可查看并关联合同">共享给我</span>';
+            // 我共享出去（负责人主动共享）
+            if(window._mySharedOutIds && window._mySharedOutIds.indexOf(Number(c.id))>-1
+                && Number(c.owner_id)!==0)
+                b+=' <span class="pc-tag pc-tag-ok" style="font-size:10px" title="我共享给了他人，可在详情页撤销">我共享</span>';
             return b;
         }
         // ---- 空列表状态 ----
@@ -83,7 +91,12 @@ function load(n){
                     h+='<td><span class="pc-tag '+lcCls+'">'+esc(lcLabel)+'</span></td>';
                     h+='<td>'+(c.owner_id===0?'<span class="text-muted">公海</span>':(esc(c.owner_name)||'用户#'+(c.owner_id||'?')))+'</td>';
                     h+='<td>'+(c.status==1?'<span class="badge bg-success">正常</span>':'<span class="badge bg-secondary">禁用</span>')+'</td>';
-                    h+='<td><a href="/customer/'+c.id+'/edit" class="btn btn-sm btn-outline-secondary" aria-label="编辑"><i class="bi bi-pencil"></i></a></td>';
+                    // v2.47.8：操作列——编辑 + 快捷共享（负责人/超管且非公海）
+                    var canShare = (window._isAdmin || Number(c.owner_id)===Number(window._myUserId)) && Number(c.owner_id)!==0;
+                    h+='<td>';
+                    h+='<a href="/customer/'+c.id+'/edit" class="btn btn-sm btn-outline-secondary" aria-label="编辑" title="编辑"><i class="bi bi-pencil"></i></a>';
+                    if(canShare) h+=' <button type="button" class="btn btn-sm btn-outline-primary" aria-label="共享" title="共享设置" onclick="openListShare('+c.id+',this)"><i class="bi bi-people"></i></button>';
+                    h+='</td>';
                     h+='</tr>';
                 }
             });
@@ -148,5 +161,133 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', bindLcFilter);
 } else {
     bindLcFilter();
+}
+
+// ===== v2.47.8：列表快捷共享弹层（负责人/超管；复用 /ajax/customer/{id}/share-list、share、unshare） =====
+var _listShareId = 0, _listShareCan = false, _listShareSel = 0;
+window.openListShare = function(id, btn){
+    _listShareId = id;
+    _listShareSel = 0;
+    var modal = document.getElementById('listShareModal');
+    if(!modal) return;
+    document.getElementById('listShareTitle').textContent = '共享设置';
+    // 重置添加区
+    document.getElementById('listShareType').value = 'USER';
+    document.getElementById('listShareDeptWrap').style.display = 'none';
+    document.getElementById('listShareUserWrap').style.display = '';
+    document.getElementById('listShareSearch').value = '';
+    document.getElementById('listShareSearch').removeAttribute('data-sel');
+    // 用户建议列表仅搜索时显示，打开时隐藏（避免误列全公司用户）
+    var uBox = document.getElementById('listShareUserList');
+    if (uBox) { uBox.style.display = 'none'; uBox.innerHTML = ''; }
+    // 加载当前共享列表
+    document.getElementById('listShareList').innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">加载中…</td></tr>';
+    $ajax('/ajax/customer/'+id+'/share-list', {loading:false}).then(function(res){
+        if(res.code!==0){ showToast(res.msg||'加载失败','error'); return; }
+        var d = res.data || {};
+        _listShareCan = !!d.can_manage;
+        var shares = d.shares || [];
+        var h = '';
+        if(!shares.length){
+            h = '<tr><td colspan="4" class="text-center text-muted py-3">暂无共享成员</td></tr>';
+        }else{
+            shares.forEach(function(s){
+                h += '<tr data-share="'+esc(s.target_type)+':'+s.target_id+'">'
+                    + '<td><strong>'+esc(s.target_name)+'</strong></td>'
+                    + '<td>'+(s.target_type==='DEPT'?'部门':'用户')+'</td>'
+                    + '<td><span class="pc-tag pc-tag-info">只读</span></td>'
+                    + '<td>'+( _listShareCan
+                        ? '<a href="javascript:;" class="small text-danger" onclick="removeListShare(this)">撤销</a>'
+                        : '<span class="small text-muted">—</span>')+'</td></tr>';
+            });
+        }
+        document.getElementById('listShareList').innerHTML = h;
+        var addBox = document.getElementById('listShareAddBox');
+        if(addBox) addBox.style.display = _listShareCan ? '' : 'none';
+    }).catch(function(){ showToast('加载失败','error'); });
+    new bootstrap.Modal(modal).show();
+};
+function renderListShareUsers(list){
+    var box = document.getElementById('listShareUserList');
+    if(!box) return;
+    if(!list || !list.length){ box.style.display='none'; box.innerHTML=''; return; }
+    var h = '';
+    list.forEach(function(u){
+        h += '<a href="javascript:;" class="dropdown-item" data-sid="'+u.id+'" data-sname="'+esc(u.name)+'">'+esc(u.name)+'</a>';
+    });
+    box.innerHTML = h;
+    box.style.display = 'block';
+}
+function initListShare(){
+    var modal = document.getElementById('listShareModal');
+    if(!modal) return;
+    // 类型切换
+    document.getElementById('listShareType').addEventListener('change', function(){
+        var t = this.value;
+        document.getElementById('listShareUserWrap').style.display = (t==='USER') ? '' : 'none';
+        document.getElementById('listShareDeptWrap').style.display = (t==='DEPT') ? '' : 'none';
+        if(t==='DEPT'){
+            var sel = document.getElementById('listShareDept');
+            var h = '<option value="0">选择部门…</option>';
+            (window._shareDepartments||[]).forEach(function(d){ h += '<option value="'+d.id+'">'+esc(d.name)+'</option>'; });
+            sel.innerHTML = h;
+        }
+    });
+    // 用户搜索（本地过滤）
+    var timer = null;
+    document.getElementById('listShareSearch').addEventListener('input', function(){
+        var kw = this.value.trim();
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+            if(kw===''){ var ub=document.getElementById('listShareUserList'); if(ub){ ub.style.display='none'; ub.innerHTML=''; } return; }
+            renderListShareUsers((window._shareTargetOptions||[]).filter(function(u){ return u.name.indexOf(kw)>=0; }));
+        }, 150);
+    });
+    // 建议点击选中
+    document.getElementById('listShareUserList').addEventListener('mousedown', function(e){
+        var it = e.target.closest ? e.target.closest('[data-sid]') : null;
+        if(!it) return;
+        e.preventDefault();
+        _listShareSel = parseInt(it.getAttribute('data-sid'),10);
+        document.getElementById('listShareSearch').value = it.getAttribute('data-sname');
+        document.getElementById('listShareSearch').setAttribute('data-sel','1');
+        document.getElementById('listShareUserList').style.display = 'none';
+    });
+    // 添加
+    document.getElementById('listShareAddBtn').addEventListener('click', function(){
+        var type = document.getElementById('listShareType').value;
+        var id;
+        if(type==='DEPT'){ id = parseInt(document.getElementById('listShareDept').value||'0',10); }
+        else{ id = _listShareSel; }
+        if(!id){ showToast('请选择共享对象','error'); return; }
+        var fd = new FormData();
+        fd.append('target_type', type);
+        fd.append('target_id', id);
+        $ajax('/ajax/customer/'+_listShareId+'/share', {method:'POST', body:fd, loading:false}).then(function(res){
+            if(res.code===0){
+                showToast(res.msg||'共享成功','success');
+                openListShare(_listShareId, null); // 刷新共享列表
+            } else showToast(res.msg||'共享失败','error');
+        }).catch(function(){ showToast('共享失败','error'); });
+    });
+    modal.addEventListener('shown.bs.modal', function(){ document.getElementById('listShareSearch').focus(); });
+}
+window.removeListShare = function(link){
+    var tr = link.closest('tr');
+    var key = tr.getAttribute('data-share');
+    var parts = key.split(':');
+    pcConfirm({message:'确定撤销该共享？撤销后对方不再可见此客户。', danger:true}).then(function(ok){
+        if(!ok) return;
+        var fd = new FormData(); fd.append('target_type', parts[0]); fd.append('target_id', parts[1]);
+        $ajax('/ajax/customer/'+_listShareId+'/unshare', {method:'POST', body:fd, loading:false}).then(function(res){
+            if(res.code===0){ showToast(res.msg||'已撤销','success'); openListShare(_listShareId, null); }
+            else showToast(res.msg||'撤销失败','error');
+        }).catch(function(){ showToast('撤销失败','error'); });
+    });
+};
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initListShare);
+} else {
+    initListShare();
 }
 })();

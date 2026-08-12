@@ -3,12 +3,16 @@
 <div>
   <!-- 2026-08-03：PC 端客户操作（与移动端 REV-31 对齐）。公海客户可认领；本人客户可释放/转移 -->
   <?php if(!empty($can_edit) && !empty($is_public_pool)): ?>
-  <button type="button" class="btn btn-success btn-sm" onclick="custClaim(<?=$customer['id']?>,this)"><i class="bi bi-person-check"></i> 认领</button>
+  <button type="button" class="btn btn-primary btn-sm" onclick="custClaim(<?=$customer['id']?>,this)"><i class="bi bi-person-check"></i> 认领</button>
   <?php elseif(!empty($can_edit) && !empty($is_owner)): ?>
-  <button type="button" class="btn btn-warning btn-sm" onclick="custRelease(<?=$customer['id']?>,this)"><i class="bi bi-box-arrow-up"></i> 释放到公海</button>
+  <button type="button" class="btn btn-outline-danger btn-sm" onclick="custRelease(<?=$customer['id']?>,this)"><i class="bi bi-box-arrow-up"></i> 释放到公海</button>
   <button type="button" class="btn btn-outline-primary btn-sm" onclick="openTransferModal(<?=$customer['id']?>)"><i class="bi bi-arrow-left-right"></i> 转移</button>
   <?php endif; ?>
-  <a href="/customer/<?=$customer['id']?>/edit" class="btn btn-primary btn-sm"><i class="bi bi-pencil"></i> 编辑</a> <a href="/customer" class="btn btn-outline-secondary btn-sm">返回</a>
+  <a href="/customer/<?=$customer['id']?>/edit" class="btn btn-primary btn-sm"><i class="bi bi-pencil"></i> 编辑</a>
+  <!-- v2.47.8：共享/集团设置显眼入口（直达对应 Tab；集团 Tab 懒加载由 shown.bs.tab 触发） -->
+  <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-share')"><i class="bi bi-people"></i> 共享设置</button>
+  <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-group')"><i class="bi bi-diagram-3"></i> 集团</button>
+  <a href="/customer" class="btn btn-outline-secondary btn-sm">返回</a>
 </div></div>
 
 <ul class="nav nav-tabs mb-3" id="custTabs" role="tablist">
@@ -18,9 +22,9 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-act">跟进 (<?=$stats['activity_count']?>)</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stat">统计</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-contacts">联系人 (<?=count($contacts)?>)</button></li>
-  <!-- v2.45.0：共享 / 集团 Tab -->
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-share">共享</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-group" data-group-tab>集团</button></li>
+  <!-- v2.45.0：共享 / 集团 Tab（v2.47.8：标题带数量/状态徽标，配合顶部显眼入口） -->
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-share">共享<?php if(!empty($share_list)): ?> <span class="badge bg-primary" style="font-size:10px"><?=count($share_list)?></span><?php endif; ?></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-group" data-group-tab>集团<?=!empty($customer['parent_id'])?' · 成员':''?></button></li>
 </ul>
 
 <div class="tab-content">
@@ -158,13 +162,18 @@
   <div class="tab-pane fade" id="t-share">
     <div class="card"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <div class="text-muted small">共享成员可查看本客户并关联合同（VIEW 只读），不可编辑档案；撤销后不再可见</div>
+        <div class="text-muted small">共享成员可查看本客户并关联合同（只读），不可编辑档案；撤销后不再可见</div>
         <?php if(!empty($share_can_manage)): ?>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 align-items-center">
           <select id="shareTargetType" class="form-select form-select-sm" style="width:100px" onchange="fillShareTargets()">
             <option value="USER">用户</option><option value="DEPT">部门</option>
           </select>
-          <select id="shareTargetId" class="form-select form-select-sm" style="width:220px"><option value="0">选择共享对象…</option></select>
+          <!-- v2.47.8：用户类型=全公司搜索式选择器（负责人主动授权，审计留痕） -->
+          <div class="position-relative" id="shareUserWrap">
+            <input type="text" id="shareUserSearch" class="form-control form-control-sm" style="width:220px" placeholder="搜索姓名（全公司）…" autocomplete="off">
+            <div id="shareUserList" class="position-absolute list-group" style="z-index:20;width:220px;max-height:200px;overflow:auto;display:none"></div>
+          </div>
+          <select id="shareTargetId" class="form-select form-select-sm" style="width:220px;display:none"><option value="0">选择共享对象…</option></select>
           <button type="button" class="btn btn-primary btn-sm" onclick="addShare()"><i class="bi bi-plus-lg"></i> 添加共享</button>
         </div>
         <?php endif; ?>
@@ -175,7 +184,7 @@
         <tr data-share-row="<?=htmlspecialchars($s['target_type'])?>:<?=(int)$s['target_id']?>">
           <td><strong><?=htmlspecialchars($s['target_name'])?></strong></td>
           <td><?=$s['target_type']==='DEPT'?'部门':'用户'?></td>
-          <td><span class="pc-tag pc-tag-info">VIEW 只读</span></td>
+          <td><span class="pc-tag pc-tag-info">只读</span></td>
           <td><?php if(!empty($share_can_manage)): ?><a href="javascript:;" class="small text-danger" onclick="removeShare(this)">撤销</a><?php else: ?><span class="small text-muted">—</span><?php endif; ?></td>
         </tr>
         <?php endforeach; endif; ?>
@@ -418,28 +427,111 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
 // ============ v2.45.0 客户协作共享 / 集团层级 ============
 (function(){
   var custId = <?=(int)$customer['id']?>;
+
+  // ---- v2.47.8：顶部「共享设置 / 集团」按钮直达对应 Tab + location.hash 直达（列表集团标签 href="/customer/{id}#group" 依赖） ----
+  window.goCustTab = function(target){
+    var btn = document.querySelector('#custTabs button[data-bs-target="'+target+'"]');
+    if (btn) {
+      bootstrap.Tab.getOrCreateInstance(btn).show();
+      // 集团 Tab 懒加载由下方 [data-group-tab] 的 shown.bs.tab 监听器触发
+      btn.scrollIntoView({behavior:'smooth', block:'nearest'});
+    }
+  };
+  (function(){
+    var map = {'#group':'#t-group','#share':'#t-share','#t-share':'#t-share'};
+    var target = map[location.hash] || null;
+    if (target) {
+      // v2.47.8：等待 DOMContentLoaded 再切 Tab——本脚本先于 footer 的 app.js 解析，
+      // 固定 60ms 可能在文档解析完成前触发，集团懒加载回调 $ajax 未定义导致加载失败
+      var doGo = function(){ window.goCustTab(target); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', doGo);
+      else setTimeout(doGo, 60);
+    }
+  })();
+  // v2.47.8：集团归属搜索选择器数据源（全量客户，排除自身）
+  window.__groupOptions = <?= json_encode(array_values(array_filter(array_map(function($go) use ($customer) {
+      return (int)$go['id'] === (int)$customer['id'] ? null : ['id' => (int)$go['id'], 'name' => (string)$go['name']];
+  }, $group_options ?? []))), JSON_UNESCAPED_UNICODE) ?>;
   var canManage = <?= !empty($share_can_manage) ? 'true' : 'false' ?>; // 负责人/超管可管理共享与集团归属
   var shareUsers = <?= json_encode(array_map(function($u){return ['id'=>(int)$u['id'],'name'=>$u['name']];}, $share_target_options ?? []), JSON_UNESCAPED_UNICODE) ?>;
   var shareDepts = <?= json_encode(array_map(function($d){return ['id'=>(int)$d['id'],'name'=>$d['name']];}, $share_departments ?? []), JSON_UNESCAPED_UNICODE) ?>;
 
-  // ---- 共享目标下拉填充（用户/部门切换） ----
+  // ---- 共享目标选择（USER=全公司搜索式选择器 / DEPT=部门下拉，v2.47.8） ----
+  var shareSelUser = 0; // 当前选中的共享用户 id
   window.fillShareTargets = function(){
     var type = document.getElementById('shareTargetType').value;
-    var sel  = document.getElementById('shareTargetId');
-    var list = type === 'DEPT' ? shareDepts : shareUsers;
-    var h = '<option value="0">选择共享对象…</option>';
-    list.forEach(function(it){ h += '<option value="'+it.id+'">'+esc(it.name)+'</option>'; });
-    sel.innerHTML = h;
+    var userWrap = document.getElementById('shareUserWrap');
+    var deptSel  = document.getElementById('shareTargetId');
+    if (type === 'DEPT') {
+      userWrap.style.display = 'none';
+      deptSel.style.display = '';
+      var h = '<option value="0">选择共享对象…</option>';
+      shareDepts.forEach(function(it){ h += '<option value="'+it.id+'">'+esc(it.name)+'</option>'; });
+      deptSel.innerHTML = h;
+    } else {
+      userWrap.style.display = '';
+      deptSel.style.display = 'none';
+      shareSelUser = 0;
+      document.getElementById('shareUserSearch').value = '';
+      // v2.47.8：建议列表仅搜索时显示，初始化/清空均隐藏（避免误列全公司账号）
+      var su = document.getElementById('shareUserList');
+      if (su) { su.style.display = 'none'; su.innerHTML = ''; }
+    }
   };
+  function renderShareUsers(list){
+    var box = document.getElementById('shareUserList');
+    if (!box) return;
+    if (!list || !list.length) { box.style.display = 'none'; return; }
+    var h = '';
+    list.forEach(function(it){
+      h += '<a href="javascript:;" class="list-group-item list-group-item-action py-1 px-2" data-share-uid="'+it.id+'" data-share-uname="'+esc(it.name)+'" style="font-size:13px">'+esc(it.name)+'</a>';
+    });
+    box.innerHTML = h;
+    box.style.display = 'block';
+  }
+  // 输入防抖过滤（shareUsers 已注入全公司，本地过滤即可）
+  var shareSearchInput = document.getElementById('shareUserSearch');
+  var shareSearchTimer = null;
+  if (shareSearchInput) {
+    shareSearchInput.addEventListener('input', function(){
+      var kw = this.value.trim();
+      if (shareSearchTimer) clearTimeout(shareSearchTimer);
+      shareSearchTimer = setTimeout(function(){
+        var su2 = document.getElementById('shareUserList');
+        if (kw === '') { if (su2) { su2.style.display = 'none'; su2.innerHTML = ''; } return; }
+        renderShareUsers(shareUsers.filter(function(u){ return u.name.indexOf(kw) !== -1; }));
+      }, 150);
+    });
+    shareSearchInput.addEventListener('blur', function(){
+      setTimeout(function(){ var b = document.getElementById('shareUserList'); if (b) b.style.display = 'none'; }, 150);
+    });
+  }
+  // 结果点击选中（事件委托）
+  var shareUserListEl = document.getElementById('shareUserList');
+  if (shareUserListEl) {
+    shareUserListEl.addEventListener('click', function(e){
+      var item = e.target.closest('[data-share-uid]');
+      if (!item) return;
+      shareSelUser = parseInt(item.getAttribute('data-share-uid'), 10);
+      document.getElementById('shareUserSearch').value = item.getAttribute('data-share-uname');
+      shareUserListEl.style.display = 'none';
+    });
+  }
   if (document.getElementById('shareTargetType')) { window.fillShareTargets(); }
 
   // ---- 添加共享 ----
   window.addShare = function(){
     var type = document.getElementById('shareTargetType').value;
-    var id   = parseInt(document.getElementById('shareTargetId').value || '0', 10);
-    if(!id){ showToast('请选择共享对象','error'); return; }
     var sel  = document.getElementById('shareTargetId');
-    var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    var id, name;
+    if (type === 'DEPT') {
+      id   = parseInt(sel.value || '0', 10);
+      name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    } else {
+      id   = shareSelUser;
+      name = document.getElementById('shareUserSearch').value;
+    }
+    if(!id){ showToast('请选择共享对象','error'); return; }
     var fd = new FormData(); fd.append('target_type', type); fd.append('target_id', id);
     $ajax('/ajax/customer/'+custId+'/share',{method:'POST',body:fd}).then(function(res){
       if(res.code===0){
@@ -450,7 +542,7 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
         var tr = document.createElement('tr');
         tr.setAttribute('data-share-row', type+':'+id);
         tr.innerHTML = '<td><strong>'+esc(name)+'</strong></td><td>'+(type==='DEPT'?'部门':'用户')+'</td>'
-          + '<td><span class="pc-tag pc-tag-info">VIEW 只读</span></td>'
+          + '<td><span class="pc-tag pc-tag-info">只读</span></td>'
           + '<td><a href="javascript:;" class="small text-danger" onclick="removeShare(this)">撤销</a></td>';
         tbody.appendChild(tr);
       } else showToast(res.msg||'共享失败','error');
@@ -491,10 +583,20 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
       if (groupLoaded) return;
       groupLoaded = true;
       var body = document.getElementById('groupBody');
-      $ajax('/ajax/customer/'+custId+'/group-info',{method:'GET'}).then(function(res){
-        if(res.code===0){ body.innerHTML = renderGroup(res.data); }
-        else body.innerHTML = '<div class="text-center text-muted py-3">'+(res.msg||'加载失败')+'</div>';
-      }).catch(function(){ body.innerHTML = '<div class="text-center text-muted py-3">加载失败</div>'; });
+      try {
+        $ajax('/ajax/customer/'+custId+'/group-info',{method:'GET'}).then(function(res){
+          if(res.code===0){ body.innerHTML = renderGroup(res.data); }
+          else body.innerHTML = '<div class="text-center text-muted py-3">'+(res.msg||'加载失败')+'</div>';
+        }).catch(function(){ body.innerHTML = '<div class="text-center text-muted py-3">加载失败</div>'; });
+      } catch(e) {
+        // v2.47.8：页面早期 $ajax 未就绪（app.js 尚未解析完）时重置标记并延迟重试，
+        // 避免 groupLoaded 被置 true 后永久短路导致集团视图再也无法加载
+        groupLoaded = false;
+        setTimeout(function(){
+          var btn = document.querySelector('#custTabs button[data-bs-target="#t-group"]');
+          if (btn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(btn).show();
+        }, 300);
+      }
     });
   }
 
@@ -527,30 +629,45 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
     }
     h += '</div></div>';
     if (canManage) {
-      var opts = '<option value="0">（独立客户，不属于集团）</option>';
-      (d.options||[]).forEach(function(o){
-        if (o.id === custId) return;
-        opts += '<option value="'+o.id+'"'+(d.current_parent_id===o.id?' selected':'')+'>'+esc(o.name)+'</option>';
-      });
       h += '<hr><div class="d-flex align-items-center gap-2 flex-wrap">';
-      h += '<span class="small text-muted">加入集团（设置父客户，可多级）：</span>';
-      h += '<select id="groupParentSel" class="form-select form-select-sm" style="width:260px">'+opts+'</select>';
+      h += '<span class="small text-muted">集团归属（设置父客户，可多级）：</span>';
+      // v2.47.8：搜索式选择器（全量客户）+ 未搜到可快速新建客户
+      h += '<div class="cs-wrap" data-cs-src="window.__groupOptions" data-quick="customer" data-quick-url="/ajax/customer/save" style="width:280px;position:relative">'
+        + '<input type="text" class="cs-input form-control form-control-sm" placeholder="搜索集团客户…未搜到可快速新建" autocomplete="off" value="'+esc(d.parent_name||'')+'">'
+        + '<div class="cs-suggestions"></div>'
+        + '<input type="hidden" class="cs-id" id="pcGroupParentId" value="'+(d.current_parent_id||0)+'">'
+        + '</div>';
       h += '<button type="button" class="btn btn-sm btn-outline-primary" onclick="saveGroupParent()">保存集团归属</button>';
+      // v2.47.8：仅已设置集团归属时提供「取消集团归属」一键移除（确认+提交+刷新，替换原无反馈的清空按钮）
+      if (Number(d.current_parent_id || 0) > 0) {
+        h += '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeGroupParent()">取消集团归属</button>';
+      }
       h += '</div>';
     }
     h += '<div class="text-muted small mt-2">集团负责人 / 共享成员可见全集团聚合（只读）；子公司负责人仅见本公司数据。</div>';
     return h;
   }
 
-  // ---- 保存集团归属（加入/取消；仅负责人/超管） ----
+  // ---- 保存集团归属（加入/取消；仅负责人/超管；v2.47.8 改读搜索选择器 cs-id） ----
   window.saveGroupParent = function(){
-    var sel = document.getElementById('groupParentSel');
-    var pid = parseInt(sel.value||'0', 10);
+    var hid = document.getElementById('pcGroupParentId');
+    var pid = parseInt(hid ? hid.value : '0', 10) || 0;
     var fd = new FormData(); fd.append('parent_id', pid);
     $ajax('/ajax/customer/'+custId+'/join-group',{method:'POST',body:fd}).then(function(res){
       if(res.code===0){ showToast(res.msg||'已保存','success'); setTimeout(function(){ location.reload(); }, 800); }
       else showToast(res.msg||'保存失败','error');
     }).catch(function(){ showToast('保存失败','error'); });
+  };
+  // v2.47.8：取消集团归属（仅已设置时显示）——确认后直接提交 parent_id=0 移除并刷新
+  window.removeGroupParent = function(){
+    pcConfirm({message:'确定取消该客户的集团归属？取消后将成为独立客户。', danger:true, okText:'取消归属'}).then(function(ok){
+      if(!ok) return;
+      var fd = new FormData(); fd.append('parent_id', '0');
+      $ajax('/ajax/customer/'+custId+'/join-group',{method:'POST',body:fd}).then(function(res){
+        if(res.code===0){ showToast(res.msg||'已取消集团归属','success'); setTimeout(function(){ location.reload(); }, 800); }
+        else showToast(res.msg||'操作失败','error');
+      }).catch(function(){ showToast('操作失败','error'); });
+    });
   };
 
   function buildTreeHtml(nodes, curId, isRoot){
@@ -568,4 +685,5 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
   }
 })();
 </script>
+<script src="<?=asset_url('js/search-picker.js')?>"></script>
 <?php include __DIR__.'/../layout/footer.php'; ?>
