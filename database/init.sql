@@ -791,8 +791,6 @@ INSERT INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES
 ('site_version', '1.0.0', 'system'),
 -- 页脚版权信息（v2.34.0：系统设置「系统配置」页可维护；缺失时 BaseController 回退默认文案）
 ('copyright', '© 2026 合同管理系统 版权所有', 'system'),
--- PC 端新手引导开关（2026-07-25：系统设置「系统配置」页可维护；默认关闭，与用户偏好一致）
-('guide_enabled', '0', 'system'),
 -- 业务规则（2026-08-01：系统设置「系统配置」页可维护；定时任务读取，缺省用下方默认值）
 ('rule_pool_release_days', '30', 'rule'),
 ('rule_expire_remind_days', '30,15,7,3,1', 'rule'),

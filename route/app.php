@@ -28,9 +28,6 @@ Route::get('/report/monthly', 'Report/monthly');   // P3-2 经营月报（权限
 Route::get('/report/weekly', 'Report/weekly');      // v2.47.0 经营周报（总经理例会参考，权限同财务中心）
 Route::get('/report/aging', 'Report/aging');       // v2.38.3 应收账龄
 
-// 使用手册（所有登录用户可见的全局帮助页，纯静态说明）
-Route::get('/manual', 'Manual/index');
-
 // 合同
 Route::get('/contract', 'Contract/index');
 Route::get('/contract/create', 'Contract/create');

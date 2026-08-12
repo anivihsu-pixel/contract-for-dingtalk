@@ -1176,13 +1176,6 @@ function toggleOffZone(key) {
       <small class="text-muted">将展示在 PC 端与移动端页面底部。支持纯文本，保存后即时生效。</small>
     </div>
     <div class="mb-3">
-      <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" role="switch" id="guideEnabled" <?= (sys_config('guide_enabled', '0') == '1') ? 'checked' : '' ?>>
-        <label class="form-check-label" for="guideEnabled">启用 PC 端新手引导</label>
-      </div>
-      <small class="text-muted">开启后，PC 端侧栏显示「新手引导」入口，且用户首次访问仪表盘时自动弹出引导弹窗；关闭则两端均不出现。</small>
-    </div>
-    <div class="mb-3">
       <label class="form-label" for="fVersion">当前版本</label>
       <input class="form-control" id="fVersion" value="<?=htmlspecialchars(app_version(), ENT_QUOTES)?>" readonly>
     </div>
@@ -1256,18 +1249,12 @@ function toggleOffZone(key) {
 </div>
 
 <script>
-// 保存系统配置（版权信息 + 新手引导开关）— 复用 /ajax/admin/config/save 普通配置保存分支（v2.34.0 / 2026-07-25）
+// 保存系统配置（版权信息）— 复用 /ajax/admin/config/save 普通配置保存分支（v2.34.0）
 function saveSysConfig() {
     var copyright = document.getElementById('copyrightInput').value;
-    var guideEl = document.getElementById('guideEnabled');
-    var guide = guideEl ? (guideEl.checked ? '1' : '0') : '0';
-    function post(key, value) {
-        return $ajax('/ajax/admin/config/save', {method: 'POST', body: new URLSearchParams({key: key, value: value})});
-    }
-    Promise.all([post('copyright', copyright), post('guide_enabled', guide)]).then(function (rs) {
-        var bad = rs.find(function (r) { return r.code !== 0; });
-        if (!bad) { showToast('已保存', 'success'); location.reload(); }
-        else { showToast(bad.msg || '保存失败', 'error'); }
+    $ajax('/ajax/admin/config/save', {method: 'POST', body: new URLSearchParams({key: 'copyright', value: copyright})}).then(function (r) {
+        if (r.code === 0) { showToast('已保存', 'success'); location.reload(); }
+        else { showToast(r.msg || '保存失败', 'error'); }
     }).catch(function () { showToast('保存失败', 'error'); });
 }
 // 保存业务规则（2026-08-01：公海释放天数/合同到期提醒/回款提醒提前天数，复用 /ajax/admin/config/save 普通分支）

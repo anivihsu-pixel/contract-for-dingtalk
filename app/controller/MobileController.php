@@ -234,8 +234,6 @@ class MobileController extends BaseController
         $notif  = ['/m/remind', 'bi-bell', '待办中心', true];
         // v2.39.0：我的业绩（所有用户可见，个人自视，置顶位置靠前）
         $mystats = ['/m/my-stats', 'bi-person-vcard', '我的业绩', true];
-        // 使用手册（所有用户可见的全局帮助入口，PC 页面自带响应式布局）
-        $manual = ['/manual', 'bi-journal-text', '使用手册', true];
         $finance= ['/m/finance',  'bi-cash-coin',        '财务概览', true];
         $reports= ['/m/reports',  'bi-bar-chart-line',   '报表概览', true];
         $proj   = ['/m/projects', 'bi-folder2',          '项目列表', $canViewProject];
@@ -246,16 +244,16 @@ class MobileController extends BaseController
 
         // P1：4 档排序——按角色高频场景重排，财务前置财务/报表，经理前置项目，普通员工前置归档
         if ($isAdmin) {
-            $order = [$notif, $mystats, $manual, $handover, $finance, $reports, $proj, $res, $arch, $party];
+            $order = [$notif, $mystats, $handover, $finance, $reports, $proj, $res, $arch, $party];
         } elseif ($isFinance) {
             // 财务：财务→报表→往来档案（移除项目/资料库/归档低频项）
-            $order = [$notif, $mystats, $manual, $finance, $reports, $party, $arch, $res, $proj, $handover];
+            $order = [$notif, $mystats, $finance, $reports, $party, $arch, $res, $proj, $handover];
         } elseif ($isManager) {
             // 部门经理：项目→归档→报表→财务→资料库→往来
-            $order = [$notif, $mystats, $manual, $proj, $arch, $reports, $finance, $res, $party, $handover];
+            $order = [$notif, $mystats, $proj, $arch, $reports, $finance, $res, $party, $handover];
         } else {
             // 普通员工：归档→项目→资料库→报表→往来（财务低频后置）
-            $order = [$notif, $mystats, $manual, $arch, $proj, $res, $reports, $party, $finance, $handover];
+            $order = [$notif, $mystats, $arch, $proj, $res, $reports, $party, $finance, $handover];
         }
         $modules = array_values(array_filter($order, function ($m) { return $m[3]; }));
         View::assign('modules', $modules);

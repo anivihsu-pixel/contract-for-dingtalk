@@ -170,31 +170,6 @@ window.esc = function(s) {
         .replace(/'/g, '&#39;');
 };
 
-// 新手引导（首次访问仪表盘自动弹出，可反复从侧栏「新手引导」进入）
-window.showGuide = function() {
-    if (document.getElementById('guideModal')) return;
-    var html = ''
-        + '<div class="modal fade" id="guideModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">'
-        + '<div class="modal-header"><h5 class="modal-title"><i class="bi bi-compass"></i> 新手引导 · 5 步上手</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>'
-        + '<div class="modal-body"><div class="row g-3">'
-        + '<div class="col-6"><div class="border rounded p-3 h-100"><div class="fw-semibold"><i class="bi bi-file-text text-primary"></i> 1. 创建合同</div><div class="small text-muted mt-1">填写核心条款、上传附件、选择模板，提交后进入审批流。</div></div></div>'
-        + '<div class="col-6"><div class="border rounded p-3 h-100"><div class="fw-semibold"><i class="bi bi-check2-square text-success"></i> 2. 审批流转</div><div class="small text-muted mt-1">在「合同审批」中处理待办，支持同意/驳回/转交/撤回。</div></div></div>'
-        + '<div class="col-6"><div class="border rounded p-3 h-100"><div class="fw-semibold"><i class="bi bi-cash-coin text-warning"></i> 3. 回款与发票</div><div class="small text-muted mt-1">合同详情页登记回款计划与开票申请，金额受合同总额约束。</div></div></div>'
-        + '<div class="col-6"><div class="border rounded p-3 h-100"><div class="fw-semibold"><i class="bi bi-bell text-danger"></i> 4. 到期提醒</div><div class="small text-muted mt-1">仪表盘「今日提醒」与侧栏角标汇总合同到期/回款逾期。</div></div></div>'
-        + '<div class="col-12"><div class="border rounded p-3"><div class="fw-semibold"><i class="bi bi-shield-lock text-info"></i> 5. 权限与安全</div><div class="small text-muted mt-1">登录后请修改密码；数据按角色范围（本人/部门/全部）可见；操作全程留痕于「审计中心」。</div></div></div>'
-        + '</div></div>'
-        + '<div class="modal-footer"><a href="/audit" class="btn btn-outline-secondary btn-sm">查看审计中心</a><button class="btn btn-primary" data-bs-dismiss="modal">开始使用</button></div>'
-        + '</div></div></div>';
-    document.body.insertAdjacentHTML('beforeend', html);
-    new bootstrap.Modal('#guideModal').show();
-    try { localStorage.setItem('cm_guide_seen', '1'); } catch (e) {}
-};
-
-// 首次访问仪表盘自动弹出新手引导（2026-07-25：受系统配置 guide_enabled 控制，window.guideEnabled 由 sidebar 注入；默认关闭）
-if (window.guideEnabled && location.pathname === '/dashboard' && !localStorage.getItem('cm_guide_seen')) {
-    setTimeout(function() { if (typeof showGuide === 'function') showGuide(); }, 800);
-}
-
 // 修改密码（Modal 表单，替代原生 prompt/alert）
 window.changePassword = function() {
     var html = ''

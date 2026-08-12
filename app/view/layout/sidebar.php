@@ -132,9 +132,6 @@ if ($__can('library:view')) {
     $__blocks['library'] = ob_get_clean();
 }
 
-// 使用手册块（所有登录用户可见，不依赖任何权限码；输出在资料库菜单之后，见下方输出循环）
-$__blocks['manual'] = '<a href="/manual" class="nav-link' . ($menu_active == 'manual' ? ' active' : '') . '"><i class="bi bi-journal-text"></i> 使用手册</a>';
-
 // 系统设置块（P3：回收站/审计降级为子菜单，内部分高频/低频两组）
 $__canUserManage  = $__can('system:user');
 $__canRoleManage  = $__can('system:role');
@@ -190,18 +187,9 @@ foreach ($__order as $__key) {
     if (isset($__blocks[$__key])) {
         echo $__blocks[$__key];
     }
-    // 使用手册：紧随「资料库」菜单输出（各角色排序均含 library 位，保证位置一致）
-    if ($__key === 'library' && isset($__blocks['manual'])) {
-        echo $__blocks['manual'];
-    }
 }
 if (isset($__blocks['admin'])) {
     echo $__blocks['admin'];
 }
 ?>
-<?php
-// PC 端新手引导开关：读取系统配置 guide_enabled（默认 0 关闭，2026-07-25 起可在「系统配置」页切换）
-$guideOn = (sys_config('guide_enabled', '0') == '1');
-?>
-<hr class="mx-2"><div class="small text-muted px-3 pb-3">合同管理系统 <?=app_version(); ?><?php if ($guideOn): ?> · <a href="#" onclick="showGuide()" style="text-decoration:none">🧭 新手引导</a><?php endif; ?></div>
-<script>window.guideEnabled = <?= $guideOn ? 'true' : 'false' ?>;</script>
+<hr class="mx-2"><div class="small text-muted px-3 pb-3">合同管理系统 <?=app_version(); ?></div>
