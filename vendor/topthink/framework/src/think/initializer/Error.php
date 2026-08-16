@@ -2,7 +2,7 @@
 // +----------------------------------------------------------------------
 // | ThinkPHP [ WE CAN DO IT JUST THINK ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2006~2021 http://thinkphp.cn All rights reserved.
+// | Copyright (c) 2006~2025 http://thinkphp.cn All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
 // +----------------------------------------------------------------------
@@ -35,9 +35,8 @@ class Error
     public function init(App $app)
     {
         $this->app = $app;
-        // 本地 E2E 临时：PHP 8.4 下框架自身大量“隐式可空参数”属 E_DEPRECATED，不应致命；
-        // 生产若运行 PHP>=8.4 需正视 topthink/framework 6.1.5 兼容缺口（改用 error_reporting 排除废弃级）。
-        error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+        error_reporting(E_ALL);
+        ini_set('display_errors', 'Off');
         set_error_handler([$this, 'appError']);
         set_exception_handler([$this, 'appException']);
         register_shutdown_function([$this, 'appShutdown']);
@@ -66,10 +65,10 @@ class Error
     /**
      * Error Handler
      * @access public
-     * @param integer $errno   错误编号
-     * @param string  $errstr  详细错误信息
-     * @param string  $errfile 出错的文件
-     * @param integer $errline 出错行号
+     * @param int    $errno   错误编号
+     * @param string $errstr  详细错误信息
+     * @param string $errfile 出错的文件
+     * @param int    $errline 出错行号
      * @throws ErrorException
      */
     public function appError(int $errno, string $errstr, string $errfile = '', int $errline = 0): void

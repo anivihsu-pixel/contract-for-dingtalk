@@ -130,7 +130,7 @@ tr[data-id].flow-drop-target{box-shadow:inset 0 2px 0 0 var(--primary)}
 // 而 user tab 不渲染那段，导致 renderRoleView/rpRender 抛 ReferenceError、弹窗打不开）。
 let allUsers = <?=json_encode($users??[], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
 let allRoles = <?=json_encode($roles??[], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
-let flowCats = <?=json_encode(contract_categories(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+let flowCats = <?=json_encode(dict_enabled('business_type'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
 // 部门（钉钉后台风格左侧部门树用）：扁平 [id,name,parent_id]，前端构建层级
 let allDepts = <?=json_encode($depts??[], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
 // esc() 统一下沉至 public/static/js/app.js（全局 window.esc）。
@@ -656,10 +656,10 @@ function delRole(id){pcConfirm({message:'确定删除此角色？',danger:true})
   <div class="d-flex gap-2">
     <button class="btn btn-outline-secondary btn-sm" onclick="showFlowMode('recycle')"><i class="bi bi-archive"></i> 回收站<span class="pc-tag pc-tag-muted ms-1" id="flowRecycleCount"><?= count(array_filter($flows ?? [], function($f){ $s = $f['status'] ?? null; return $s === 0 || $s === '0'; })) ?></span></button>
     <a href="/admin/form-builder?form=invoice_apply" class="btn btn-outline-primary btn-sm" onclick="openInvoiceEditor();return false;" title="在弹窗中配置发票审批流程"><i class="bi bi-receipt"></i> 新建发票流程</a>
-    <button class="btn btn-primary btn-sm" onclick="newFlow()"><i class="bi bi-file-earmark-text"></i> 新建合同流程</button>
+    <button class="btn btn-primary btn-sm" onclick="newFlow('contract')"><i class="bi bi-file-earmark-text"></i> 新建合同流程</button>
   </div>
 </div>
-<div class="text-muted small mb-2"><i class="bi bi-grip-vertical"></i> 拖动行可排序：<b>同类流程（合同/发票）内越靠前优先级越高</b>（多个流程同时命中时，靠前的先匹配；<span class="text-warning">手动排序后以排序为准，会覆盖金额区间自动选择</span>）</div>
+<div class="text-muted small mb-2"><i class="bi bi-grip-vertical"></i> 拖动行可排序：<b>同类流程内越靠前优先级越高</b>。同一优先级若有多个流程同时命中，系统将阻止提交并提示调整，避免误用审批链。</div>
 <div id="flowActivePane">
 <div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th style="width:44px" title="拖动排序">排序</th><th style="width:90px">类型</th><th>名称</th><th>编码</th><th>分类</th><th>金额范围</th><th>节点</th><th>状态</th><th>操作</th></tr></thead><tbody id="flowTb">
 <?php if(!empty($flows)): foreach($flows as $f): if(($f['status'] ?? null) === 0 || ($f['status'] ?? null) === '0') continue;  // v2.38.26：仅跳过真正被删除（status=0）的流程；发票流程 status 为空串也照常显示在列表，删除后进入同一回收站
@@ -672,7 +672,7 @@ $isInvoice = $fBiz === 'invoice' || strpos($fCode, 'INVOICE') === 0;
 ?>
 <tr data-id="<?=(int)$f['id']?>" data-biz="<?=htmlspecialchars($fBiz)?>" draggable="<?= $isInvoice ? 'false' : 'true' ?>"><td class="text-center text-muted flow-drag-handle"><i class="bi bi-grip-vertical"></i></td><td><?=$isInvoice?'<span class="pc-tag pc-tag-warn">发票</span>':'<span class="pc-tag pc-tag-ok">合同</span>'?></td><td><?=htmlspecialchars($f['name'])?></td><td><code><?=htmlspecialchars($fCode)?></code></td><td><?php
 $catNames = [];
-if (!empty($f['category_list'])) { $cl = json_decode($f['category_list'], true) ?: []; foreach ($cl as $c) { $catNames[] = contract_categories()[$c] ?? $c; } }
+if (!empty($f['business_type_list'])) { $cl = json_decode($f['business_type_list'], true) ?: []; foreach ($cl as $c) { $catNames[] = dict_enabled('business_type')[$c] ?? $c; } }
 echo $catNames ? htmlspecialchars(implode('、', $catNames)) : '不限';
 ?></td>
 <td><?php if (empty($f['use_amount'])): ?>不限金额<?php else: ?>¥<?=$f['min_amount']?> ~ ¥<?=$f['max_amount']?><?php endif; ?></td>
@@ -704,7 +704,7 @@ $fCode = (string)($f['code'] ?? '');
 $isInvoice = $fBiz === 'invoice' || strpos($fCode, 'INVOICE') === 0;
 $hasRecycle = true;
 $catNames = [];
-if (!empty($f['category_list'])) { $cl = json_decode($f['category_list'], true) ?: []; foreach ($cl as $c) { $catNames[] = contract_categories()[$c] ?? $c; } }
+if (!empty($f['business_type_list'])) { $cl = json_decode($f['business_type_list'], true) ?: []; foreach ($cl as $c) { $catNames[] = dict_enabled('business_type')[$c] ?? $c; } }
 ?>
       <tr><td><?=$isInvoice?'<span class="pc-tag pc-tag-warn">发票</span>':'<span class="pc-tag pc-tag-ok">合同</span>'?></td><td><?=htmlspecialchars($f['name'])?></td><td><code><?=htmlspecialchars($fCode)?></code></td><td><?= $catNames ? htmlspecialchars(implode('、', $catNames)) : '不限' ?></td>
       <td><?php if (empty($f['use_amount'])): ?>不限金额<?php else: ?>¥<?=$f['min_amount']?> ~ ¥<?=$f['max_amount']?><?php endif; ?></td>
@@ -785,11 +785,11 @@ function purgeFlow(id){
 <!-- Flow Editor Modal（v2.38.22 恢复：左侧图形化画布 + 右侧流程配置侧边栏；添加审批节点按钮移入左侧画布） -->
 <div class="modal fade" id="flowModal" tabindex="-1"><div class="modal-dialog modal-xxl"><div class="modal-content"><div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="bi bi-diagram-3"></i> 审批流程编辑器</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
 <div class="modal-body p-0">
-<form id="flowForm"><input type="hidden" name="id" id="flowId"><input type="hidden" name="code" id="flowCode">
+<form id="flowForm"><input type="hidden" name="id" id="flowId"><input type="hidden" name="code" id="flowCode"><input type="hidden" name="biz_type" id="flowBizType" value="contract">
 <div class="flow-editor-layout">
   <!-- 左侧：图形化画布（发起人 → 审批节点链 → 抄送 → 结束；添加节点按钮在画布内） -->
   <div class="flow-canvas-panel">
-    <div class="flow-canvas-head"><i class="bi bi-diagram-3"></i> 流程画布 <span class="text-muted small">发起人 → 审批节点 → 抄送 → 结束</span></div>
+    <div class="flow-canvas-head"><i class="bi bi-diagram-3"></i> 流程画布 <span class="text-muted small">发起人 → 审批节点 → 进入执行并抄送 → 结束</span></div>
     <div class="flow-canvas-scroll">
       <div class="flow-canvas" id="nodeEditor"></div>
     </div>
@@ -798,10 +798,11 @@ function purgeFlow(id){
   <div class="flow-config-panel">
     <h6 class="flow-config-title"><i class="bi bi-sliders"></i> 流程设置</h6>
     <div class="mb-3"><label class="form-label" for="flowName">流程名称 <span class="text-danger">*</span></label><input type="text" name="name" class="form-control form-control-sm" required id="flowName" placeholder="如：标准审批"></div>
-    <div class="mb-3"><label class="form-label" for="flowCatsVal">适用分类 <span class="text-muted small">(可多选，不选=适用全部)</span></label>
+    <div class="mb-3"><label class="form-label" for="flowCatsVal">适用业务类型 <span class="text-muted small">(可多选，不选=适用全部)</span></label>
       <div id="flowCatsBox" class="d-flex flex-wrap gap-1 border rounded p-2" style="min-height:42px"></div>
-      <input type="hidden" id="flowCatsVal" name="category_list" value="[]">
+      <input type="hidden" id="flowCatsVal" name="business_type_list" value="[]">
     </div>
+    <div class="row g-2 mb-3"><div class="col-6"><label class="form-label">收付款方向</label><select class="form-select form-select-sm" name="direction" id="flowDirection"><option value="ALL">全部</option><option value="sales">销售收款</option><option value="purchase">采购付款</option></select></div><div class="col-6"><label class="form-label">交易属性</label><select class="form-select form-select-sm" name="trade_attr_condition" id="flowTradeAttr"><option value="ALL">全部</option><option value="1">交易合同</option><option value="0">非交易合同</option></select></div></div>
     <div class="mb-3">
       <label class="form-label" for="flowUseAmount">金额条件</label>
       <select class="form-select form-select-sm" id="flowUseAmount" name="use_amount" onchange="toggleAmountFields()">
@@ -918,7 +919,6 @@ function openInvoiceEditor(){
 // v2.28.2：dicts 由 AdminController::index() 注入（AdminLogic::getDicts()），视图层不再 Db::name
 $dicts = $dicts ?? [];
 $labels = [
-  'dict_contract_category' => ['title'=>'合同分类',       'icon'=>'file-text',  'color'=>'primary'],
   'dict_contract_status'   => ['title'=>'合同状态',       'icon'=>'flag',       'color'=>'secondary'],
   'dict_supplier_type'     => ['title'=>'供应商类型',     'icon'=>'truck',      'color'=>'info'],
   'dict_invoice_type'      => ['title'=>'发票类型',       'icon'=>'receipt',    'color'=>'warning'],
@@ -931,6 +931,7 @@ $labels = [
   'dict_data_scope'        => ['title'=>'数据权限范围',   'icon'=>'shield-check','color'=>'secondary'],
   'dict_tax_rate'          => ['title'=>'税率',           'icon'=>'percent',    'color'=>'danger'],
   'dict_project_status'    => ['title'=>'项目状态',       'icon'=>'kanban',     'color'=>'primary'],
+  'dict_business_type'     => ['title'=>'业务类型',       'icon'=>'diagram-3',  'color'=>'primary'],
   'dict_customer_lifecycle'=> ['title'=>'客户生命周期',   'icon'=>'arrow-repeat','color'=>'info'],
 ];
 ?>
@@ -1183,16 +1184,11 @@ function toggleOffZone(key) {
   </div>
 </div>
 
-<!-- 业务规则（2026-08-01：公海释放/到期提醒等定时任务参数，存 system_config group=rule） -->
+<!-- 业务规则（到期提醒等定时任务参数，存 system_config group=rule） -->
 <div class="card mt-3">
   <div class="card-header bg-light"><i class="bi bi-gear"></i> 业务规则</div>
   <div class="card-body">
     <div class="row g-3">
-      <div class="col-md-4">
-        <label class="form-label" for="rulePoolDays">公海客户自动释放天数</label>
-        <input type="number" min="1" class="form-control" id="rulePoolDays" value="<?=htmlspecialchars(sys_config('rule_pool_release_days', '30'), ENT_QUOTES)?>">
-        <small class="text-muted">认领后 N 天无跟进自动释放回公海。定时任务 <code>customer:pool-release</code> 读取；CLI 传 <code>--days</code> 可临时覆盖。</small>
-      </div>
       <div class="col-md-4">
         <label class="form-label" for="ruleExpireDays">合同到期提醒（提前天数）</label>
         <input type="text" class="form-control" id="ruleExpireDays" value="<?=htmlspecialchars(sys_config('rule_expire_remind_days', '30,15,7,3,1'), ENT_QUOTES)?>" placeholder="30,15,7,3,1">
@@ -1257,12 +1253,10 @@ function saveSysConfig() {
         else { showToast(r.msg || '保存失败', 'error'); }
     }).catch(function () { showToast('保存失败', 'error'); });
 }
-// 保存业务规则（2026-08-01：公海释放天数/合同到期提醒/回款提醒提前天数，复用 /ajax/admin/config/save 普通分支）
+// 保存业务规则（合同到期提醒/回款提醒提前天数，复用 /ajax/admin/config/save 普通分支）
 function saveRuleConfig() {
-    var pool = document.getElementById('rulePoolDays').value.trim();
     var exp = document.getElementById('ruleExpireDays').value.trim();
     var pay = document.getElementById('rulePaymentDays').value.trim();
-    if (!(pool && /^\d+$/.test(pool))) { showToast('公海释放天数必须为正整数', 'error'); return; }
     function numList(v) {
         var a = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
         if (!a.length || a.some(function (x) { return !/^\d+$/.test(x); })) return null;
@@ -1277,7 +1271,7 @@ function saveRuleConfig() {
     function post(key, value) {
         return $ajax('/ajax/admin/config/save', {method: 'POST', body: new URLSearchParams({key: key, value: value})});
     }
-    Promise.all([post('rule_pool_release_days', pool), post('rule_expire_remind_days', expL), post('rule_payment_remind_days', payL), post('weekly_report_dd_enabled', weeklyDd)]).then(function (rs) {
+    Promise.all([post('rule_expire_remind_days', expL), post('rule_payment_remind_days', payL), post('weekly_report_dd_enabled', weeklyDd)]).then(function (rs) {
         var bad = rs.find(function (r) { return r.code !== 0; });
         if (!bad) { showToast('规则已保存', 'success'); location.reload(); }
         else { showToast(bad.msg || '保存失败', 'error'); }

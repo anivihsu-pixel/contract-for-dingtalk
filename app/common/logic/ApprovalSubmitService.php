@@ -18,7 +18,7 @@ class ApprovalSubmitService
      * 匹配审批流程（F1：按业务类型过滤——发票专用流不会命中合同提交）
      * @return array|null
      */
-    public static function matchFlow(string $category, float $amount, int $tradeAttr = 1, string $bizType = 'contract'): ?array
+    public static function matchFlow(string $businessType, string $direction, float $amount, int $tradeAttr = 1, string $bizType = 'contract'): ?array
     {
         $flows = Db::name('approval_flow')
             ->where('status', 1)
@@ -31,18 +31,15 @@ class ApprovalSubmitService
             $flowBiz = (string)($flow['biz_type'] ?? '');
             if ($flowBiz !== '' && $flowBiz !== $bizType) continue;
 
-            // 分类匹配：category_list 优先（多选）；为空时回退遗留单值 category；两者皆空=适用全部
-            $catList = [];
-            if (!empty($flow['category_list'])) {
-                $decoded = json_decode($flow['category_list'], true);
-                if (is_array($decoded)) $catList = $decoded;
-            }
-            // v2.38.22：提交分类支持多选（数组/JSON/逗号分隔串），任一命中即匹配
-            $submitted = self::toList($category);
-            if (!empty($catList)) {
-                if (empty(array_intersect($submitted, $catList))) continue;
-            } elseif (!empty($flow['category'])) {
-                if (!in_array($flow['category'], $submitted, true)) continue;
+            // 合同匹配条件：业务类型 → 收付款方向 → 交易属性 → 金额区间 → 流程优先级。
+            // business_type_list 为空代表全部；direction/trade_attr 的 ALL 也代表全部。
+            if ($bizType === 'contract') {
+                $types = self::toList((string)($flow['business_type_list'] ?? ''));
+                if ($types !== [] && !in_array($businessType, $types, true)) continue;
+                $flowDirection = (string)($flow['direction'] ?? 'ALL');
+                if ($flowDirection !== 'ALL' && $flowDirection !== $direction) continue;
+                $flowTradeAttr = (string)($flow['trade_attr_condition'] ?? 'ALL');
+                if ($flowTradeAttr !== 'ALL' && (int)$flowTradeAttr !== $tradeAttr) continue;
             }
 
             // 金额条件（M10 修复）：非交易合同（trade_attr=0）无金额概念，金额条件不适用，直接命中；
@@ -54,28 +51,25 @@ class ApprovalSubmitService
             }
             $matched[] = $flow;
         }
-        if (empty($matched)) return null;
+        return self::selectUniqueHighestPriority($matched);
+    }
 
-        // 优先匹配最具体（金额区间最窄；未启用金额条件视为最宽）的流程；范围相同则取下限更高的
-        // v2.38.24：同类型流程内手动排序（sort_order 越小越靠前）为第一优先级；
-        //           sort_order 相同（含全 0 旧数据）回退原有逻辑——交易按金额区间最窄、
-        //           M10 修复：非交易合同金额维度无意义，按流程 id 升序（先创建优先），
-        //           不再按金额下限排序（否则会错误命中"大额"流程——非交易没有金额概念）
-        usort($matched, function ($a, $b) use ($isTrade) {
-            $sa = (int)($a['sort_order'] ?? 0);
-            $sb = (int)($b['sort_order'] ?? 0);
-            if ($sa != $sb) return $sa <=> $sb;
-            if (!$isTrade) {
-                return (int)$a['id'] <=> (int)$b['id'];
-            }
-            $ua = isset($a['use_amount']) ? (int)$a['use_amount'] : 1;
-            $ub = isset($b['use_amount']) ? (int)$b['use_amount'] : 1;
-            $ra = $ua ? ((float)$a['max_amount'] - (float)$a['min_amount']) : PHP_FLOAT_MAX;
-            $rb = $ub ? ((float)$b['max_amount'] - (float)$b['min_amount']) : PHP_FLOAT_MAX;
-            if ($ra != $rb) return $ra <=> $rb;
-            return (float)$b['min_amount'] <=> (float)$a['min_amount'];
-        });
-        return $matched[0];
+    /**
+     * 从已命中的流程中选择唯一最高优先级（sort_order 数字越小优先级越高）。
+     * 同一最高优先级出现多个候选时必须阻止提交，避免系统静默选择较弱流程。
+     */
+    public static function selectUniqueHighestPriority(array $matched): ?array
+    {
+        if ($matched === []) return null;
+        $priorities = array_map(static fn(array $flow): int => (int)($flow['sort_order'] ?? 0), $matched);
+        $highest = min($priorities);
+        $top = array_values(array_filter($matched,
+            static fn(array $flow): bool => (int)($flow['sort_order'] ?? 0) === $highest));
+        if (count($top) !== 1) {
+            $names = array_map(static fn(array $flow): string => (string)($flow['name'] ?? ('#' . ($flow['id'] ?? '?'))), $top);
+            throw new \RuntimeException('审批流程配置冲突：同一最高优先级命中多个流程（' . implode('、', $names) . '），请管理员调整流程排序');
+        }
+        return $top[0];
     }
 
     /**
@@ -133,13 +127,13 @@ class ApprovalSubmitService
                 } elseif ((string)($flow['biz_type'] ?? '') !== '' && (string)$flow['biz_type'] !== 'contract') {
                     $flow = null;
                 } elseif ((int)($contract['flow_id'] ?? 0) !== (int)$flowId) {
-                    $auto = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
+                    $auto = self::matchFlow($contract['business_type'] ?? '', $contract['direction'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
                     if (!$auto || (int)$auto['id'] !== (int)$flowId) {
                         $flow = null;
                     }
                 }
             } else {
-                $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
+                $flow = self::matchFlow($contract['business_type'] ?? '', $contract['direction'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
             }
             if (!$flow) {
                 throw new \RuntimeException('未匹配到适用的审批流程，请联系管理员配置');
@@ -175,24 +169,21 @@ class ApprovalSubmitService
                 if ($rawActiveCount > 0) {
                     throw new \RuntimeException('当前流程中没有满足条件的审批节点，无法提交，请联系管理员调整流程或合同属性');
                 }
-                // 全部为抄送节点：无实质审批表决，属「免审批/免签」流程（REV-33）
-                // 原实现直接 transitionStatus(APPROVED) 因 DRAFT->APPROVED 非合法一跳而静默失败，合同永远卡在草稿态。
-                // 改为沿状态机合法跃迁 DRAFT->PENDING_APPROVAL->APPROVED，并标注免签，使合同可立即进入执行进度跟踪。
+                // 全部为抄送节点：无实质审批表决，提交后直接进入执行。
                 Db::name('approval_instance')->where('id', $instanceId)->update([
                     'status'             => 'APPROVED',
                     'current_node_order' => $order,
                     'finished_at'        => date('Y-m-d H:i:s'),
                 ]);
-                // 顺状态机合法跃迁（免签，无实质审批节点）：DRAFT -> PENDING_APPROVAL -> APPROVED -> EXECUTING
+                // 顺状态机合法跃迁：DRAFT -> PENDING_APPROVAL -> EXECUTING。
                 // P0-1：首跳同样校验返回值（免签流程若由 REJECTED 态重提，起点合法取决于状态机放开）
                 if (!ContractLogic::transitionStatus($contractId, 'PENDING_APPROVAL', $submitterId)) {
                     throw new \RuntimeException('免签流程提交失败：合同当前状态不允许进入待审批');
                 }
-                ContractLogic::transitionStatus($contractId, 'APPROVED', $submitterId);
-                // P1-1（M4）：全抄送免签路径同样推进至 EXECUTING，与下方“已进入待执行状态”文案一致（杜绝落 APPROVED）
-                ContractLogic::transitionStatus($contractId, 'EXECUTING', $submitterId);
-                // 审计/日志留痕：明确免签路径（REV-33）
-                Log::info('全抄送流程免审批通过（免签，可进入执行进度）', [
+                if (!ContractLogic::transitionStatus($contractId, ContractLogic::STATUS_EXECUTING, $submitterId)) {
+                    throw new \RuntimeException('免审批流程提交失败：合同无法进入执行');
+                }
+                Log::info('全抄送流程免审批通过并进入执行', [
                     'contract_id' => $contractId,
                     'instance_id' => $instanceId,
                     'operator'    => $submitterId,
@@ -200,12 +191,19 @@ class ApprovalSubmitService
                 Db::commit();
                 $committed = true; // M6：已提交，后续通知/抄送异常不得再回滚
                 // P0-5【严重·并发/可靠性】修复：钉钉外呼移出数据库事务（网络 I/O 不持锁），主流程落库后再发通知
+                try {
+                    self::fireCc($instanceId, $flow, $contract, $submitterId);
+                } catch (\Throwable $e) {
+                    Log::warning('免签合同审批抄送记录生成失败', ['instance_id' => $instanceId, 'error' => $e->getMessage()]);
+                }
                 $link = DingTalkService::approvalEntryUrl($instanceId);
-                \app\common\logic\ApprovalNotifyService::queueNotify([$submitterId], '审批已通过（免签）',
-                    "合同 {$contract['title']} 为全抄送流程，无需审批/签署，已直接进入待执行状态！", $link, InternalNotify::TYPE_APPROVAL_APPROVED);
-                // 免签流程无审批节点、advanceAfterNode 不会被触发，故在此显式触发抄送知会（修复：全抄送流抄送人收不到通知）
-                self::fireCc($instanceId, $flow, $contract, (int)$submitterId); // M1：显式传提交人，避免读不存在的 contract.submitted_by
+                \app\common\logic\ApprovalNotifyService::queueNotify([$submitterId], '审批已通过',
+                    "合同 {$contract['title']} 无需人工审批，现已进入执行。", $link, InternalNotify::TYPE_APPROVAL_APPROVED);
                 \app\common\logic\ApprovalNotifyService::flushNotify();
+                $executingContract = Db::name('contract')->where('id', $contractId)->find();
+                if ($executingContract) {
+                    \app\common\service\ContractExecutionNotifyService::dispatch($executingContract, $submitterId);
+                }
                 return $instanceId;
             }
 
@@ -247,6 +245,11 @@ class ApprovalSubmitService
             Db::commit();
             $committed = true; // M6：已提交，后续通知异常不得再回滚
             // P0-5【严重·并发/可靠性】修复：钉钉外呼移出数据库事务（网络 I/O 不持锁），主流程落库后再发通知
+            try {
+                self::fireCc($instanceId, $flow, $contract, $submitterId);
+            } catch (\Throwable $e) {
+                Log::warning('合同审批抄送记录生成失败', ['instance_id' => $instanceId, 'error' => $e->getMessage()]);
+            }
             if (!empty($approvers)) {
                 $link = DingTalkService::approvalEntryUrl($instanceId);
                 $msg = "新的审批请求\n\n"
@@ -291,7 +294,13 @@ class ApprovalSubmitService
         Db::startTrans();
         $committed = false;
         try {
-            $invoice = Db::name('contract_invoice')->find($invoiceId);
+            // 与合同审批保持相同的并发幂等语义：锁定业务对象后再检查状态和待审批实例。
+            // MySQL 使用行锁串行化同一发票的重复提交；SQLite 由外层写事务串行化。
+            $invoiceQuery = Db::name('contract_invoice')->where('id', $invoiceId);
+            if (config('database.default') === 'mysql') {
+                $invoiceQuery->lock(true);
+            }
+            $invoice = $invoiceQuery->find();
             if (!$invoice) throw new \RuntimeException('发票申请不存在');
             // P2-3：撤回(CANCELLED)的申请与驳回(REJECTED)一样可重新提交（状态机已放开 CANCELLED -> PENDING_APPROVAL）
             if (($invoice['status'] ?? '') !== \app\common\logic\InvoiceLogic::STATUS_PENDING_APPROVAL
@@ -300,10 +309,24 @@ class ApprovalSubmitService
                 throw new \RuntimeException('当前状态不可提交审批');
             }
 
+            $pendingInstance = Db::name('approval_instance')
+                ->where('biz_type', 'invoice')
+                ->where('target_id', $invoiceId)
+                ->where('status', 'PENDING')
+                ->find();
+            if ($pendingInstance) {
+                throw new \RuntimeException('该发票已有审批中的流程，请勿重复提交');
+            }
+
             if ($flowId) {
                 $flow = Db::name('approval_flow')->find($flowId);
-                if (!$flow || ($flow['biz_type'] ?? '') !== 'invoice') {
-                    throw new \RuntimeException('指定的流程不是发票审批流程');
+                $matchedFlow = self::matchInvoiceFlow($invoice);
+                if (!$flow
+                    || (int)($flow['status'] ?? 0) !== 1
+                    || ($flow['biz_type'] ?? '') !== 'invoice'
+                    || !$matchedFlow
+                    || (int)$matchedFlow['id'] !== (int)$flowId) {
+                    throw new \RuntimeException('指定的发票审批流程不适用于当前申请');
                 }
             } else {
                 // H4：按开票公司等表单字段条件匹配分支流程（无条件流程为默认兜底）
@@ -530,7 +553,7 @@ class ApprovalSubmitService
     /**
      * v2.38.0：触发流程级抄送知会。
      * 抄送已从审批节点链独立为 approval_flow.cc_list（{role_codes:[], cc_user_ids:[]}），
-     * 与 nodes 平级：提交审批时一次性触发，不再写 approval_record、不再参与节点推进判断。
+     * 与 nodes 平级：合同进入执行时由 ContractExecutionNotifyService 触发，不参与审批节点推进判断。
      * 去重语义与 v2.37.5 一致：同一人既是审批节点审批人又是抄送人时，仅收审批催办，不再重复收抄送知会。
      *
      * @param int   $instanceId

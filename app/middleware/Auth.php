@@ -20,6 +20,7 @@ class Auth
         'dingtalk/sso-login',   // 钉钉免登入口（匿名换取身份）
         'dingtalk/jsapi-config',// JSAPI 签名（前端页面拉取，匿名）
         'dingtalk/entry',       // 免登回调落地页（匿名重定向）
+        'health',               // 负载均衡健康探针（仅返回通用状态，不泄露检查详情）
     ];
 
     public function handle($request, \Closure $next)
@@ -105,6 +106,8 @@ class Auth
                     \app\common\logic\AuthLogic::refreshSessionPermissionsIfStale();
                     $fr = $this->checkForceReset($request);
                     if ($fr !== null) return $fr;
+                    $rootTarget = $this->authenticatedRootTarget($request);
+                    if ($rootTarget !== null) return redirect($rootTarget);
                     return $next($request);
                 }
                 }
@@ -136,6 +139,8 @@ class Auth
             \app\common\logic\AuthLogic::refreshSessionPermissionsIfStale();
             $fr = $this->checkForceReset($request);
             if ($fr !== null) return $fr;
+            $rootTarget = $this->authenticatedRootTarget($request);
+            if ($rootTarget !== null) return redirect($rootTarget);
             return $next($request);
         }
 
@@ -148,12 +153,39 @@ class Auth
         // 未登录：按设备分流登录入口，并携带原始请求地址以便登录后回跳（CR-43）
         $loginUrl = is_mobile_request() ? '/m/login' : '/login';
         $target   = '/' . ltrim($request->pathinfo(), '/');
-        $qs = $request->query();
-        $qs = is_array($qs) ? http_build_query($qs) : (string)$qs;
+        $qs = $this->buildRedirectQueryString($request);
         if ($qs !== '') {
             $target .= '?' . $qs;
         }
         return redirect($loginUrl . '?redirect=' . urlencode($target));
+    }
+
+    /**
+     * 构造登录回跳查询串，并剔除 Web 服务器传给 ThinkPHP 的内部 PATH_INFO 参数。
+     * Nginx 常使用 /index.php?s=$uri 重写；s 只用于路由解析，不属于用户 URL。
+     */
+    protected function buildRedirectQueryString($request): string
+    {
+        $query = $request->query();
+        if (!is_array($query)) {
+            $parsed = [];
+            parse_str((string)$query, $parsed);
+            $query = $parsed;
+        }
+        unset($query['s']);
+        return http_build_query($query);
+    }
+
+    /**
+     * ThinkPHP 8 强制路由模式不会匹配空 pathinfo 的根地址。
+     * 根地址仅作为登录后的入口别名，在认证和账号状态校验完成后转到实际首页。
+     */
+    protected function authenticatedRootTarget($request): ?string
+    {
+        if ($request->pathinfo() !== '') {
+            return null;
+        }
+        return is_mobile_request() ? '/m' : '/dashboard';
     }
 
     /**

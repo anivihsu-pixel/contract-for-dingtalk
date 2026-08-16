@@ -151,6 +151,8 @@ class UserLogic
     {
         $q = Db::name('user')->alias('u')
             ->leftJoin('department d', 'u.dept_id = d.id')
+            // 回收站用户(status=0/2)不可作为新审批流程的审批人或抄送人
+            ->where('u.status', 1)
             ->field('u.id, u.name, d.name as dept_name');
         if ($deptId > 0) {
             $q->where('u.dept_id', $deptId);

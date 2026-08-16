@@ -13,9 +13,7 @@ class ContractLogic
     /** 合同状态枚举（REV-36：状态字符串收敛为常量，避免散落字面量导致状态机与标签不一致） */
     const STATUS_DRAFT            = 'DRAFT';
     const STATUS_PENDING_APPROVAL = 'PENDING_APPROVAL';
-    const STATUS_APPROVED         = 'APPROVED';
     const STATUS_REJECTED         = 'REJECTED';
-    const STATUS_SIGNED           = 'SIGNED';
     const STATUS_EXECUTING        = 'EXECUTING';
     const STATUS_COMPLETED        = 'COMPLETED';
     const STATUS_TERMINATED       = 'TERMINATED';
@@ -26,9 +24,7 @@ class ContractLogic
     const STATUS_LABELS = [
         self::STATUS_DRAFT            => '草稿',
         self::STATUS_PENDING_APPROVAL => '待审批',
-        self::STATUS_APPROVED         => '已通过',
         self::STATUS_REJECTED         => '已驳回',
-        self::STATUS_SIGNED           => '历史已签',  // v2.38.10: 签署功能已移除(v2.38.4 remove_sign)，SIGNED 仅历史存量
         self::STATUS_EXECUTING        => '执行中',
         self::STATUS_COMPLETED        => '已完成',
         self::STATUS_TERMINATED       => '已终止',
@@ -40,12 +36,10 @@ class ContractLogic
     const TRANSITIONS = [
         self::STATUS_DRAFT            => [self::STATUS_PENDING_APPROVAL],
         // P1-5（M27）：放开「审批中 → 草稿」跃迁，使撤回(recall)功能可用（审批代理从 PENDING_APPROVAL 回退到 DRAFT）
-        self::STATUS_PENDING_APPROVAL => [self::STATUS_APPROVED, self::STATUS_REJECTED, self::STATUS_DRAFT],
+        self::STATUS_PENDING_APPROVAL => [self::STATUS_EXECUTING, self::STATUS_REJECTED, self::STATUS_DRAFT],
         // P0-1【严重·C1】放开「驳回(REJECTED) → 待审批(PENDING_APPROVAL)」跃迁，支持驳回后修改重提审批；
         // 此前仅允许 REJECTED→DRAFT/ARCHIVED，导致 submit() 调 transitionStatus(PENDING_APPROVAL) 静默失败、合同状态卡死在已驳回。
         self::STATUS_REJECTED         => [self::STATUS_DRAFT, self::STATUS_ARCHIVED, self::STATUS_PENDING_APPROVAL],
-        self::STATUS_APPROVED         => [self::STATUS_EXECUTING, self::STATUS_TERMINATED, self::STATUS_ARCHIVED], // REV-33：签署功能已软移除，审批通过直接进入执行中
-        self::STATUS_SIGNED           => [self::STATUS_EXECUTING, self::STATUS_TERMINATED, self::STATUS_ARCHIVED], // 签署功能已移除：SIGNED 仅历史存量（保留流转定义以兼容历史库数据）
         self::STATUS_EXECUTING        => [self::STATUS_COMPLETED, self::STATUS_EXPIRED, self::STATUS_TERMINATED, self::STATUS_ARCHIVED],
         // M35：已完成/已到期/已终止 允许反向回到执行中，支持误操作撤销
         self::STATUS_COMPLETED        => [self::STATUS_ARCHIVED, self::STATUS_EXECUTING],
@@ -75,22 +69,7 @@ class ContractLogic
         $data['created_at']  = date('Y-m-d H:i:s');
         $data['updated_at']  = date('Y-m-d H:i:s');
 
-        // CR-31：contract 主记录 + contract_revision 变更日志包裹事务，
-        // 任一写失败整体回滚，避免产生无变更日志的孤儿合同
-        return Db::transaction(function () use ($data) {
-            $id = Db::name('contract')->insertGetId($data);
-
-            // 记录变更日志
-            Db::name('contract_revision')->insert([
-                'contract_id' => $id,
-                'field_name'  => 'system',
-                'new_value'   => '创建合同',
-                'operator_id' => $data['creator_id'] ?? 0,
-                'created_at'  => date('Y-m-d H:i:s'),
-            ]);
-
-            return $id;
-        });
+        return Db::name('contract')->insertGetId($data);
     }
 
     /** 更新合同 */
@@ -99,37 +78,12 @@ class ContractLogic
         $contract = Db::name('contract')->find($id);
         if (!$contract) return false;
 
-        // 记录每个字段的变更（先收集，事务内批量写入）
-        $tracked = ['title', 'category', 'amount', 'party_a_name', 'party_b_name',
-                     'effective_date', 'expiry_date', 'content'];
-        $revisions = [];
-        foreach ($tracked as $field) {
-            if (isset($data[$field]) && $data[$field] != ($contract[$field] ?? '')) {
-                $revisions[] = [
-                    'contract_id' => $id,
-                    'field_name'  => $field,
-                    'old_value'   => $contract[$field] ?? '',
-                    'new_value'   => $data[$field],
-                    'operator_id' => $data['updater_id'] ?? 0,
-                    'created_at'  => date('Y-m-d H:i:s'),
-                ];
-            }
-        }
-
-        // CR-31：contract_revision 批量写入 + contract 主记录更新包裹事务，
-        // 任一批次失败整体回滚，保证变更日志与主记录一致
-        return Db::transaction(function () use ($id, $data, $revisions) {
-            if (!empty($revisions)) {
-                Db::name('contract_revision')->insertAll($revisions);
-            }
-            $data['updated_at'] = date('Y-m-d H:i:s');
-            return Db::name('contract')->where('id', $id)->update($data) !== false;
-        });
+        $data['updated_at'] = date('Y-m-d H:i:s');
+        return Db::name('contract')->where('id', $id)->update($data) !== false;
     }
 
     /**
-     * 状态变更（P1-5/M27：状态更新与变更日志写入包裹同一事务，原子提交，
-     * 避免「状态已变但无日志」的孤儿数据；任一写失败整体回滚）
+     * 状态变更（P1-5/M27：状态机校验后更新合同状态）
      * @param int $id 合同 id
      * @param string $newStatus 目标状态
      * @param int $operatorId 操作人 id
@@ -144,29 +98,14 @@ class ContractLogic
             return false;
         }
 
-        $update = ['status' => $newStatus, 'updated_at' => date('Y-m-d H:i:s')];
-
-        // 事务包裹：主记录状态更新 + 变更日志插入，二者必须同时成功或同时回滚
-        return Db::transaction(function () use ($id, $update, $contract, $newStatus, $operatorId) {
-            Db::name('contract')->where('id', $id)->update($update);
-
-            Db::name('contract_revision')->insert([
-                'contract_id' => $id,
-                'field_name'  => 'status',
-                'old_value'   => $contract['status'],
-                'new_value'   => $newStatus,
-                'operator_id' => $operatorId,
-                'created_at'  => date('Y-m-d H:i:s'),
-            ]);
-
-            return true;
-        });
+        return Db::name('contract')->where('id', $id)
+            ->update(['status' => $newStatus, 'updated_at' => date('Y-m-d H:i:s')]) !== false;
     }
 
     /**
      * CR-08：将「执行中(EXECUTING)」且已过到期日的合同自动流转为「已到期(EXPIRED)」
      * 可通过 system_config 的 contract_auto_expire=0 关闭（默认开启）
-     * 每个流转都会写变更日志与审计留痕，返回处理的合同数量
+     * 每个流转都会写审计留痕，返回处理的合同数量
      */
     public static function autoExpire(): int
     {
@@ -184,12 +123,11 @@ class ContractLogic
             ->column('id');
 
         // P1-5（M28）：整个过期流转循环包外层事务，要么全部 EXECUTING→EXPIRED 成功落库，
-        // 要么整体回滚，避免批量过期中途失败导致部分合同状态变更、部分未变更与日志不一致的脏数据。
-        // （transitionStatus 内部另有自身事务，嵌套以 savepoint 形式并入本事务，TP6 原生支持）
+        // 要么整体回滚，避免批量过期中途失败导致部分合同状态变更、部分未变更的脏数据。
         return Db::transaction(function () use ($ids) {
             $count = 0;
             foreach ($ids as $id) {
-                // 状态机保证 EXECUTING => EXPIRED 合法；写变更日志
+                // 状态机保证 EXECUTING => EXPIRED 合法
                 if (self::transitionStatus($id, 'EXPIRED', 0)) {
                     $count++;
                     AuditService::log(0, 'auto_expire', 'contract', $id); // operatorId=0 代表系统自动
@@ -207,41 +145,27 @@ class ContractLogic
     {
         $q = Db::name('contract')->where('id', $id)->where('is_deleted', 0);
         AuthLogic::appendDataScope($q, 'owner_id', 'dept_id');
-        return $q->find() ?: null;
+        $contract = $q->find();
+        if ($contract) return $contract;
+        // 执行抄送人获得该合同的只读查看权，避免通知深链落到 404。
+        $userId = (int)\think\facade\Session::get('user_id', 0);
+        if ($userId > 0 && Db::name('contract_execution_cc')->where('contract_id', $id)->where('user_id', $userId)->find()) {
+            return Db::name('contract')->where('id', $id)->where('is_deleted', 0)->find() ?: null;
+        }
+        return null;
     }
 
     /** 获取合同详情 */
     public static function getDetail(int $id): ?array
     {
-        $contract = Db::name('contract')->alias('c')
+        return Db::name('contract')->alias('c')
             ->leftJoin('customer cu', 'c.party_b_customer_id = cu.id')
             ->leftJoin('user u', 'c.creator_id = u.id')
-            ->leftJoin('contract p', 'c.parent_id = p.id')
             ->leftJoin('project pr', 'c.project_id = pr.id')
-            ->field('c.*, cu.name as customer_name, u.name as creator_name, p.contract_no as parent_no, p.title as parent_title, pr.name as project_name')
+            ->field('c.*, cu.name as customer_name, u.name as creator_name, pr.name as project_name')
             ->where('c.id', $id)
             ->where('c.is_deleted', 0)
-            ->find();
-
-        if ($contract) {
-            $contract['revisions'] = Db::name('contract_revision')
-                ->where('contract_id', $id)
-                ->order('created_at', 'desc')
-                ->limit(20)
-                ->select()->toArray();
-
-            // 子合同列表
-            if (empty($contract['parent_id'])) {
-                $contract['child_contracts'] = Db::name('contract')
-                    ->where('parent_id', $id)
-                    ->where('is_deleted', 0)
-                    ->field('id, contract_no, title, status, amount')
-                    ->order('id', 'desc')
-                    ->select()->toArray();
-            }
-        }
-
-        return $contract ?: null;
+            ->find() ?: null;
     }
 
     /**
@@ -273,9 +197,8 @@ class ContractLogic
     {
         $query = Db::name('contract')->alias('c')
             ->leftJoin('user u', 'c.owner_id = u.id')
-            ->leftJoin('contract p', 'c.parent_id = p.id')
             ->leftJoin('project pr', 'c.project_id = pr.id')
-            ->field('c.*, u.name as owner_name, p.contract_no as parent_no, p.title as parent_title, pr.name as project_name')
+            ->field('c.*, u.name as owner_name, pr.name as project_name')
             ->where('c.is_deleted', 0);
 
         // 数据范围
@@ -296,21 +219,13 @@ class ContractLogic
                 ->select()->toArray();
         }
 
-        // 补充子合同数量（仅框架合同需要）——一次性聚合，避免循环内 N+1（CR-04）
-        $childCounts = self::countChildrenPerFramework($list);
-        foreach ($list as &$row) {
-            if (empty($row['parent_id'])) {
-                $row['child_count'] = (int)($childCounts[$row['id']] ?? 0);
-            }
-        }
-
         return ['list' => $list, 'total' => $total];
     }
 
     /**
      * 应用合同列表筛选条件到查询构造器（P3b-9 从 getList 拆分）
      * 涵盖：关键字全文检索 + 10 态状态 + 类别 + 方向 + 交易属性 + 项目/客户关联 +
-     *       日期区间 + 框架/订单结构 + 金额区间 + 相对方/签约主体/归属人。
+     *       日期区间 + 金额区间 + 相对方/签约主体/归属人。
      * 注意：所有条件均为 AND，关键字用闭包 whereOr 分组以避免与外层 where 优先级歧义。
      *
      * @param mixed $query  ThinkPHP Query 对象（引用传递，无需返回）
@@ -332,8 +247,8 @@ class ContractLogic
         if (!empty($filter['status'])) {
             $query->where('c.status', $filter['status']);
         }
-        if (!empty($filter['category'])) {
-            $query->where('c.category', $filter['category']);
+        if (!empty($filter['business_type'])) {
+            $query->where('c.business_type', $filter['business_type']);
         }
         if (!empty($filter['direction'])) {
             $query->where('c.direction', $filter['direction']);
@@ -350,21 +265,16 @@ class ContractLogic
         if (isset($filter['customer_id']) && $filter['customer_id'] !== '') {
             $query->where('c.party_b_customer_id', (int)$filter['customer_id']);
         }
+        // 按部门筛选（v2.51.3：移动端部门经营详情页「查看全部合同」入口）
+        if (isset($filter['dept_id']) && $filter['dept_id'] !== '') {
+            $query->where('c.dept_id', (int)$filter['dept_id']);
+        }
         if (!empty($filter['date_start'])) {
             $query->where('c.created_at', '>=', $filter['date_start']);
         }
         if (!empty($filter['date_end'])) {
             $query->where('c.created_at', '<=', $filter['date_end'] . ' 23:59:59');
         }
-        // 框架合同筛选: parent=0 为框架合同, parent>0 为执行订单, 不传则不筛选
-        if (isset($filter['framework']) && $filter['framework'] !== '') {
-            if ($filter['framework'] === '1') {
-                $query->where('c.parent_id', 0);
-            } elseif ($filter['framework'] === '2') {
-                $query->where('c.parent_id', '>', 0);
-            }
-        }
-
         // REV-29：高级筛选 — 金额区间
         if (isset($filter['amount_min']) && $filter['amount_min'] !== '') {
             $query->where('c.amount', '>=', (float)$filter['amount_min']);
@@ -384,33 +294,6 @@ class ContractLogic
         if (isset($filter['owner_id']) && $filter['owner_id'] !== '') {
             $query->where('c.owner_id', (int)$filter['owner_id']);
         }
-    }
-
-    /**
-     * 批量统计每份框架合同（parent_id=0）的未删除子合同数量（P3b-9 从 getList 拆分）
-     * 一次 GROUP BY 聚合替代循环内 N+1 查询（CR-04）。
-     *
-     * @param array $list 已查出的合同列表
-     * @return array<int> 以 parent_id 为键的子合同数量映射
-     */
-    private static function countChildrenPerFramework(array $list): array
-    {
-        $frameworkIds = [];
-        foreach ($list as $row) {
-            if (empty($row['parent_id'])) {
-                $frameworkIds[] = $row['id'];
-            }
-        }
-        if (empty($frameworkIds)) {
-            return [];
-        }
-        $childRows = Db::name('contract')
-            ->where('parent_id', 'in', $frameworkIds)
-            ->where('is_deleted', 0)
-            ->field('parent_id, COUNT(*) AS cnt')
-            ->group('parent_id')
-            ->select()->toArray();
-        return array_column($childRows, 'cnt', 'parent_id');
     }
 
     /**
@@ -458,7 +341,7 @@ class ContractLogic
 
     /**
      * 删除前关联校验（CR-15）：返回阻塞删除的具体原因列表；空数组表示可安全删除。
-     * 覆盖：进行中审批实例、未撤销回款记录、发票记录（签署任务无独立表，由合同状态体现）。
+     * 覆盖：进行中审批实例、未撤销回款记录、发票记录。
      */
     public static function deleteBlockers(int $id): array
     {
@@ -489,11 +372,6 @@ class ContractLogic
         foreach (Db::name('contract_invoice')->whereIn('contract_id', $ids)->whereNotIn('status', ['VOID', 'RED', 'CANCELLED', 'REJECTED'])
             ->field('contract_id, COUNT(*) AS cnt')->group('contract_id')->select()->toArray() as $r) {
             $map[(int)$r['contract_id']][] = '存在发票记录';
-        }
-        // 子合同（框架/订单结构）：删除父合同前须先处理下游子合同，避免 parent_id 悬空
-        foreach (Db::name('contract')->whereIn('parent_id', $ids)->where('is_deleted', 0)
-            ->field('parent_id, COUNT(*) AS cnt')->group('parent_id')->select()->toArray() as $r) {
-            $map[(int)$r['parent_id']][] = '存在关联的下游子合同（' . (int)$r['cnt'] . ' 份），请先处理子合同';
         }
         return $map;
     }
@@ -632,22 +510,9 @@ class ContractLogic
     /**
      * AJAX 合同搜索（P2-1：查询逻辑已下沉至 ContractQuery::search，此处保留委托桩）
      */
-    public static function search(string $keyword, string $scope = ''): array
+    public static function search(string $keyword): array
     {
-        return ContractQuery::search($keyword, $scope);
-    }
-
-    /**
-     * 合同创建页「关联框架合同」下拉（仅框架合同 parent_id=0，带数据范围）
-     * 管理员看全部，非管理员按 owner_id/dept_id 收敛；与原控制器内联等价（admin 不加过滤）。
-     * @param int $limit 安全上限（默认 500）
-     */
-    /**
-     * 关联框架合同下拉（P2-1：查询逻辑已下沉至 ContractQuery::getFrameworkOptions，此处保留委托桩）
-     */
-    public static function getFrameworkOptions(int $limit = 500): array
-    {
-        return ContractQuery::getFrameworkOptions($limit);
+        return ContractQuery::search($keyword);
     }
 
     /**
@@ -656,7 +521,7 @@ class ContractLogic
      * @param callable $handler 逐行回调，接收单行关联数组
      * @return int 处理行数（用于审计条数）
      */
-    public static function eachExportRow(string $status, string $dateStart, string $dateEnd, callable $handler): int
+    public static function eachExportRow(string $status, string $dateStart, string $dateEnd, callable $handler, bool $includeSensitive = false): int
     {
         $query = Db::name('contract')->where('is_deleted', 0);
         AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
@@ -672,7 +537,10 @@ class ContractLogic
         }
 
         // REV-45：边 chunk 边回调，内存峰值恒定，避免超大导出拼接进内存
-        $query->field('id, contract_no, title, category, status, amount, party_a_name, party_b_name, effective_date, expiry_date, created_at')
+        $fields = 'id, contract_no, title, business_type, status, amount, party_a_name, party_b_name';
+        if ($includeSensitive) $fields .= ', party_b_credit_code';
+        $fields .= ', effective_date, expiry_date, created_at';
+        $query->field($fields)
             ->order('id', 'desc');
 
         $total = 0;
@@ -684,6 +552,13 @@ class ContractLogic
             }
         });
         return $total;
+    }
+
+    public static function countExportRows(string $status, string $dateStart, string $dateEnd): int
+    {
+        $query=Db::name('contract')->where('is_deleted',0);AuthLogic::appendDataScope($query,'owner_id','dept_id');
+        if($status)$query->where('status',$status);if($dateStart)$query->where('created_at','>=',$dateStart);if($dateEnd)$query->where('created_at','<=',$dateEnd.' 23:59:59');
+        return (int)$query->count();
     }
 
     /**

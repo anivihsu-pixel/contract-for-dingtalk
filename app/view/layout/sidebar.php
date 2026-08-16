@@ -15,8 +15,8 @@ $__can   = function (string $code) use ($__perms, $__admin) {
 $__isFinance = !$__admin && $__can('payment:create') && !$__can('supplier:create');
 $__isManager = !$__admin && $__can('approval:approve') && $__can('supplier:create');
 
-// P2：普通员工低频菜单隐藏——仅有 view 权限无 create 权限的财务/发票模块对普通员工低频
-// 普通员工（无 payment:create 且无 invoice:create 且无 invoice:apply）隐藏财务中心/发票申请
+// P2：普通员工低频菜单隐藏——完整财务中心与发票模块仍只对具备财务写权限者显示；
+// 仅有 payment:view 的业务人员另提供「我的回款」只读入口，与后端按数据范围放行保持一致。
 $__canFinanceCreate = $__can('payment:create') || $__can('invoice:create') || $__can('invoice:apply');
 $__hideFinanceForUser = !$__admin && !$__isManager && !$__canFinanceCreate;
 
@@ -24,10 +24,6 @@ $__hideFinanceForUser = !$__admin && !$__isManager && !$__canFinanceCreate;
 $__approvalLabel = $__can('approval:approve') ? '合同审批' : '我的审批';
 ?>
 <a href="/dashboard" class="nav-link <?=$menu_active=='dashboard'?'active':''?>"><i class="bi bi-speedometer2"></i> 仪表盘</a>
-
-<!-- 今日提醒：所有登录用户可见（2026-08-05 去重：站内信已并入待办中心 Tab3，红点口径=提醒+站内信未读，见 BaseController） -->
-<a href="/remind" class="nav-link <?=$menu_active=='remind'?'active':''?>"><i class="bi bi-bell"></i> 提醒<span id="remindBadge" class="pc-tag pc-tag-danger ms-auto" style="<?=empty($remind_count)?'display:none':''?>"><?=$remind_count?></span></a>
-
 <?php
 // P1：按角色排序输出业务菜单块
 // 收集各菜单块 HTML，再按角色顺序拼接
@@ -64,12 +60,11 @@ if ($__can('customer:view')) {
     ob_start();
 ?>
 <!-- 客户管理（2026-08-03 修复：供应商属于本分组，激活时父菜单保持展开） -->
-<a href="javascript:void(0)" class="nav-link <?=in_array($menu_active,['customer','supplier','party'])?'active':''?>" onclick="toggleSub('customerSub',this)" aria-expanded="<?=in_array($menu_active,['customer','supplier','party'])?'true':'false'?>">
+<a href="javascript:void(0)" class="nav-link <?=in_array($menu_active,['customer','customer_create','supplier','party'])?'active':''?>" onclick="toggleSub('customerSub',this)" aria-expanded="<?=in_array($menu_active,['customer','customer_create','supplier','party'])?'true':'false'?>">
   <i class="bi bi-people"></i> 客户管理 <i class="bi bi-chevron-down small ms-auto"></i></a>
-<div class="sidebar-sub <?=in_array($menu_active,['customer','supplier','party'])?'show':''?>" id="customerSub">
+<div class="sidebar-sub <?=in_array($menu_active,['customer','customer_create','supplier','party'])?'show':''?>" id="customerSub">
   <a href="/customer" class="nav-link sub <?=$menu_active=='customer'&&($tab??'')==''?'active':''?>"><i class="bi bi-list-ul"></i> 客户列表</a>
-  <?php if($__can('customer:create')): ?><a href="/customer/create" class="nav-link sub"><i class="bi bi-plus-lg"></i> 新增客户</a><?php endif; ?>
-  <a href="/customer/pool" class="nav-link sub"><i class="bi bi-water"></i> 公海池</a>
+  <?php if($__can('customer:create')): ?><a href="/customer/create" class="nav-link sub <?=$menu_active=='customer_create'?'active':''?>"><i class="bi bi-plus-lg"></i> 新增客户</a><?php endif; ?>
   <?php if($__can('supplier:view')): ?><a href="/supplier" class="nav-link sub <?=$menu_active=='supplier'?'active':''?>"><i class="bi bi-truck"></i> 供应商</a><?php endif; ?>
   <!-- v2.38.9 修复：往来档案此前无任何入口；v2.38.14 更名+资金台账定位；P0 修复图标与财务中心重复 -->
   <?php if($__can('party:view')): ?><a href="/party" class="nav-link sub <?=$menu_active=='party'?'active':''?>"><i class="bi bi-arrow-left-right"></i> 往来档案</a><?php endif; ?>
@@ -120,6 +115,15 @@ if (($__can('payment:view') || $__can('invoice:view')) && !$__hideFinanceForUser
 </div>
 <?php
     $__blocks['finance'] = ob_get_clean();
+}
+
+// 普通业务人员：只读查看本人数据范围内的回款，不展示完整财务中心分组。
+if (!$__admin && !$__isManager && !$__isFinance) {
+    ob_start();
+?>
+<a href="/finance?tab=payment" class="nav-link <?=$menu_active=='finance'?'active':''?>"><i class="bi bi-cash-coin"></i> 我的回款</a>
+<?php
+    $__blocks['my_finance'] = ob_get_clean();
 }
 
 // 资料库块
@@ -176,8 +180,8 @@ if ($__isFinance) {
     // 管理员：合同→审批→客户→项目→财务→发票→资料库（系统设置固定最下方，见下方输出逻辑）
     $__order = ['contract', 'approval', 'customer', 'project', 'finance', 'invoice', 'library', 'admin'];
 } else {
-    // 普通员工：合同→客户→审批→项目→资料库（财务/发票已隐藏）
-    $__order = ['contract', 'customer', 'approval', 'project', 'library', 'admin'];
+    // 普通员工：合同→客户→审批→项目→我的回款→资料库
+    $__order = ['contract', 'customer', 'approval', 'project', 'my_finance', 'library', 'admin'];
 }
 // 系统设置固定最下方：无论角色排序如何，admin 块一律最后输出
 foreach ($__order as $__key) {

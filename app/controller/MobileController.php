@@ -3,7 +3,7 @@
 // | 移动端工作台（P1-D 轻量版）
 // | 复用钉钉免登入口（/dingtalk/entry?to=/mobile），面向手机端：
 // |   1) 我的待办：待我审批 + 今日提醒
-// |   2) 我的合同：最近参与的合同（按数据权限）
+// |   2) 合同概览：按角色数据范围显示「我的/本部门/全部合同」
 // |   3) 快速登记回款：搜索合同 + 登记一笔待收款
 // +----------------------------------------------------------------------
 
@@ -42,44 +42,29 @@ class MobileController extends BaseController
         $isAdmin = $this->isSuperAdmin();
         $canApprove = $isAdmin || $this->hasPermission('approval:view');
 
-        // 1) 待我审批（有审批权限者才取；取前 10 条供待办流/数字卡）
+        // 1) 待我审批（有审批权限者才取；取前 10 条供待办流）
         $pending = $canApprove
             ? \app\common\logic\ApprovalQueryService::getPendingList($this->userId, 1, 10)
             : ['list' => [], 'total' => 0];
 
-        // 2) 今日提醒（到期/回款）+ 站内审批消息（统一切换 getOutstandingCount，与PC侧边栏一致）
+        // 2) 今日提醒（到期/回款）+ 站内审批消息
         $alerts = [];
-        $remindCount = 0;
-        $notifUnread = 0;
         $notifList = [];
         $hasFin = $this->hasPermission('payment:view');
         try {
             $alerts = RemindService::getTodayAlerts($this->userId, $isAdmin, $hasFin);
-            $remindCount = RemindService::getOutstandingCount($this->userId, $isAdmin, $hasFin);
         } catch (\Throwable $e) {
             $alerts = [];
         }
         try {
-            $notifUnread = InternalNotify::unreadCount($this->userId);
             $notifList = InternalNotify::unreadList($this->userId, 5);
-        } catch (\Throwable $e) { $notifUnread = 0; $notifList = []; }
+        } catch (\Throwable $e) { $notifList = []; }
 
-        // 3) 我的合同总数（按数据权限，用于工作台概览数字；列表浏览交给底部"合同"Tab）
-        $myContractTotal = ContractLogic::getMyCount();
-
-        // 4) 统一待办流：待我审批 > 审批消息 > 到期/回款提醒（按优先级排序，供待办卡渲染）
+        // 3) 统一待办流：待我审批 > 未读审批消息（供工作台「今天要处理」卡片展示）
         $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts);
-        // 待办总数口径：三路全计（待我审批全量 + 审批消息未读 + 合同/回款提醒），与工作台数字卡/角标一致
-        $todoTotal = ($pending['total'] ?? 0) + $remindCount + $notifUnread;
 
-        View::assign('pending_list', $pending['list'] ?? []);
-        View::assign('pending_total', $pending['total'] ?? 0);
         View::assign('alerts', $alerts);
-        View::assign('notif_unread', $notifUnread);
-        View::assign('total_remind', $remindCount + $notifUnread); // 合同提醒 + 审批消息未读（与PC侧边栏统一口径）
         View::assign('todo_list', $todo);
-        View::assign('todo_total', $todoTotal);
-        View::assign('my_contracts_total', $myContractTotal);
         View::assign('can_pay', $this->hasPermission('payment:create'));
         // v2.38.18：开票申请入口（对齐财务页 m_can_apply_invoice 口径：invoice:apply 或 invoice:create）
         View::assign('can_invoice', $this->hasPermission('invoice:apply') || $this->hasPermission('invoice:create'));
@@ -89,11 +74,10 @@ class MobileController extends BaseController
         View::assign('can_create_contract', $this->hasPermission('contract:create'));
         View::assign('can_create_customer', $this->hasPermission('customer:create'));
         View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
-        // v2.40.1：快捷操作扩展入口（资料库/客户池/报表，与各自列表页 requirePermission 口径一致）
+        // v2.40.1：快捷操作扩展入口（资料库/报表，与各自列表页 requirePermission 口径一致）
         View::assign('can_library', $isAdmin || $this->hasPermission('library:view'));
-        View::assign('can_customer_pool', $isAdmin || $this->hasPermission('customer:view'));
         View::assign('can_report', $isAdmin || $this->hasPermission('payment:view') || $this->hasPermission('invoice:view'));
-        // v2.48.0：工作台「记录跟进」——负责人/超管可见（有 customer:edit 者）；可选客户=超管全部/普通=本人负责（均排除公海，公海需先认领）
+        // v2.48.0：工作台「记录跟进」——负责人/超管可见（有 customer:edit 者）；可选客户=超管全部/普通=本人负责
         $canFollow = $isAdmin || $this->hasPermission('customer:edit');
         View::assign('can_follow', $canFollow);
         $quickFollowCust = [];
@@ -156,8 +140,7 @@ class MobileController extends BaseController
 
     /**
      * 统一待办流组装（v2.38.18 去重调整）：
-     * 仅返回「待我审批」动作待办——审批消息/到期提醒分别由 Tab3/Tab2 独立展示，
-     * 避免三路合并与分类 Tab 内容重复（用户 2026-08-04 指出重复）。
+     * 返回「待我审批」和未读审批消息；到期/回款提醒仍由下方独立卡片展示。
      * public：PC /remind 待办中心复用同一口径，保证 PC/移动一致
      * 每项：['kind'=>'approval', 'level', 'text', 'sub', 'link']
      */
@@ -173,6 +156,26 @@ class MobileController extends BaseController
                 'text'  => '待我审批：《' . ($p['contract_title'] ?? '合同') . '》',
                 'sub'   => ($p['submitter_name'] ?? '') . ' 提交 · ' . ($p['flow_name'] ?? '审批'),
                 'link'  => '/m/approval/' . (int)$p['id'],
+            ];
+        }
+
+        // 未读审批消息也是工作台待处理事项；若已在待审批列表中，则只展示审批项，避免同一审批重复出现。
+        $pendingIds = [];
+        foreach ($pendingList as $p) {
+            $pendingIds[(int)($p['id'] ?? 0)] = true;
+        }
+        foreach ($notifList as $n) {
+            $url = urldecode((string)($n['url'] ?? ''));
+            if (preg_match('#(?:^|/)approval/(\d+)(?:$|[^0-9])#', $url, $m)
+                && isset($pendingIds[(int)$m[1]])) {
+                continue;
+            }
+            $todo[] = [
+                'kind'  => 'notif',
+                'level' => 'info',
+                'text'  => $n['title'] ?? '审批消息',
+                'sub'   => $n['content'] ?? '',
+                'link'  => $n['url'] ?? '#',
             ];
         }
 
@@ -273,6 +276,9 @@ class MobileController extends BaseController
         }
         $modules = array_values(array_filter($order, function ($m) { return $m[3]; }));
         View::assign('modules', $modules);
+        View::assign('can_create_contract', $this->hasPermission('contract:create'));
+        View::assign('can_create_customer', $this->hasPermission('customer:create'));
+        View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
         return View::fetch('mobile/more');
     }
 
@@ -339,7 +345,11 @@ class MobileController extends BaseController
             ? \app\common\logic\ApprovalQueryService::getPendingList($this->userId, 1, 10)
             : ['list' => [], 'total' => 0];
         $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts);
-        $todoTotal = ($pending['total'] ?? 0) + $remindCount + $notifUnread;
+        $duplicateApprovalNotif = 0;
+        try {
+            $duplicateApprovalNotif = InternalNotify::unreadPendingApprovalCount($this->userId);
+        } catch (\Throwable $e) {}
+        $todoTotal = max(0, ($pending['total'] ?? 0) + $remindCount + $notifUnread - $duplicateApprovalNotif);
         View::assign('alerts', $alerts);
         View::assign('pending_list', $pending['list'] ?? []);
         View::assign('pending_total', $pending['total'] ?? 0);
@@ -417,6 +427,23 @@ class MobileController extends BaseController
             throw new \think\exception\HttpException(404, '审批不存在');
         }
 
+        // 2026-08-15：开票审批（biz_type=invoice）与合同审批同入口但不同视图——
+        // 审批实例不关联合同（contract_id=0），不能按合同加载，单独渲染开票申请详情。
+        if (($detail['biz_type'] ?? '') === 'invoice') {
+            // 数据权限：审批参与者（提交人 / 任一节点审批人 / 抄送人）默认可查看本审批
+            if (!\app\common\logic\ApprovalQueryService::isParticipant((int)$id, $this->userId)) {
+                throw new \think\exception\HttpException(403, '无权限查看该审批');
+            }
+            $invoice = \think\facade\Db::name('contract_invoice')->find((int)($detail['target_id'] ?? 0));
+            View::assign('detail', $detail);
+            View::assign('invoice', $invoice ?: []);
+            View::assign('our_company', CompanyLogic::getName((int)($invoice['our_company_id'] ?? 0)));
+            View::assign('can_act', false);   // 开票审批操作在发票列表完成，详情页仅查看/撤回
+            View::assign('can_recall', ((int)($detail['submitted_by'] ?? 0) === $this->userId)
+                && ($detail['status'] ?? '') === 'PENDING');
+            return View::fetch('mobile/approval_invoice_detail');
+        }
+
         // 数据权限：合同归属可查（S3：非数据范围内用户拒绝查看他人合同审批）
         $contract = ContractLogic::getById((int)$detail['contract_id']);
         if (!$contract) {
@@ -480,7 +507,7 @@ class MobileController extends BaseController
         }
 
         // 自动匹配将使用的审批流程（预览，无需用户手动选择；去模板落地：仅按分类+金额）
-        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
+        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['business_type'] ?? '', $contract['direction'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
 
         // 解析每个审批节点的实际用户
         $rawNodes = json_decode($flow['nodes'] ?? '[]', true) ?: [];
@@ -517,6 +544,10 @@ class MobileController extends BaseController
             $n['resolved_names'] = array_values(array_filter(array_map(function ($id) use ($userMap) {
                 return $userMap[$id] ?? null;
             }, $ids)));
+            if (empty($ids) && ($n['type'] ?? '') === 'SPECIFIC_USER'
+                && in_array($this->userId, ApproverResolver::specificUserIds($n), true)) {
+                $n['resolve_warning'] = '指定审批人不能是提交人，请更换审批人';
+            }
             $flowNodes[] = $n;
         }
         $ccNames = array_values(array_filter(array_map(function ($id) use ($userMap) {
@@ -616,6 +647,7 @@ class MobileController extends BaseController
         View::assign('actions', $actions);
         View::assign('can_edit', $canEdit);
         View::assign('can_status_change', $canStatusChange);   // Phase 2.3
+        View::assign('execution_cc', Db::name('contract_execution_cc')->where('contract_id', $id)->where('user_id', $this->userId)->find());
         View::assign('can_payment', $canPayment);               // Phase 2.4
         // UX 门控：提交审批按钮按 approval:submit 权限渲染（后端 /m/contract/:id/approval 已有守卫）
         View::assign('can_submit_approval', $this->hasPermission('approval:submit'));
@@ -629,9 +661,8 @@ class MobileController extends BaseController
         $keyword  = $this->getParam('keyword', '');
         $status   = $this->getParam('status', '');
         $direction   = $this->getParam('direction', '');
-        $category    = $this->getParam('category', '');
+        $businessType = $this->getParam('business_type', '');
         $tradeAttr   = $this->getParam('trade_attr', '');
-        $framework   = $this->getParam('framework', '');
         $partyName   = $this->getParam('party_name', '');
         $ourCompany  = $this->getParam('our_company_id', '');
         $ownerId     = $this->getParam('owner_id', '');
@@ -639,20 +670,21 @@ class MobileController extends BaseController
         $amountMax   = $this->getParam('amount_max', '');
         $projectId   = $this->getParam('project_id', '');   // P2-3【M-Pf5】项目详情"查看全部合同"入口
         $customerId  = $this->getParam('customer_id', '');  // N-m4 客户详情"查看全部关联合同"入口
+        $deptId      = $this->getParam('dept_id', '');      // v2.51.3 部门经营详情"查看全部合同"入口
         [$page, $pageSize] = $this->mobilePage();
         $filter = [];
         if ($keyword  !== '') $filter['keyword']  = $keyword;
         if ($status   !== '') $filter['status']   = $status;
         if ($direction!== '') $filter['direction']= $direction;
-        if ($category !== '') $filter['category'] = $category;
+        if ($businessType !== '') $filter['business_type'] = $businessType;
         // 注意：trade_attr 用 isset 守卫（0/1 均有效），仅明确选择时入参，避免空串误筛为 0
         if ($tradeAttr !== '') $filter['trade_attr'] = (int)$tradeAttr;
-        if ($framework !== '') $filter['framework'] = $framework;
         if ($partyName !== '') $filter['party_name'] = $partyName;
         if ($ourCompany!== '' && is_numeric($ourCompany)) $filter['our_company_id'] = (int)$ourCompany;
         if ($ownerId  !== '' && is_numeric($ownerId))   $filter['owner_id'] = (int)$ownerId;
         if ($projectId!== '' && is_numeric($projectId)) $filter['project_id'] = (int)$projectId;
         if ($customerId!== '' && is_numeric($customerId)) $filter['customer_id'] = (int)$customerId;
+        if ($deptId   !== '' && is_numeric($deptId))    $filter['dept_id'] = (int)$deptId;
         if ($amountMin !== '' && is_numeric($amountMin)) $filter['amount_min'] = $amountMin;
         if ($amountMax !== '' && is_numeric($amountMax)) $filter['amount_max'] = $amountMax;
 
@@ -662,7 +694,7 @@ class MobileController extends BaseController
 
         $statusMap = contract_status_map();     // CR-57：复用公共 helper，全 10 态
         $statusBadge = contract_status_badge();
-        $categories = contract_categories();          // 合同类别字典（code => name）
+        $businessTypes = dict_enabled('business_type');
         $companies  = CompanyLogic::getList();        // 签约主体（零 Db 直查，Phase 2.2）
         // v2.40.1：归属人下拉按数据范围收敛（ALL=全部用户 / DEPT=本部门用户 / SELF=仅本人），
         // 与 PC 端 ContractController 口径一致，避免移动端下拉出现范围外用户误导筛选
@@ -698,10 +730,12 @@ class MobileController extends BaseController
         View::assign('filter', $filter);              // 回显已选高级筛选条件
         View::assign('statusMap', $statusMap);
         View::assign('statusBadge', $statusBadge);
-        View::assign('categories', $categories);
+        View::assign('business_types', $businessTypes);
         View::assign('companies', $companies);
         View::assign('owners', $owners);
         View::assign('can_create_contract', $this->hasPermission('contract:create'));   // 移动端合同列表「新增」悬浮按钮权限（与客户的/供应商一致）
+        View::assign('can_create_customer', $this->hasPermission('customer:create'));
+        View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
         return View::fetch('mobile/contracts');
     }
 
@@ -710,7 +744,7 @@ class MobileController extends BaseController
     {
         $this->requirePermission('customer:view');
         $keyword = $this->getParam('keyword', '');
-        // v2.38.9：客户生命周期筛选（客户/成交/公海）
+        // 客户生命周期筛选（客户/成交）
         $lifecycle = $this->getParam('lifecycle', '');
         [$page, $pageSize] = $this->mobilePage();
         $filter = ['keyword' => $keyword, 'lifecycle_status' => $lifecycle];
@@ -743,30 +777,13 @@ class MobileController extends BaseController
         View::assign('owners', $owners);
         View::assign('statusMap', $statusMap);
         View::assign('can_create_customer', $this->hasPermission('customer:create'));
-        // M10 客户生命周期漏斗看板
-        View::assign('funnel', CustomerLogic::lifecycleFunnel());
+        View::assign('can_create_contract', $this->hasPermission('contract:create'));
+        View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
+        // M10 客户生命周期漏斗看板（v2.51.5：移动端列表漏斗卡片已移除，仅 PC 端 customer/index 使用）
         View::assign('lifecycle_dict', $lifecycleDict);
         // v2.40.0 P1-7：客户行业字典
         View::assign('industry_dict', $industryDict);
         return View::fetch('mobile/customers');
-    }
-
-    /** 移动端公海池（v2.38.2） */
-    public function customerPool()
-    {
-        $this->requirePermission('customer:view');
-        $keyword = $this->getParam('keyword', '');
-        [$page, $pageSize] = $this->mobilePage();
-        $res = CustomerLogic::getPoolList($page, $pageSize, $keyword);
-        $list = $res['list'] ?? [];
-
-        if (request()->isAjax()) {
-            return json(['code' => 0, 'msg' => 'ok', 'data' => $list, 'total' => $res['total'] ?? 0]);
-        }
-        View::assign('list', $list);
-        View::assign('total', $res['total'] ?? 0);
-        View::assign('keyword', $keyword);
-        return View::fetch('mobile/customer_pool');
     }
 
     /** 移动端客户新建/编辑表单（P1-a：补齐移动端客户 CRUD 的新建入口） */
@@ -776,12 +793,15 @@ class MobileController extends BaseController
         $this->requirePermission($id ? 'customer:edit' : 'customer:create');
         $id = (int)$this->getParam('id', $id);
         $customer = $id ? CustomerLogic::getDetail($id) : null;
-        if ($id && $customer && $customer['owner_id'] != 0
+        if ($id && $customer
             && !AuthLogic::canAccessRecord($customer['owner_id'], $customer['dept_id'] ?? 0)) {
             throw new \think\exception\HttpException(403, '无权查看该客户');
         }
         View::assign('customer', $customer);
         View::assign('is_edit', (bool)$id);
+        View::assign('prefill_customer_name', $this->getParam('customer_name', ''));
+        View::assign('lifecycle_dict', dict_options('customer_lifecycle'));
+        View::assign('industry_dict', dict_options('customer_industry'));
         return View::fetch('mobile/customer_form');
     }
 
@@ -797,14 +817,13 @@ class MobileController extends BaseController
             throw new \think\exception\HttpException(404, '客户不存在');
         }
         $customer = $dash['customer'];
-        // v2.45.0：统一访问判定（公海/数据范围/显式共享/集团祖先/合同引用者）
+        // v2.45.0：统一访问判定（数据范围/显式共享/集团祖先/合同引用者）
         if (!CustomerLogic::canAccessCustomer($this->userId, $customer, (int)($this->user['dept_id'] ?? 0))) {
             throw new \think\exception\HttpException(403, '无权查看该客户');
         }
 
-        // REV-31：移动端客户详情补充认领/转移/释放动作。公海客户(owner_id=0)可认领；归属人为当前用户时可转移/释放
-        $isPublicPool = ((int)($customer['owner_id'] ?? 0) === 0);
-        $isOwner      = ((int)($customer['owner_id'] ?? 0) === $this->userId);
+        // 归属人=当前用户时可转移
+        $isOwner = ((int)($customer['owner_id'] ?? 0) === $this->userId);
         $statusMap = [1 => '正常', 0 => '禁用'];
         View::assign('customer', $customer);
         View::assign('owner_name', $dash['owner_name']);
@@ -819,10 +838,12 @@ class MobileController extends BaseController
         View::assign('lifecycle_dict', dict('customer_lifecycle'));
         // v2.40.0 P1-7：客户行业标签
         View::assign('industry_dict', dict('customer_industry'));
-        View::assign('is_public_pool', $isPublicPool);
         View::assign('is_owner', $isOwner);
         // v2.40.0 P0-2：手动记录跟进权限（复用 customer:edit）
         View::assign('can_edit', $this->hasPermission('customer:edit'));
+        // v2.51.3：编辑资料入口——与 /ajax/customer/save 越权校验同口径（归属人/部门/管理员）+ customer:edit 权限
+        View::assign('can_edit_record', $this->hasPermission('customer:edit')
+            && AuthLogic::canAccessRecord((int)($customer['owner_id'] ?? 0), (int)($customer['dept_id'] ?? 0)));
         // v2.48.0：详情页超管标记（记录跟进入口=负责人或超管）+ 当前用户名（保存后局部插入列表用）
         View::assign('is_super_admin', $this->isSuperAdmin());
         View::assign('me_name', $this->user['name'] ?? '我');
@@ -843,7 +864,6 @@ class MobileController extends BaseController
         // v2.38.3：M9 独立联系人矩阵
         // v2.38.11: 主联系人字段兜底（customer_contact 空时展示 customer.contact_name）
         View::assign('contacts', CustomerContactLogic::getListForDisplay($id, $customer));
-        View::assign('contact_roles', CustomerContactLogic::ROLES);
         // v2.38.14：往来汇总（360 交易合同口径）+ 最近动态——360 能力内嵌客户详情（统计卡升级）
         $g360 = PartyLogic::get360('customer', $id);
         View::assign('g360', !empty($g360['ok']) ? $g360 : null);
@@ -898,6 +918,8 @@ class MobileController extends BaseController
         View::assign('types', $types);
         View::assign('statusMap', $statusMap);
         View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
+        View::assign('can_create_contract', $this->hasPermission('contract:create'));
+        View::assign('can_create_customer', $this->hasPermission('customer:create'));
         return View::fetch('mobile/suppliers');
     }
 
@@ -975,13 +997,12 @@ class MobileController extends BaseController
 
         View::assign('contract', $contract);
         View::assign('is_edit', (bool)$id);
-        View::assign('categories', contract_categories());
+        View::assign('business_types', dict_options('business_type', $contract['business_type'] ?? ''));
         // 去模板落地（Phase 1.5）：合同创建不再集成模板下拉，移除模板查询
         View::assign('companies', $companies);
         View::assign('default_company_id', $defaultCompanyId);
-        // M13：字段配置化——供 ContractFormConfig 渲染器使用（项目/框架合同下拉）
+        // M13：字段配置化——供 ContractFormConfig 渲染器使用（项目下拉）
         View::assign('projects', \app\common\logic\ProjectLogic::options());
-        View::assign('parent_contracts', \app\common\logic\ContractLogic::getFrameworkOptions(500));
         // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
         View::assign('current_user', [
             'name'   => $this->user['name'] ?? '',
@@ -1053,6 +1074,40 @@ class MobileController extends BaseController
         View::assign('weekly', $data);
         View::assign('tab', 'more');
         return View::fetch('mobile/weekly');
+    }
+
+    /** 移动端部门经营详情页（v2.51.3）：工作台经营卡片 / 经营周报部门行点击进入
+     *  展示部门汇总（合同额/回款/回收率）+ 成员排名 + 部门合同列表（可再进合同详情）。
+     *  权限：dashboard:company（总经理/超管）可看任意部门；dashboard:dept（部门经理）仅本部门 */
+    public function dept()
+    {
+        $deptId = (int)$this->getParam('id', 0);
+        if ($deptId <= 0) {
+            View::assign('error', '缺少部门 ID');
+            View::assign('dept_name', '部门经营');
+            return View::fetch('mobile/dept');
+        }
+        $isGeneralManager = $this->hasPermission('dashboard:company');
+        $canDept          = $this->hasPermission('dashboard:dept');
+        $myDeptId         = (int)($this->user['dept_id'] ?? 0);
+        if (!$isGeneralManager && !($canDept && $deptId === $myDeptId)) {
+            View::assign('error', '无权限查看该部门');
+            View::assign('dept_name', '部门经营');
+            return View::fetch('mobile/dept');
+        }
+        $deptName = \app\common\logic\UserLogic::getDeptName($deptId);
+        View::assign('dept_name', trim($deptName) !== '' ? $deptName : '未命名部门');
+        // 部门汇总：deptSummary 指定部门时仅返回该部门一行（含 cnt/total_amount/paid_amount/recovery_rate）
+        $summary = \app\common\logic\ReportLogic::deptSummary($this->user, $deptId);
+        $dept = $summary[0] ?? null;
+        View::assign('dept', $dept);
+        View::assign('members', $dept ? \app\common\logic\ReportLogic::deptMembers($deptId, 10) : []);
+        // 部门合同列表（带数据范围；「查看全部」跳 /m/contracts?dept_id=N）
+        $res = $dept ? \app\common\logic\ContractLogic::getList(1, 10, ['dept_id' => $deptId], ['draft_first', 'desc']) : ['list' => [], 'total' => 0];
+        View::assign('contracts', $res['list'] ?? []);
+        View::assign('contract_total', $res['total'] ?? 0);
+        View::assign('dept_id', $deptId);
+        return View::fetch('mobile/dept');
     }
 
     /** 移动端发票申请独立页（v2.38.18）：与 PC /invoice-apply 同源——我的申请 + 申请开票表单

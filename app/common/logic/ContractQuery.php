@@ -48,17 +48,13 @@ class ContractQuery
     /**
      * AJAX 合同搜索（带数据范围：SELF / DEPT / ALL）。
      * @param string $keyword 关键字
-     * @param string $scope   默认 '' 全量；'framework' 仅框架合同（parent_id=0，供「关联框架合同」搜索选择器用）
      * @return array 每项含 id / contract_no / title / status / my（owner_id=当前用户=1，推荐置顶）
      */
-    public static function search(string $keyword, string $scope = ''): array
+    public static function search(string $keyword): array
     {
         $uid = (int)\think\facade\Session::get('user_id', 0);
         $query = Db::name('contract')->where('is_deleted', 0);
         AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
-        if ($scope === 'framework') {
-            $query->where('parent_id', 0);   // 仅框架合同可被关联
-        }
         if ($keyword !== '') {
             $query->where('title|contract_no|keywords', 'like', '%' . $keyword . '%');
         }
@@ -78,19 +74,6 @@ class ContractQuery
         }
         unset($c);
         return $list;
-    }
-
-    /** 合同创建页「关联框架合同」下拉（仅框架合同 parent_id=0，带数据范围） */
-    public static function getFrameworkOptions(int $limit = 500): array
-    {
-        $query = Db::name('contract')
-            ->where('is_deleted', 0)
-            ->where('parent_id', 0)
-            ->field('id, contract_no, title, status')
-            ->order('id', 'desc');
-        // 管理员(ALL)不加过滤；非管理员按数据范围收敛
-        AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
-        return $query->limit($limit)->select()->toArray();
     }
 
     /** 附件预览鉴权：按文件名模糊预筛候选合同（含 owner_id / dept_id / file_url） */

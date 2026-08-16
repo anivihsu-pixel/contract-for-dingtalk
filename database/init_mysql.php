@@ -13,25 +13,82 @@
 define('ROOT_PATH', __DIR__ . '/../');
 require ROOT_PATH . 'vendor/autoload.php';
 
+// Windows CLI 的系统环境变量可能只出现在 getenv()，而 ThinkPHP env() 读取 $_ENV/$_SERVER。
+// 先同步明确提供的数据库变量，保证临时端口/验收库不会被项目 .env 覆盖。
+foreach (['DB_TYPE', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS'] as $envKey) {
+    $envValue = getenv($envKey);
+    if ($envValue !== false) {
+        $_ENV[$envKey] = $envValue;
+        $_SERVER[$envKey] = $envValue;
+        putenv('PHP_' . $envKey . '=' . $envValue);
+    }
+}
+
 // Load .env
 if (is_file(ROOT_PATH . '.env')) {
-    $dotenv = new \Dotenv\Dotenv(ROOT_PATH);
-    $dotenv->load();
+    // CLI 显式环境变量优先，便于初始化指定数据库；.env 仅补未设置项。
+    \Dotenv\Dotenv::createImmutable(ROOT_PATH)->safeLoad();
 }
 
 $app = new \think\App(ROOT_PATH);
 $app->initialize();
 
+// App::initialize() 会读取项目 .env；在其后再次把 CLI 显式参数写入 Env 容器，确保优先级正确。
+foreach (['DB_TYPE', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS'] as $envKey) {
+    $envValue = getenv($envKey);
+    if ($envValue !== false) {
+        $app->env->set($envKey, $envValue);
+    }
+}
+$mysqlConnection = $app->config->get('database.connections.mysql', []);
+$connectionOverrides = ['DB_HOST' => 'hostname', 'DB_PORT' => 'hostport', 'DB_NAME' => 'database', 'DB_USER' => 'username', 'DB_PASS' => 'password'];
+foreach ($connectionOverrides as $envKey => $configKey) {
+    $envValue = getenv($envKey);
+    if ($envValue !== false) {
+        $mysqlConnection[$configKey] = $envValue;
+    }
+}
+$databaseConfig = $app->config->get('database', []);
+$databaseConfig['connections']['mysql'] = $mysqlConnection;
+$app->config->set(['database' => $databaseConfig]);
+
 use think\facade\Db;
 
-// 显式使用 mysql 连接（config/database.php 中已预置 'mysql' 连接，读取 .env）
-$db = Db::connect('mysql');
+// 初始化脚本直接使用独立 PDO，避免应用已实例化的连接缓存覆盖 CLI 临时端口/库名。
+$dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+    $mysqlConnection['hostname'], $mysqlConnection['hostport'], $mysqlConnection['database']);
+try {
+    $pdo = new \PDO($dsn, (string)$mysqlConnection['username'], (string)$mysqlConnection['password'], [
+        \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+        \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+    ]);
+    $pdo->exec("SET time_zone = '+08:00'");
+} catch (\Throwable $e) {
+    echo "数据库连接失败：" . $e->getMessage() . "\n";
+    exit(1);
+}
+$db = new class($pdo) {
+    private \PDO $pdo;
+    public function __construct(\PDO $pdo) { $this->pdo = $pdo; }
+    public function query(string $sql, array $bind = []): array
+    {
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($bind);
+        return $stmt->fetchAll();
+    }
+    public function execute(string $sql, array $bind = []): int
+    {
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($bind);
+        return $stmt->rowCount();
+    }
+};
 
 // 幂等初始化：不再因“库已存在表”整体中止。
 // 建表用 CREATE TABLE IF NOT EXISTS、种子用 INSERT IGNORE，
 // 因此无论目标库是全新库、还是“表在但种子缺失”的半成品库，
 // 重复执行都安全且会自动补齐缺失的表与种子数据（根治 #177 部署漏种子）。
-$targetDb = env('DB_NAME', 'contract_dingtalk');
+$targetDb = getenv('DB_NAME') !== false ? getenv('DB_NAME') : env('DB_NAME', 'contract_dingtalk');
 $existingTables = 0;
 try {
     $cnt = $db->query("SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema = ? AND table_type='BASE TABLE'", [$targetDb]);
@@ -136,6 +193,7 @@ $tables = [
         `action` VARCHAR(64) DEFAULT '' COMMENT '操作动作',    -- 操作动作
         `target_type` VARCHAR(32) DEFAULT '' COMMENT '目标类型(contract/customer/project等)',    -- 目标类型(contract/customer/project等)
         `target_id` BIGINT DEFAULT 0 COMMENT '目标ID',    -- 目标ID
+        `target_title` VARCHAR(255) DEFAULT '' COMMENT '目标标题快照(对象删除后仍可追溯定位)',    -- 目标标题快照
         `content` TEXT COMMENT '内容',    -- 内容
         `ip_address` VARCHAR(64) DEFAULT '' COMMENT '操作IP',    -- 操作IP
         `user_agent` VARCHAR(512) DEFAULT '' COMMENT '浏览器UA',    -- 浏览器UA
@@ -155,6 +213,7 @@ $tables = [
         `contact_mobile` VARCHAR(32) DEFAULT '' COMMENT '联系人手机',    -- 联系人手机
         `contact_email` VARCHAR(128) DEFAULT '' COMMENT '联系人邮箱',    -- 联系人邮箱
         `address` VARCHAR(255) DEFAULT '' COMMENT '地址',    -- 地址
+        `remark` VARCHAR(255) DEFAULT '' COMMENT '客户备注',    -- 客户备注
         `level` TINYINT DEFAULT 0 COMMENT '客户等级(已废弃，所有客户一视同仁)',    -- 客户等级(已废弃，所有客户一视同仁)
         `source` VARCHAR(32) DEFAULT 'MANUAL' COMMENT '来源(MANUAL/IMPORT)',    -- 来源(MANUAL/IMPORT)
         `status` TINYINT DEFAULT 1 COMMENT '状态(1正常/0禁用)',    -- 状态(1正常/0禁用)
@@ -162,7 +221,7 @@ $tables = [
         `credit_score` INT DEFAULT 100 COMMENT '信用评分(满分100)(v2.38.3)',    -- 信用评分(满分100)(v2.38.3)
         `high_risk` TINYINT DEFAULT 0 COMMENT '高风险标记(1=高风险)(v2.38.3)',    -- 高风险标记(1=高风险)(v2.38.3)
         `credit_manual` TINYINT NOT NULL DEFAULT 0 COMMENT '信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)',    -- 信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)
-        `lifecycle_status` VARCHAR(16) DEFAULT 'ACTIVE' COMMENT '生命周期(POTENTIAL/ACTIVE/INACTIVE)(v2.38.3)',    -- 生命周期(POTENTIAL/ACTIVE/INACTIVE)(v2.38.3)
+        `lifecycle_status` VARCHAR(16) DEFAULT 'ACTIVE' COMMENT '生命周期(POTENTIAL/ACTIVE)(v2.38.3)',    -- 生命周期(POTENTIAL/ACTIVE)(v2.38.3)
         `industry` VARCHAR(32) DEFAULT '' COMMENT '行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)',    -- 行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)
         `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID
         `dept_id` BIGINT DEFAULT 0 COMMENT '部门ID',    -- 部门ID
@@ -191,17 +250,6 @@ $tables = [
         KEY `idx_share_target` (`target_type`, `target_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客户共享'",
 
-    // customer_claim_record
-    "CREATE TABLE IF NOT EXISTS `customer_claim_record` (
-        `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
-        `customer_id` BIGINT NOT NULL DEFAULT 0 COMMENT '客户ID',    -- 客户ID
-        `user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '用户ID',    -- 用户ID
-        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
-        PRIMARY KEY (`id`),
-        KEY `idx_claim_customer` (`customer_id`),
-        KEY `idx_claim_user_created` (`user_id`, `created_at`)   -- P2-5：认领每日限额查询
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客户认领记录'",
-
     // customer_transfer_record
     "CREATE TABLE IF NOT EXISTS `customer_transfer_record` (
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
@@ -213,29 +261,29 @@ $tables = [
         KEY `idx_transfer_customer` (`customer_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客户交接记录'",
 
-    // customer_activity — 客户跟进记录（v2.38.2：支撑公海自动回落规则）
+    // customer_activity — 客户跟进记录（v2.38.2）
     "CREATE TABLE IF NOT EXISTS `customer_activity` (
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
         `customer_id` BIGINT NOT NULL DEFAULT 0 COMMENT '客户ID',    -- 客户ID
         `user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '跟进人ID',    -- 跟进人ID
-        `type` VARCHAR(32) NOT NULL DEFAULT 'NOTE' COMMENT '类型(CALL/MEETING/VISIT/EMAIL/NOTE/CLAIM/RELEASE/TRANSFER)',    -- 类型(CALL/MEETING/VISIT/EMAIL/NOTE/CLAIM/RELEASE/TRANSFER)
+        `type` VARCHAR(32) NOT NULL DEFAULT 'NOTE' COMMENT '类型(CALL/MEETING/VISIT/EMAIL/NOTE/TRANSFER)',    -- 类型(CALL/MEETING/VISIT/EMAIL/NOTE/TRANSFER)
         `content` TEXT COMMENT '跟进内容',    -- 跟进内容
         `next_follow_at` DATETIME DEFAULT NULL COMMENT '下次跟进时间(v2.40.0 手动跟进录入)',    -- 下次跟进时间(v2.40.0 手动跟进录入)
         `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
         PRIMARY KEY (`id`),
         KEY `idx_activity_customer` (`customer_id`),
         KEY `idx_activity_user` (`user_id`),
-        KEY `idx_activity_time` (`created_at`)
+        KEY `idx_activity_time` (`created_at`),
+        KEY `idx_activity_follow` (`next_follow_at`, `customer_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客户跟进记录'",
 
-    // customer_contact — 客户联系人（v2.38.3：独立联系人表，支持多角色）
+    // customer_contact — 客户联系人（v2.38.3：独立联系人表）
     "CREATE TABLE IF NOT EXISTS `customer_contact` (
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
         `customer_id` BIGINT NOT NULL DEFAULT 0 COMMENT '客户ID',    -- 客户ID
         `name` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '姓名',    -- 姓名
         `phone` VARCHAR(32) DEFAULT '' COMMENT '电话',    -- 电话
         `email` VARCHAR(128) DEFAULT '' COMMENT '邮箱',    -- 邮箱
-        `role` VARCHAR(32) DEFAULT '商务负责人' COMMENT '角色(商务负责人/技术对接人/法务对接人/财务对接人)',    -- 角色(商务负责人/技术对接人/法务对接人/财务对接人)
         `is_primary` TINYINT DEFAULT 0 COMMENT '是否主联系人',    -- 是否主联系人
         `remark` VARCHAR(255) DEFAULT '' COMMENT '备注/更多信息(微信号等)',    -- 备注/更多信息(微信号等)
         `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
@@ -251,12 +299,13 @@ $tables = [
         `customer_id` BIGINT DEFAULT 0 COMMENT '客户ID',    -- 客户ID
         `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID
         `dept_id` BIGINT DEFAULT 0 COMMENT '部门ID',    -- 部门ID
+        `business_type` VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '业务类型',    -- 业务类型
         `status` VARCHAR(16) DEFAULT 'ACTIVE' COMMENT '状态',    -- 状态
         `budget` DECIMAL(15,2) DEFAULT 0 COMMENT '预算金额',    -- 预算金额
         `start_date` DATE DEFAULT NULL COMMENT '开始日期',    -- 开始日期
         `end_date` DATE DEFAULT NULL COMMENT '结束日期',    -- 结束日期
-        `stage` VARCHAR(32) DEFAULT 'PLANNING' COMMENT '执行阶段(v2.40.0: PLANNING/EXECUTING/ACCEPTANCE/COMPLETED)',    -- 执行阶段(v2.40.0: PLANNING/EXECUTING/ACCEPTANCE/COMPLETED)
-        `progress` INT DEFAULT 0 COMMENT '执行进度(v2.40.0: 0-100)',    -- 执行进度(v2.40.0: 0-100)
+        `stage` VARCHAR(32) DEFAULT 'PLANNING' COMMENT '执行阶段(PLANNING/EXECUTING/ACCEPTANCE/COMPLETED)(v2.40.0)',    -- 执行阶段(PLANNING/EXECUTING/ACCEPTANCE/COMPLETED)(v2.40.0)
+        `progress` INT DEFAULT 0 COMMENT '执行进度(%)(v2.40.0)',    -- 执行进度(%)(v2.40.0)
         `remark` TEXT COMMENT '备注',    -- 备注
         `is_deleted` TINYINT DEFAULT 0 COMMENT '软删除(1=已删除)',    -- 软删除(1=已删除)
         `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
@@ -270,7 +319,7 @@ $tables = [
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
         `contract_no` VARCHAR(32) NOT NULL DEFAULT '' COMMENT '合同编号',    -- 合同编号
         `title` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '标题',    -- 标题
-        `category` VARCHAR(32) DEFAULT 'SERVICE' COMMENT '合同分类(SERVICE/PURCHASE/LEASE/NDA等)',    -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
+        `business_type` VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '业务类型',    -- 业务类型
         `status` VARCHAR(32) DEFAULT 'DRAFT' COMMENT '状态',    -- 状态
         `amount` DECIMAL(15,2) DEFAULT 0.00 COMMENT '金额',    -- 金额
         `party_a_name` VARCHAR(128) DEFAULT '' COMMENT '甲方名称',    -- 甲方名称
@@ -281,6 +330,7 @@ $tables = [
         `party_b_customer_id` BIGINT DEFAULT 0 COMMENT '乙方客户ID',    -- 乙方客户ID
         `party_b_name` VARCHAR(128) DEFAULT '' COMMENT '乙方名称',    -- 乙方名称
         `party_b_contact` VARCHAR(64) DEFAULT '' COMMENT '乙方联系人',    -- 乙方联系人
+        `party_b_phone` VARCHAR(32) DEFAULT '' COMMENT '乙方电话',    -- 乙方电话(v2.47.3：联系人/电话拆分填写)
         `party_b_credit_code` VARCHAR(64) DEFAULT '' COMMENT '乙方信用代码',    -- 乙方信用代码
         `effective_date` DATE DEFAULT NULL COMMENT '生效日期',    -- 生效日期
         `expiry_date` DATE DEFAULT NULL COMMENT '到期日期',    -- 到期日期
@@ -297,7 +347,7 @@ $tables = [
         `project_id` BIGINT DEFAULT 0 COMMENT '关联项目ID',    -- 关联项目ID
         `flow_id` BIGINT DEFAULT 0 COMMENT '审批流ID',    -- 审批流ID
         `our_company_id` BIGINT DEFAULT 0 COMMENT '本方主体ID',    -- 本方主体ID
-        `custom_fields` TEXT DEFAULT '{}' COMMENT '自定义字段JSON',    -- 自定义字段JSON
+        `custom_fields` TEXT COMMENT '自定义字段JSON',    -- 自定义字段JSON
         `creator_id` BIGINT NOT NULL DEFAULT 0 COMMENT '创建人ID',    -- 创建人ID
         `updater_id` BIGINT NOT NULL DEFAULT 0 COMMENT '最后更新人ID',    -- 最后更新人ID
         `is_deleted` TINYINT DEFAULT 0 COMMENT '软删除(1=已删除)',    -- 软删除(1=已删除)
@@ -320,38 +370,40 @@ $tables = [
         KEY `idx_contract_party_a_supplier` (`party_a_supplier_id`), -- 甲方供应商关联合同(v2.46.0)
         KEY `idx_contract_supplier` (`supplier_id`),        -- 供应商关联合同
         KEY `idx_contract_parent` (`parent_id`),            -- 框架/执行订单筛选
-        KEY `idx_contract_category` (`category`),           -- 列表分类筛选
+        KEY `idx_contract_business_type` (`business_type`), -- 列表业务类型筛选
         KEY `idx_contract_ourco` (`our_company_id`),        -- 列表签约主体筛选
         KEY `idx_contract_trade_dir_status` (`trade_attr`, `direction`, `status`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同主表'",
 
-    // contract_revision
-    "CREATE TABLE IF NOT EXISTS `contract_revision` (
+    // contract_execution_cc
+    "CREATE TABLE IF NOT EXISTS `contract_execution_cc` (
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
         `contract_id` BIGINT NOT NULL DEFAULT 0 COMMENT '合同ID',    -- 合同ID
-        `field_name` VARCHAR(64) DEFAULT '' COMMENT '变更字段名',    -- 变更字段名
-        `old_value` TEXT COMMENT '旧值',    -- 旧值
-        `new_value` TEXT COMMENT '新值',    -- 新值
-        `operator_id` BIGINT NOT NULL DEFAULT 0 COMMENT '操作人ID',    -- 操作人ID
-        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
+        `user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '被抄送用户ID',    -- 被抄送用户ID
+        `needs_ack` TINYINT NOT NULL DEFAULT 0 COMMENT '是否需要确认知悉(1=是)',    -- 是否需要确认知悉
+        `acknowledged_at` DATETIME DEFAULT NULL COMMENT '确认知悉时间',    -- 确认知悉时间
+        `created_by` BIGINT NOT NULL DEFAULT 0 COMMENT '触发执行的操作人ID',    -- 触发执行的操作人ID
+        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '抄送时间',    -- 抄送时间
         PRIMARY KEY (`id`),
-        KEY `idx_contract_rev` (`contract_id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同变更历史'",
+        UNIQUE KEY `uk_execution_cc` (`contract_id`, `user_id`),
+        KEY `idx_execution_cc_user` (`user_id`, `needs_ack`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同执行抄送知悉轨迹'",
 
     // approval_flow
     "CREATE TABLE IF NOT EXISTS `approval_flow` (
         `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
         `name` VARCHAR(128) NOT NULL DEFAULT '' COMMENT '名称',    -- 名称
         `code` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '编码',    -- 编码
-        `category` VARCHAR(32) DEFAULT '' COMMENT '合同分类(SERVICE/PURCHASE/LEASE/NDA等，遗留单值字段)',    -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等，遗留单值字段)
-        `category_list` TEXT DEFAULT '[]' COMMENT '适用分类列表(JSON数组，空=适用全部分类)',    -- 适用分类列表
+        `business_type_list` TEXT COMMENT '适用业务类型列表(JSON数组，空=全部)', -- 适用业务类型
+        `direction` VARCHAR(16) NOT NULL DEFAULT 'ALL' COMMENT '收付款方向(sales/purchase/ALL)', -- 收付款方向
+        `trade_attr_condition` VARCHAR(8) NOT NULL DEFAULT 'ALL' COMMENT '交易属性(1/0/ALL)', -- 交易属性
         `min_amount` DECIMAL(15,2) DEFAULT 0.00 COMMENT '最低金额',    -- 最低金额
         `max_amount` DECIMAL(15,2) DEFAULT 99999999.99 COMMENT '最高金额',    -- 最高金额
         `use_amount` TINYINT DEFAULT 1 COMMENT '是否启用金额条件(1=启用/0=不启用)',    -- 是否启用金额条件
         `nodes` TEXT COMMENT '审批流节点定义(JSON数组，仅含审批节点，抄送已独立为cc_list)',    -- 审批流节点定义(JSON数组，仅含审批节点，抄送已独立为cc_list)
-        `cc_list` TEXT NOT NULL DEFAULT '' COMMENT '抄送配置(JSON：{role_codes:[],cc_user_ids:[]})',    -- 抄送配置(JSON：流程级知会，与审批节点平级)
+        `cc_list` TEXT COMMENT '抄送配置(JSON：{role_codes:[],cc_user_ids:[]})',    -- 抄送配置(JSON：流程级知会，与审批节点平级)
         `biz_type` VARCHAR(16) DEFAULT 'contract' COMMENT '业务类型(contract=合同审批/invoice=发票审批；发票专用流程按此过滤)',    -- 业务类型(contract=合同审批/invoice=发票审批；发票专用流程按此过滤)
-        `form_condition` TEXT NOT NULL DEFAULT '' COMMENT '表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)',    -- 表单条件(JSON：发票按开票公司分支路由)
+        `form_condition` TEXT COMMENT '表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)',    -- 表单条件(JSON：发票按开票公司分支路由)
         `sort_order` INT DEFAULT 0 COMMENT '同类型流程内优先级(越小越靠前，审批匹配优先取小；0=未手动排序)',    -- 同类型内排序优先级
         `status` TINYINT DEFAULT 1 COMMENT '状态',    -- 状态
         `creator_id` BIGINT NOT NULL DEFAULT 0 COMMENT '创建人ID',    -- 创建人ID
@@ -367,8 +419,8 @@ $tables = [
         `instance_id` BIGINT NOT NULL DEFAULT 0 COMMENT '审批实例ID',    -- 审批实例ID
         `user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '被抄送用户ID',    -- 被抄送用户ID
         `node_order` INT DEFAULT 0 COMMENT '触发时审批节点序号(流程级提交即触发记0)',    -- 触发时审批节点序号(流程级提交即触发记0)
-        `role_codes` TEXT DEFAULT '' COMMENT '命中抄送角色码(JSON数组)',    -- 命中抄送角色码(JSON数组)
-        `cc_user_ids` TEXT DEFAULT '' COMMENT '命中抄送指定用户ID(JSON数组)',    -- 命中抄送指定用户ID(JSON数组)
+        `role_codes` TEXT COMMENT '命中抄送角色码(JSON数组)',    -- 命中抄送角色码(JSON数组)
+        `cc_user_ids` TEXT COMMENT '命中抄送指定用户ID(JSON数组)',    -- 命中抄送指定用户ID(JSON数组)
         `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '抄送时间',    -- 抄送时间
         PRIMARY KEY (`id`),
         KEY `idx_cc_inst` (`instance_id`)
@@ -389,7 +441,8 @@ $tables = [
         PRIMARY KEY (`id`),
         KEY `idx_apv_contract` (`contract_id`),
         KEY `idx_apv_submitter` (`submitted_by`),
-        KEY `idx_apv_status` (`status`)  -- P0-4：提交扫描按 status 过滤，补单列索引避免全表扫描
+        KEY `idx_apv_status` (`status`),  -- P0-4：提交扫描按 status 过滤，补单列索引避免全表扫描
+        KEY `idx_apv_biz_target_status` (`biz_type`,`target_id`,`status`)  -- v2.48.0：业务对象待审批实例防重/查询
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='审批实例'",
 
     // approval_record
@@ -416,7 +469,7 @@ $tables = [
         `type` VARCHAR(32) DEFAULT 'MEDIA' COMMENT '供应商类型(MEDIA/MATERIAL等)',    -- 供应商类型(MEDIA/MATERIAL等)
         `contact_name` VARCHAR(64) DEFAULT '' COMMENT '联系人姓名',    -- 联系人姓名
         `contact_mobile` VARCHAR(32) DEFAULT '' COMMENT '联系人手机',    -- 联系人手机
-        `contact_email` VARCHAR(128) DEFAULT '' COMMENT '联系人邮箱',    -- 联系人邮箱
+        `remark` VARCHAR(255) DEFAULT '' COMMENT '备注(v2.51.3:原contact_email改备注)',    -- 备注
         `address` VARCHAR(255) DEFAULT '' COMMENT '地址',    -- 地址
         `status` TINYINT DEFAULT 1 COMMENT '状态',    -- 状态
         `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID
@@ -451,6 +504,22 @@ $tables = [
         KEY `idx_payment_status_plan` (`status`, `planned_date`),
         KEY `idx_pr_type_status` (`payment_type`, `status`)  -- P2-14：payment_record 无 trade_attr 列(该列在 contract 表)，按回款类型+状态过滤分组
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回款记录'",
+
+    // payment_collection_follow
+    "CREATE TABLE IF NOT EXISTS `payment_collection_follow` (
+        `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',  -- 主键ID
+        `payment_id` BIGINT NOT NULL COMMENT '应收计划ID',  -- 应收计划ID
+        `contract_id` BIGINT NOT NULL COMMENT '合同ID',  -- 合同ID
+        `user_id` BIGINT NOT NULL COMMENT '跟进人ID',  -- 跟进人ID
+        `content` TEXT NOT NULL COMMENT '催收内容',  -- 催收内容
+        `customer_promise` VARCHAR(500) DEFAULT '' COMMENT '客户承诺',  -- 客户承诺
+        `reason` VARCHAR(500) DEFAULT '' COMMENT '未付款原因',  -- 未付款原因
+        `promise_date` DATE DEFAULT NULL COMMENT '承诺付款日',  -- 承诺付款日
+        `next_follow_at` DATETIME DEFAULT NULL COMMENT '下次跟进时间',  -- 下次跟进时间
+        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',  -- 创建时间
+        `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',  -- 更新时间
+        KEY `idx_collection_payment` (`payment_id`,`created_at`), KEY `idx_collection_contract_next` (`contract_id`,`next_follow_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回款催收跟进'",
 
     // contract_invoice
     "CREATE TABLE IF NOT EXISTS `contract_invoice` (
@@ -581,7 +650,7 @@ $tables = [
         `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID
         `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',    -- 创建时间
         `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',    -- 更新时间
-        `content` TEXT DEFAULT '' COMMENT '结构化字段JSON(开票资料等，空串表示纯文件资料)',    -- 结构化字段JSON(开票资料等，空串表示纯文件资料)
+        `content` TEXT COMMENT '结构化字段JSON(开票资料等，空串表示纯文件资料)',    -- 结构化字段JSON(开票资料等，空串表示纯文件资料)
         PRIMARY KEY (`id`),
         KEY `idx_resource_cat` (`category`),
         KEY `idx_resource_company` (`company_id`)
@@ -668,13 +737,14 @@ $perms = [
     [41, '全公司经营', 'dashboard:company', '经营看板'],
     [42, '我的业绩', 'dashboard:stats', '经营看板'],
     [43, '部门经营', 'dashboard:dept', '经营看板'],
+    [49, '导出财务敏感字段', 'export:sensitive', '数据导出'],
 ];
 foreach ($perms as $p) {
     $db->execute("INSERT IGNORE INTO `permission` (`id`, `name`, `code`, `group_name`) VALUES (?, ?, ?, ?)", $p);
 }
 
 // Role-Permission mapping（admin 显式列表与 init.sql 一致：1-25, 28-43 共 41 项；26/27 为历史空洞不存在）
-foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,40,41,42,43] as $pid) {
+foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,40,41,42,43,49] as $pid) {
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (1, ?)", [$pid]);
 }
 foreach ([1,2,3,5,6,7,8,9,10,11,12,18,19,20,21,22,23,24,25,28,29,30,32,44,45,46,34,35,36,37,38,39,42,43] as $pid) {
@@ -683,19 +753,19 @@ foreach ([1,2,3,5,6,7,8,9,10,11,12,18,19,20,21,22,23,24,25,28,29,30,32,44,45,46,
 foreach ([1,7,9,18,22,24,28,32,38,39,42] as $pid) {
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (3, ?)", [$pid]);
 }
-foreach ([1,7,9,18,22,23,24,25,28,29,32,38,39,41,42] as $pid) {
+foreach ([1,7,9,18,22,23,24,25,28,29,32,38,39,41,42,49] as $pid) {
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (4, ?)", [$pid]);
 }
 foreach ([1,2,3,7,8,10,11,12,18,22,24,28,32,34,35,36,38,39,42] as $pid) {
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (5, ?)", [$pid]);
 }
 // v2.40.2：总经理（gm）——管理层业务全量权限（不含系统管理：system:user/role/config、dingtalk:sync、system:handover），data_scope=ALL 看全公司数据
-foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,41,42,43] as $pid) {
+foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,41,42,43,49] as $pid) {
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (12, ?)", [$pid]);
 }
 
-// Admin user (随机口令，首登强制改密)
-$initPwdAdmin = bin2hex(random_bytes(6));  // 随机 12 位十六进制口令
+// Admin user（局域网预览固定口令，首登强制改密；生产环境请改用随机强口令）
+$initPwdAdmin = '85151818';
 $db->execute("INSERT IGNORE INTO `user` (`id`, `username`, `password`, `name`, `is_admin`, `status`, `force_reset`) VALUES (1, 'admin', ?, '系统管理员', 1, 1, 1)", [
     password_hash($initPwdAdmin, PASSWORD_BCRYPT)
 ]);
@@ -710,7 +780,7 @@ $db->execute("INSERT IGNORE INTO `user_role` (`user_id`, `role_id`) VALUES ((SEL
 $db->execute("INSERT IGNORE INTO `user_role` (`user_id`, `role_id`) VALUES ((SELECT id FROM `user` WHERE username='employee01'), 5)");
 $db->execute("INSERT IGNORE INTO `user_role` (`user_id`, `role_id`) VALUES ((SELECT id FROM `user` WHERE username='finance01'), 4)");
 
-// Sample contracts
+/* 示例合同已移除：全新部署不预置业务数据，避免旧法律类别口径进入新库。
 $db->execute("INSERT IGNORE INTO `contract` (`id`, `contract_no`, `title`, `category`, `status`, `amount`, `party_a_name`, `party_b_name`, `effective_date`, `expiry_date`, `content`, `file_url`, `keywords`, `creator_id`, `created_at`, `updated_at`) VALUES (1, 'HT-20260709-0001', '软件技术服务合同', 'SERVICE', 'DRAFT', 150000, '我方公司', '上海科技有限公司', '2026-07-01', '2027-07-01', '双方签署软件技术服务协议。', '[{\"url\":\"/uploads/demo/service-contract.pdf\",\"name\":\"软件技术服务协议.pdf\",\"size\":245760}]', '软件,技术服务,含税', 1, NOW(), NOW())");
 $db->execute("INSERT IGNORE INTO `contract` (`id`, `contract_no`, `title`, `category`, `status`, `amount`, `party_a_name`, `party_b_name`, `effective_date`, `expiry_date`, `content`, `file_url`, `keywords`, `creator_id`, `created_at`, `updated_at`) VALUES (2, 'HT-20260709-0002', '设备采购合同', 'PURCHASE', 'PENDING_APPROVAL', 88000, '我方公司', '深圳智能制造有限公司', '2026-08-01', '2027-08-01', '采购智能制造设备一批。', '[{\"url\":\"/uploads/demo/equipment-order.pdf\",\"name\":\"设备采购订单.pdf\",\"size\":358400}]', '设备,采购,制造', 1, NOW(), NOW())");
 $db->execute("INSERT IGNORE INTO `contract` (`id`, `contract_no`, `title`, `category`, `status`, `amount`, `direction`, `trade_attr`, `party_a_name`, `party_b_name`, `effective_date`, `expiry_date`, `content`, `file_url`, `keywords`, `creator_id`, `created_at`, `updated_at`) VALUES (3, 'HT-20260709-0003', 'NDA保密协议', 'NDA', 'ARCHIVED', 0, '', 0, '我方公司', '北京创新信息技术有限公司', '2026-07-01', '2029-07-01', '双方就业务合作涉及的商业秘密签署保密协议。', '[{\"url\":\"/uploads/demo/nda-agreement.pdf\",\"name\":\"保密协议盖章版.pdf\",\"size\":122880}]', '保密,NDA,协议', 1, NOW(), NOW())");
@@ -719,6 +789,7 @@ $db->execute("INSERT IGNORE INTO `contract` (`contract_no`, `title`, `category`,
 $db->execute("INSERT IGNORE INTO `contract` (`contract_no`, `title`, `category`, `status`, `amount`, `party_a_name`, `party_b_name`, `owner_id`, `dept_id`, `creator_id`, `content`, `file_url`, `keywords`, `created_at`, `updated_at`) VALUES ('HT-DEMO-0002', '财务-服务合同', 'SERVICE', 'DRAFT', 30000, '我方公司', '演示供应商B', (SELECT id FROM `user` WHERE username='finance01'), 1, (SELECT id FROM `user` WHERE username='finance01'), '财务提交的对外服务合同演示数据。', '[]', '演示,服务', NOW(), NOW())");
 $db->execute("INSERT IGNORE INTO `contract` (`contract_no`, `title`, `category`, `status`, `amount`, `party_a_name`, `party_b_name`, `owner_id`, `dept_id`, `creator_id`, `content`, `file_url`, `keywords`, `created_at`, `updated_at`) VALUES ('HT-DEMO-0003', '经理-框架协议', 'SERVICE', 'DRAFT', 50000, '我方公司', '演示供应商C', (SELECT id FROM `user` WHERE username='manager01'), 1, (SELECT id FROM `user` WHERE username='manager01'), '部门经理提交的框架协议演示数据。', '[]', '演示,框架', NOW(), NOW())");
 
+*/
 // Company profiles
 $db->execute("INSERT IGNORE INTO `company_profile` (`id`, `name`, `short_name`, `unified_social_credit_code`, `invoice_tax_rate`, `is_default`, `created_at`, `updated_at`) VALUES (1, '义乌十八腔网络科技有限公司', '十八腔', '91330782MADEMO0001', 0.06, 1, NOW(), NOW())");
 $db->execute("INSERT IGNORE INTO `company_profile` (`id`, `name`, `short_name`, `unified_social_credit_code`, `invoice_tax_rate`, `is_default`, `created_at`, `updated_at`) VALUES (2, '义乌十八腔文化传媒有限公司', '十八腔传媒', '91330782MADEMO0002', 0.13, 0, NOW(), NOW())");
@@ -727,9 +798,9 @@ $db->execute("UPDATE `contract` SET `our_company_id` = 1 WHERE `our_company_id` 
 // Invoice form fields（F1/F2：发票申请表单字段池种子——与 init.sql/init_sqlite.php 1:1；
 // 2026-08-02 补齐：此前仅 sqlite/init.sql 有种子，MySQL 新装库配置表为空会回退预置池导致字段无法按配置停用）
 $db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (1, 'our_company_id', '开票主体', 'company', '[]', 1, 1, 10, 1)");
-$db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (2, 'content_desc', '开票内容', 'select', '[{\"value\":\"软件开发服务费\",\"label\":\"软件开发服务费\"},{\"value\":\"咨询服务费\",\"label\":\"咨询服务费\"},{\"value\":\"运维服务费\",\"label\":\"运维服务费\"},{\"value\":\"硬件销售费\",\"label\":\"硬件销售费\"},{\"value\":\"其他\",\"label\":\"其他\"}]', 1, 1, 80, 1)");
+$db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (2, 'content_desc', '开票内容', 'select', '[{\"value\":\"软件开发服务费\",\"label\":\"软件开发服务费\"},{\"value\":\"咨询服务费\",\"label\":\"咨询服务费\"},{\"value\":\"运维服务费\",\"label\":\"运维服务费\"},{\"value\":\"硬件销售费\",\"label\":\"硬件销售费\"},{\"value\":\"其他\",\"label\":\"其他\"}]', 1, 1, 35, 1)");
 $db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (3, 'invoice_type', '开票类型', 'select', '[{\"value\":\"VAT_SPECIAL\",\"label\":\"我要开增值税专用发票\"},{\"value\":\"VAT_NORMAL\",\"label\":\"我要开普通发票\"}]', 1, 1, 30, 1)");
-$db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (4, 'amount', '含税金额（元）', 'number', '[]', 1, 1, 40, 1)");
+$db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (4, 'amount', '含税金额（元）', 'number', '[]', 1, 1, 72, 1)");
 // tax_rate：开票税率已绑定开票主体（company_profile.invoice_tax_rate，后台公司管理配置），不再作为独立表单组件（enabled=0）
 $db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (5, 'tax_rate', '税率', 'select', '[{\"value\":\"0.01\",\"label\":\"1%\"},{\"value\":\"0.03\",\"label\":\"3%\"},{\"value\":\"0.05\",\"label\":\"5%\"},{\"value\":\"0.06\",\"label\":\"6%\"},{\"value\":\"0.09\",\"label\":\"9%\"},{\"value\":\"0.13\",\"label\":\"13%\"}]', 0, 0, 50, 1)");
 $db->execute("INSERT IGNORE INTO `invoice_form_field` (`id`, `field_key`, `field_label`, `field_type`, `field_options`, `required`, `enabled`, `sort_order`, `is_system`) VALUES (6, 'invoice_title', '发票抬头', 'text', '[]', 0, 1, 60, 1)");
@@ -742,46 +813,30 @@ $db->execute("INSERT IGNORE INTO `resource_library` (`id`, `category`, `title`, 
 $db->execute("INSERT IGNORE INTO `resource_library` (`id`, `category`, `title`, `file_url`, `file_name`, `file_size`, `description`, `company_id`, `owner_id`, `created_at`, `updated_at`) VALUES (2, 'INVOICE', '十八腔（主体1）开票资料', '/uploads/library/demo/invoice-profile1.pdf', '十八腔开票资料.pdf', 81920, '主体1 增值税开票资料。', 1, 1, NOW(), NOW())");
 $db->execute("INSERT IGNORE INTO `resource_library` (`id`, `category`, `title`, `file_url`, `file_name`, `file_size`, `description`, `company_id`, `owner_id`, `created_at`, `updated_at`) VALUES (3, 'CLAUSE', '保密与竞业限制标准条款', '/uploads/library/demo/clause-nda.docx', '保密与竞业限制标准条款.docx', 61440, '通用保密、知识产权与竞业限制条款范本。', 0, 1, NOW(), NOW())");
 
-// Approval flows（v2.38.0：节点 JSON 仅含审批节点，抄送独立为流程级 cc_list）
-$nodesStd = json_encode([
-    ['name' => '法务审批', 'type' => 'ROLE', 'role_code' => 'legal', 'mode' => 'OR'],
-    ['name' => '部门经理审批', 'type' => 'ROLE', 'role_code' => 'manager', 'mode' => 'OR'],
-]);
-$nodesLarge = json_encode([
-    ['name' => '部门经理审批', 'type' => 'ROLE', 'role_code' => 'manager', 'mode' => 'OR'],
-    ['name' => '财务会签', 'type' => 'ROLE', 'role_code' => 'finance', 'mode' => 'AND'],
-]);
-$ccLarge = json_encode(['role_codes' => ['finance'], 'cc_user_ids' => []]);
-$nodesQuick = json_encode([
-    ['name' => '部门经理审批', 'type' => 'ROLE', 'role_code' => 'manager', 'mode' => 'OR'],
-]);
-$db->execute("INSERT IGNORE INTO `approval_flow` (`id`, `name`, `code`, `min_amount`, `max_amount`, `nodes`, `cc_list`, `status`, `creator_id`) VALUES (1, '标准审批', 'STANDARD', 0, 100000, ?, '', 1, 1)", [$nodesStd]);
-$db->execute("INSERT IGNORE INTO `approval_flow` (`id`, `name`, `code`, `min_amount`, `max_amount`, `nodes`, `cc_list`, `status`, `creator_id`) VALUES (2, '大额审批', 'LARGE', 100000.01, 99999999.99, ?, ?, 1, 1)", [$nodesLarge, $ccLarge]);
-$db->execute("INSERT IGNORE INTO `approval_flow` (`id`, `name`, `code`, `min_amount`, `max_amount`, `nodes`, `cc_list`, `status`, `creator_id`) VALUES (3, '简易审批', 'QUICK', 0, 10000, ?, '', 1, 1)", [$nodesQuick]);
+// 审批流不预置，管理员在后台配置后才允许提交审批。
 
 // System config
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('contract_categories', '{\"SALES\":\"销售合同\",\"PURCHASE\":\"采购合同\",\"LABOR\":\"劳动合同\",\"LEASE\":\"租赁合同\",\"NDA\":\"保密协议\",\"SERVICE\":\"服务合同\",\"OTHER\":\"其他\"}', 'contract')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('site_name', '合同管理系统', 'system')");
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('site_version', '1.0.0', 'system')");
 // 页脚版权信息（v2.34.0：系统设置「系统配置」页可维护；缺失时 BaseController 回退默认文案）
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('copyright', '© 2026 合同管理系统 版权所有', 'system')");
 // 业务规则（2026-08-01：系统设置「系统配置」页可维护；定时任务读取，缺省用下方默认值）
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_pool_release_days', '30', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_expire_remind_days', '30,15,7,3,1', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_payment_remind_days', '7,3,1', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('weekly_report_dd_enabled', '1', 'rule')");
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_contract_category', '{\"SALES\":\"销售合同\",\"PURCHASE\":\"采购合同\",\"LABOR\":\"劳动合同\",\"LEASE\":\"租赁合同\",\"NDA\":\"保密协议\",\"SERVICE\":\"服务合同\",\"OTHER\":\"其他\"}', 'dict')");
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"APPROVED\":\"已通过\",\"REJECTED\":\"已驳回\",\"SIGNED\":\"历史已签\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");
+$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"REJECTED\":\"已驳回\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_supplier_type', '{\"MEDIA\":\"媒体渠道\",\"PRODUCTION\":\"制作方\",\"FREELANCER\":\"自由职业者\",\"MATERIAL\":\"物料供应商\",\"SERVICE\":\"服务商\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_invoice_type', '{\"VAT_SPECIAL\":\"我要开增值税专用发票\",\"VAT_NORMAL\":\"我要开普通发票\",\"E_INVOICE\":\"电子发票\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_invoice_status', '{\"APPLIED\":\"已申请\",\"ISSUED\":\"已开票\",\"REJECTED\":\"已退回\",\"CANCELLED\":\"已作废\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_tax_rate', '{\"0.13\":\"13% 货物销售\",\"0.09\":\"9% 交通/建筑\",\"0.06\":\"6% 现代服务\",\"0.03\":\"3% 小规模\",\"0\":\"0% 免税\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_payment_method', '{\"BANK\":\"银行转账\",\"CASH\":\"现金\",\"CHECK\":\"支票\",\"ALIPAY\":\"支付宝\",\"WECHAT\":\"微信支付\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_payment_status', '{\"PENDING\":\"待收\",\"PAID\":\"已收\",\"OVERDUE\":\"逾期\"}', 'dict')");
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_customer_lifecycle', '{\"POTENTIAL\":\"客户\",\"ACTIVE\":\"成交\",\"INACTIVE\":\"公海\"}', 'dict')");
+$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_customer_lifecycle', '{\"POTENTIAL\":\"客户\",\"ACTIVE\":\"成交\"}', 'dict')");
+$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_customer_industry', '{\"GOV\":\"政府单位\",\"REAL_ESTATE\":\"房地产\",\"FOOD_TOURISM\":\"餐饮旅游\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_customer_source', '{\"MANUAL\":\"手动录入\",\"IMPORT\":\"批量导入\",\"DINGTALK\":\"钉钉同步\",\"RECOMMEND\":\"客户推荐\",\"AD\":\"广告获客\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_data_scope', '{\"ALL\":\"全部数据\",\"DEPT\":\"本部门\",\"DEPT_AND_CHILD\":\"本部门及子部门\",\"CUSTOM\":\"自定义部门\",\"SELF\":\"仅自己\"}', 'dict')");
-$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_project_status', '{\"ACTIVE\":\"进行中\",\"DONE\":\"已完成\",\"ARCHIVED\":\"已归档\",\"TERMINATED\":\"已终止\"}', 'dict')");
+    $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_project_status', '{\"ACTIVE\":\"进行中\",\"DONE\":\"已完成\",\"ARCHIVED\":\"已归档\"}', 'dict')");
+$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_business_type', '{\"EVENT\":\"活动服务\",\"AD_CONTENT\":\"广告与内容服务\",\"GOODS\":\"商品销售\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_payment_milestone', '{\"DOWN_PAYMENT\":\"预付款\",\"MID_TERM\":\"中期款\",\"FINAL_PAYMENT\":\"尾款\",\"RETENTION\":\"质保金\"}', 'dict')");
 
 // Demo projects + link contracts

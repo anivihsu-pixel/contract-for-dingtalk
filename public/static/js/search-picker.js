@@ -115,6 +115,8 @@
     function applyFill(wrap, id, name, credit) {
         var fn = wrap.getAttribute('data-fill-name');
         var fc = wrap.getAttribute('data-fill-credit');
+        // 客户只填写名称时，信用代码必须保持为空；避免联动规则把名称误当作信用代码。
+        credit = (credit == null || String(credit).trim() === '' || String(credit).trim() === String(name).trim()) ? '' : String(credit).trim();
         if (fn) {
             var fe = document.querySelector('[name="' + fn + '"]');
             if (fe) fe.value = (String(id) === '0' || !id) ? '' : name;
@@ -154,7 +156,7 @@
         return type === 'supplier' ? '供应商' : '客户';
     }
 
-    function buildQuickLayer() {
+    function buildQuickLayer(host) {
         var layer = document.createElement('div');
         layer.id = 'csQuickLayer';
         layer.innerHTML = ''
@@ -178,7 +180,9 @@
             + '<button type="button" class="cs-q-save">保存并选择</button>'
             + '</div>'
             + '</div></div>';
-        document.body.appendChild(layer);
+        // 开票申请在 Bootstrap modal 内打开。将快速新建层放入当前 modal，
+        // 避免 Bootstrap 的焦点保护把输入框焦点强制拉回外层弹窗。
+        (host || document.body).appendChild(layer);
 
         layer.querySelector('.cs-q-close').addEventListener('click', closeQuickLayer);
         layer.querySelector('.cs-q-cancel').addEventListener('click', closeQuickLayer);
@@ -197,7 +201,10 @@
     }
 
     function openQuickCreate(wrap) {
-        var layer = document.getElementById('csQuickLayer') || buildQuickLayer();
+        var host = wrap && wrap.closest ? (wrap.closest('.modal') || document.body) : document.body;
+        var layer = document.getElementById('csQuickLayer') || buildQuickLayer(host);
+        // 组件可能先在普通页面使用，后续又在模态框内使用；确保每次打开都位于当前宿主内。
+        if (layer.parentNode !== host) host.appendChild(layer);
         activeQuickWrap = wrap;
         var type = wrap.getAttribute('data-quick') || 'customer';
         layer.querySelector('.cs-q-title').textContent = '快速新建' + quickLabel(type);
@@ -208,6 +215,11 @@
         layer.querySelector('.cs-q-mask').style.display = 'flex';
         setTimeout(function () { layer.querySelector('[data-q="name"]').focus(); }, 60);
     }
+
+    // 供同一表单中的其他搜索入口复用快速新建客户弹窗（例如关联合同搜索无结果时）。
+    window.openQuickCreateFor = function (wrap) {
+        if (wrap) openQuickCreate(wrap);
+    };
 
     function closeQuickLayer() {
         var layer = document.getElementById('csQuickLayer');

@@ -28,20 +28,26 @@ include __DIR__ . '/_head.php';
       <div style="font-size:18px;font-weight:600"><?=htmlspecialchars($c['name'])?></div>
       <?php if(!empty($c['credit_code'])): ?><div style="font-size:13px;color:var(--m-text-3);margin-top:4px">统一信用代码：<?=htmlspecialchars($c['credit_code'])?></div><?php endif; ?>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <!-- v2.38.13：信用评级并入概要（高风险红标 / 评分梯度标签），原独立卡移除；v2.38.14：灰标改五档梯度（分高色深） -->
-        <?php if(!empty($c['high_risk'])): ?>
-          <span class="m-tag m-tag-danger"><i class="bi bi-shield-exclamation"></i> 高风险</span>
-        <?php else: $cScore=(int)($c['credit_score']??100); $cCls=$cScore>=90?'m-tag-credit-a':($cScore>=80?'m-tag-credit-b':($cScore>=60?'m-tag-credit-c':($cScore>=40?'m-tag-credit-d':'m-tag-credit-e'))); ?>
-          <span class="m-tag <?=$cCls?>">信用 <?=$cScore?></span>
-        <?php endif; ?>
-        <!-- v2.38.9：生命周期标签（与漏斗同色） -->
-        <?php $lc = $c['lifecycle_status'] ?? 'ACTIVE'; $lcCls = ['POTENTIAL'=>'m-tag-info','ACTIVE'=>'m-tag-ok','INACTIVE'=>'m-tag-warn'][$lc] ?? 'm-tag-muted'; ?>
+        <!-- 生命周期标签（与漏斗同色） -->
+        <?php $lc = $c['lifecycle_status'] ?? 'ACTIVE'; $lcCls = ['POTENTIAL'=>'m-tag-info','ACTIVE'=>'m-tag-ok'][$lc] ?? 'm-tag-muted'; ?>
         <span class="m-tag <?=$lcCls?>"><?=htmlspecialchars($lifecycle_dict[$lc] ?? $lc)?></span>
         <!-- v2.40.0 P1-7：客户行业标签 -->
         <?php if(!empty($c['industry'])): ?><span class="m-tag m-tag-muted"><?=htmlspecialchars($industry_dict[$c['industry']] ?? $c['industry'])?></span><?php endif; ?>
         <span class="m-tag m-tag-muted"><?=htmlspecialchars($srcMap[$c['source']] ?? $c['source'])?></span>
         <?php if(!empty($c['is_self'])): ?><span class="m-tag m-tag-ok">我方主体</span><?php endif; ?>
       </div>
+      <!-- v2.51.3：操作区并入概要卡（编辑资料=归属人/部门/管理员；转移=本人客户）
+           v2.51.4：改紧凑胶囊（.m-act），左对齐，替代 48px 大按钮 -->
+      <?php if(!empty($can_edit_record) || $is_owner): ?>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #f2f3f5;display:flex;justify-content:flex-start;gap:8px;flex-wrap:wrap">
+        <?php if(!empty($can_edit_record)): ?>
+        <a class="m-act" href="/m/customer/<?=$c['id']?>/edit" style="margin-left:0"><i class="bi bi-pencil"></i> 编辑资料</a>
+        <?php endif; ?>
+        <?php if($is_owner): ?>
+        <a href="javascript:;" class="m-act" id="transferBtn" onclick="custTransfer(<?=$c['id']?>,this)" style="margin-left:0"><i class="bi bi-arrow-left-right"></i> 转移</a>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -54,31 +60,48 @@ include __DIR__ . '/_head.php';
       <?php if(!empty($c['contact_mobile'])): ?><div class="m-kv"><div class="k">手机</div><div class="v"><?=phone_link($c['contact_mobile'], false)?></div></div><?php endif; ?>
       <?php if(!empty($c['contact_email'])): ?><div class="m-kv"><div class="k">邮箱</div><div class="v"><?=htmlspecialchars($c['contact_email'])?></div></div><?php endif; ?>
       <?php if(!empty($c['address'])): ?><div class="m-kv"><div class="k">地址</div><div class="v"><?=htmlspecialchars($c['address'])?></div></div><?php endif; ?>
-      <div class="m-kv"><div class="k">归属人</div><div class="v"><?=htmlspecialchars($owner_name ?: '公海')?></div></div>
+      <div class="m-kv"><div class="k">归属人</div><div class="v"><?=htmlspecialchars($owner_name ?: '未分配')?></div></div>
       <?php if(!empty($c['created_at'])): ?><div class="m-kv"><div class="k">创建时间</div><div class="v"><?=htmlspecialchars(substr($c['created_at'],0,10))?></div></div><?php endif; ?>
     </div>
   </div>
 
-  <!-- REV-31：客户操作（认领/转移/释放）加载状态标记 -->
-  <?php $actionBusy = false; ?>
-  <?php if($is_public_pool): ?>
-  <!-- 公海客户：显示认领按钮 -->
-  <div class="m-card"><div class="m-card-bd" style="padding-top:16px;padding-bottom:16px">
-    <button class="m-btn m-btn-brand m-btn-block" onclick="custClaim(<?=$c['id']?>,this)" id="claimBtn">
-      <i class="bi bi-person-check"></i> 认领此客户
-    </button>
-  </div></div>
-  <?php elseif($is_owner): ?>
-  <!-- 本人客户：显示释放与转移按钮 -->
-  <div class="m-card"><div class="m-card-bd" style="display:flex;gap:8px;padding-top:16px;padding-bottom:16px">
-    <button class="m-btn m-btn-ghost" style="flex:1" onclick="custRelease(<?=$c['id']?>,this)" id="releaseBtn">
-      <i class="bi bi-box-arrow-up"></i> 释放到公海
-    </button>
-    <button class="m-btn m-btn-ghost" style="flex:1" onclick="custTransfer(<?=$c['id']?>,this)" id="transferBtn">
-      <i class="bi bi-arrow-left-right"></i> 转移
-    </button>
-  </div></div>
-  <?php endif; ?>
+  <!-- 联系人 (M9)（v2.51.3：上移至基本信息之后，联系方式紧跟资料区） -->
+  <div class="m-card">
+    <div class="m-card-hd"><span><i class="bi bi-person-lines-fill me-1 text-primary"></i>联系人</span><span class="m-tag m-tag-muted"><?=count($contacts)?></span>
+      <?php if($is_owner): ?><span class="m-act" onclick="mToggleContactForm(0)"><i class="bi bi-person-plus"></i>添加</span><?php endif; ?>
+    </div>
+    <div class="m-card-bd">
+      <?php if(empty($contacts)): ?>
+        <div class="m-empty m-empty-sm"><i class="bi bi-person"></i>暂无联系人</div>
+      <?php else: foreach($contacts as $c): ?>
+        <div class="m-kv">
+          <div class="k"><?=htmlspecialchars($c['name'])?><?=!empty($c['is_primary'])?' <span class="m-tag m-tag-ok" style="font-size:10px">主</span>':''?></div>
+          <div class="v">
+            <?=phone_link($c['phone'], false)?>
+            <?php if(!empty($c['remark'])): ?><span style="font-size:12px;color:var(--m-text-3);display:block;margin-top:2px"><?=htmlspecialchars($c['remark'])?></span><?php endif; ?>
+            <?php if($is_owner && empty($c['from_primary'])): ?><div style="margin-top:4px">
+              <span class="m-link" style="font-size:12px" onclick="mToggleContactForm(<?=$c['id']?>)">编辑</span>
+              <span class="m-link" style="font-size:12px;color:var(--m-danger)" onclick="mDeleteContact(<?=$c['id']?>)">删除</span>
+            </div><?php endif; ?>
+          </div>
+        </div>
+      <?php endforeach; endif; ?>
+    </div>
+    <div class="m-card-bd" id="mContactFormBox" style="display:none;border-top:1px dashed #eee">
+      <input type="hidden" id="mContactId" value="0">
+      <input type="hidden" id="mContactCustId" value="<?=$customer['id']?>">
+      <div class="mb-2"><input type="text" id="mContactName" class="m-input" placeholder="姓名 *"></div>
+      <div class="mb-2"><input type="text" id="mContactPhone" class="m-input" placeholder="电话"></div>
+      <div class="mb-2"><input type="text" id="mContactEmail" class="m-input" placeholder="邮箱"></div>
+      <!-- v2.38.12：更多信息（微信号等） -->
+      <div class="mb-2"><textarea id="mContactRemark" class="m-input" rows="2" placeholder="更多信息（微信号、钉钉号等）" style="padding:10px;font-size:14px"></textarea></div>
+      <div class="mb-2"><label style="font-size:13px"><input type="checkbox" id="mContactPrimary"> 设为主联系人</label></div>
+      <div style="display:flex;gap:8px">
+        <button class="m-btn m-btn-brand" style="flex:1" onclick="mSaveContact()">保存</button>
+        <button class="m-btn m-btn-ghost" style="flex:1" onclick="document.getElementById('mContactFormBox').style.display='none'">取消</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 关联合同 -->
   <div class="m-card">
@@ -189,50 +212,6 @@ include __DIR__ . '/_head.php';
     </div>
   </div>
 
-  <!-- 联系人 (M9) -->
-  <div class="m-card">
-    <div class="m-card-hd"><span><i class="bi bi-person-lines-fill me-1 text-primary"></i>联系人</span><span class="m-tag m-tag-muted"><?=count($contacts)?></span>
-      <?php if($is_owner): ?><span class="m-act" onclick="mToggleContactForm(0)"><i class="bi bi-person-plus"></i>添加</span><?php endif; ?>
-    </div>
-    <div class="m-card-bd">
-      <?php if(empty($contacts)): ?>
-        <div class="m-empty m-empty-sm"><i class="bi bi-person"></i>暂无联系人</div>
-      <?php else: foreach($contacts as $c): ?>
-        <div class="m-kv">
-          <div class="k"><?=htmlspecialchars($c['name'])?><?=!empty($c['is_primary'])?' <span class="m-tag m-tag-ok" style="font-size:10px">主</span>':''?><br><span style="font-size:12px;color:var(--m-text-3)"><?=htmlspecialchars($c['role'])?></span></div>
-          <div class="v">
-            <?=phone_link($c['phone'], false)?><br>
-            <?php if(!empty($c['email'])): ?><span style="font-size:12px;color:var(--m-text-3)"><?=htmlspecialchars($c['email'])?></span><?php endif; ?>
-            <?php if(!empty($c['remark'])): ?><span style="font-size:12px;color:var(--m-text-3);display:block;margin-top:2px"><?=htmlspecialchars($c['remark'])?></span><?php endif; ?>
-            <?php if($is_owner && empty($c['from_primary'])): ?><div style="margin-top:4px">
-              <span class="m-link" style="font-size:12px" onclick="mToggleContactForm(<?=$c['id']?>)">编辑</span>
-              <span class="m-link" style="font-size:12px;color:var(--m-danger)" onclick="mDeleteContact(<?=$c['id']?>)">删除</span>
-            </div><?php endif; ?>
-          </div>
-        </div>
-      <?php endforeach; endif; ?>
-    </div>
-    <div class="m-card-bd" id="mContactFormBox" style="display:none;border-top:1px dashed #eee">
-      <input type="hidden" id="mContactId" value="0">
-      <input type="hidden" id="mContactCustId" value="<?=$customer['id']?>">
-      <div class="mb-2"><input type="text" id="mContactName" class="m-input" placeholder="姓名 *"></div>
-      <div class="mb-2"><input type="text" id="mContactPhone" class="m-input" placeholder="电话"></div>
-      <div class="mb-2"><input type="text" id="mContactEmail" class="m-input" placeholder="邮箱"></div>
-      <!-- v2.38.12：更多信息（微信号等） -->
-      <div class="mb-2"><textarea id="mContactRemark" class="m-input" rows="2" placeholder="更多信息（微信号、钉钉号等）" style="padding:10px;font-size:14px"></textarea></div>
-      <div class="mb-2">
-        <select id="mContactRole" class="m-input">
-          <?php foreach($contact_roles as $r): ?><option value="<?=htmlspecialchars($r)?>"><?=htmlspecialchars($r)?></option><?php endforeach; ?>
-        </select>
-      </div>
-      <div class="mb-2"><label style="font-size:13px"><input type="checkbox" id="mContactPrimary"> 设为主联系人</label></div>
-      <div style="display:flex;gap:8px">
-        <button class="m-btn m-btn-brand" style="flex:1" onclick="mSaveContact()">保存</button>
-        <button class="m-btn m-btn-ghost" style="flex:1" onclick="document.getElementById('mContactFormBox').style.display='none'">取消</button>
-      </div>
-    </div>
-  </div>
-
   <!-- 往来汇总（v2.38.14：统计卡升级为 360 交易合同口径 + 最近动态内嵌，模块数不变） -->
   <div class="m-card">
     <div class="m-card-hd"><span><i class="bi bi-cash-coin me-1 text-primary"></i>往来汇总</span><?php if(!empty($g360['stats'])): ?><a href="/m/party/customer/<?=$customer['id']?>" style="font-size:12px;color:var(--m-brand)">往来全景 <i class="bi bi-chevron-right"></i></a><?php endif; ?></div>
@@ -255,7 +234,7 @@ include __DIR__ . '/_head.php';
         <?php $actShown2 = min(count($g360['activity']), 5); // 首屏最多渲染 5 条（与下方 break 一致） ?>
         <?php foreach($g360['activity'] as $ai => $ac): if($ai >= 5) break; ?>
           <div class="m-row m-lst-more"<?=($ai >= 3)?' style="display:none"':''?> style="padding:6px 0;border-bottom:none;min-height:0">
-            <div class="s" style="font-size:12px"><span class="m-tag m-tag-info" style="font-size:11px"><?=htmlspecialchars(audit_action_label($ac['action'] ?? ''))?></span> 合同 #<?=(int)($ac['target_id'] ?? 0)?></div>
+            <div class="s" style="font-size:12px"><span class="m-tag m-tag-info" style="font-size:11px"><?=htmlspecialchars(audit_action_label($ac['action'] ?? ''))?></span> 合同 <?=htmlspecialchars($ac['contract_title'] ?? ('#'.(int)($ac['target_id'] ?? 0)))?></div>
             <div class="s" style="font-size:11px;color:var(--m-text-3)"><?=htmlspecialchars($ac['created_at'] ?? '')?></div>
           </div>
         <?php endforeach; ?>
@@ -379,22 +358,9 @@ include __DIR__ . '/_head.php';
       <label class="m-act-btn"><input type="radio" name="actType" value="meeting"><span>会</span><em>会议</em></label>
       <label class="m-act-btn"><input type="radio" name="actType" value="wechat"><span>微</span><em>微信</em></label>
     </div>
-    <p>快捷短语</p>
-    <div class="m-phrase-row" id="actPhraseRow">
-      <span class="m-phrase" data-phrase="已电话沟通">已电话沟通</span>
-      <span class="m-phrase" data-phrase="确认意向">确认意向</span>
-      <span class="m-phrase" data-phrase="已发资料">已发资料</span>
-      <span class="m-phrase" data-phrase="约定下次">约定下次</span>
-    </div>
     <p>跟进内容</p>
     <textarea class="m-input" id="actContent" rows="3" maxlength="500" placeholder="本次沟通要点、客户意向等" style="resize:vertical;height:auto"></textarea>
     <p>下次跟进（可选）</p>
-    <div class="m-phrase-row" id="actNextRow">
-      <span class="m-phrase" data-next="1">明天 09:00</span>
-      <span class="m-phrase" data-next="3">3 天后</span>
-      <span class="m-phrase" data-next="7">一周后</span>
-      <span class="m-phrase" data-next="0">自定义</span>
-    </div>
     <input class="m-input" type="datetime-local" id="actNextFollow" style="margin-top:8px">
     <div class="m-sheet-actions">
       <button class="m-btn m-btn-ghost" id="actCancel">取消</button>
@@ -426,8 +392,11 @@ function openActSheet() {
   setActType(rb);
   document.getElementById('actContent').value = '';
   document.getElementById('actNextFollow').value = '';
-  document.getElementById('actPhraseRow').querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
-  document.getElementById('actNextRow').querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
+  // 快捷短语区（actPhraseRow/actNextRow）已随 v2.48.0 精简下架，防空指针
+  var pr = document.getElementById('actPhraseRow');
+  if (pr) pr.querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
+  var nr = document.getElementById('actNextRow');
+  if (nr) nr.querySelectorAll('.m-phrase').forEach(function(p){ p.classList.remove('on'); });
   document.getElementById('actSheetMask').classList.add('show');
 }
 function insertPhrase(phrase) {
@@ -520,41 +489,24 @@ function initActSheet() {
     var input = label.querySelector('input');
     setActType(label.classList.contains('on') ? null : input);
   });
-  document.getElementById('actPhraseRow').addEventListener('click', function(e) {
+  // v2.48.0 后快捷短语区已下架：元素可能不存在，绑定前判空（否则空指针中断后续弹窗初始化）
+  var apr = document.getElementById('actPhraseRow');
+  if (apr) apr.addEventListener('click', function(e) {
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;
     if (!p) return;
     if (p.classList.contains('on')) { p.classList.remove('on'); return; }  // 再点取消高亮
     p.classList.add('on');
     insertPhrase(p.getAttribute('data-phrase'));
   });
-  document.getElementById('actNextRow').addEventListener('click', function(e) {
+  var anr = document.getElementById('actNextRow');
+  if (anr) anr.addEventListener('click', function(e) {
     var p = e.target.closest ? e.target.closest('.m-phrase') : null;
     if (p) setActNext(p.getAttribute('data-next'));
   });
 }
 initActSheet();
 
-function custClaim(id, btn) {
-  mConfirm('确认认领此客户？', function() {
-    btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 认领中…';
-    fetch('/ajax/customer/' + id + '/claim', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() } })
-      .then(r => r.json()).then(d => {
-        if (d.code === 0) { toast('认领成功'); location.reload(); }
-        else { toast(d.msg || '认领失败'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-check"></i> 认领此客户'; }
-      }).catch(() => { toast('网络错误'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-check"></i> 认领此客户'; });
-  });
-}
-function custRelease(id, btn) {
-  mConfirm('确认将此客户释放到公海？', function() {
-    btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 释放中…';
-    fetch('/ajax/customer/' + id + '/release', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() } })
-      .then(r => r.json()).then(d => {
-        if (d.code === 0) { toast('已释放到公海'); location.reload(); }
-        else { toast(d.msg || '释放失败'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-box-arrow-up"></i> 释放到公海'; }
-      }).catch(() => { toast('网络错误'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-box-arrow-up"></i> 释放到公海'; });
-  });
-}
-// 2026-08-03：转移改为选人弹窗（不再输入用户 ID）；弹窗交互初始化见下方 initTransferModal()
+// 转移：选人弹窗（弹窗交互初始化见下方 initTransferModal()）
 var _custTransferId = 0;
 function custTransfer(id, btn) {
   _custTransferId = id;
@@ -565,15 +517,17 @@ function doCustTransfer() {
   if (!sel) { toast('请选择接收人'); return; }
   var btn = document.getElementById('transferBtn');
   document.getElementById('transferMask').classList.remove('show');
-  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 转移中…';
+  // v2.51.4：transferBtn 已改 a 标签（紧凑胶囊），用内联样式禁用替代 button.disabled
+  btn.style.pointerEvents = 'none'; btn.style.opacity = '.6';
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 转移中…';
   fetch('/ajax/customer/' + _custTransferId + '/transfer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
     body: 'to_user_id=' + encodeURIComponent(sel.value)
   }).then(r => r.json()).then(d => {
     if (d.code === 0) { toast('转移成功'); location.reload(); }
-    else { toast(d.msg || '转移失败'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-left-right"></i> 转移'; }
-  }).catch(() => { toast('网络错误'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-left-right"></i> 转移'; });
+    else { toast(d.msg || '转移失败'); btn.style.pointerEvents = ''; btn.style.opacity = ''; btn.innerHTML = '<i class="bi bi-arrow-left-right"></i> 转移'; }
+  }).catch(() => { toast('网络错误'); btn.style.pointerEvents = ''; btn.style.opacity = ''; btn.innerHTML = '<i class="bi bi-arrow-left-right"></i> 转移'; });
 }
 // 转移弹窗交互：开关 / 姓名搜索（AJAX）/ 加载更多（与审批转交同模式）
 function initTransferModal() {
@@ -654,7 +608,6 @@ function mToggleContactForm(id) {
         document.getElementById('mContactName').value = item ? item.name : '';
         document.getElementById('mContactPhone').value = item ? item.phone : '';
         document.getElementById('mContactEmail').value = item ? item.email : '';
-        document.getElementById('mContactRole').value = item ? item.role : '商务负责人';
         document.getElementById('mContactPrimary').checked = item ? (item.is_primary == 1) : false;
         document.getElementById('mContactRemark').value = item ? (item.remark || '') : '';
         box.style.display = 'block';
@@ -665,7 +618,6 @@ function mToggleContactForm(id) {
     document.getElementById('mContactName').value = '';
     document.getElementById('mContactPhone').value = '';
     document.getElementById('mContactEmail').value = '';
-    document.getElementById('mContactRole').value = '商务负责人';
     document.getElementById('mContactPrimary').checked = false;
     document.getElementById('mContactRemark').value = '';
     box.style.display = 'block';
@@ -681,7 +633,6 @@ function mSaveContact() {
   fd.append('name', name);
   fd.append('phone', document.getElementById('mContactPhone').value.trim());
   fd.append('email', document.getElementById('mContactEmail').value.trim());
-  fd.append('role', document.getElementById('mContactRole').value);
   fd.append('is_primary', document.getElementById('mContactPrimary').checked ? 1 : 0);
   fd.append('remark', document.getElementById('mContactRemark').value.trim());
   fetch('/ajax/customer/contact/save', {
@@ -839,6 +790,8 @@ function mRemoveGroup(){
   if (gm) {
     document.getElementById('groupCancel').addEventListener('click', function(){ gm.classList.remove('show'); });
     document.getElementById('groupConfirm').addEventListener('click', mConfirmGroup);
+    // 与转移弹窗一致：点击遮罩空白处关闭
+    gm.addEventListener('click', function(e){ if (e.target === gm) gm.classList.remove('show'); });
     // v2.47.8：取消集团归属（仅已设置时存在该按钮）
     var gr = document.getElementById('groupRemove');
     if (gr) gr.addEventListener('click', mRemoveGroup);

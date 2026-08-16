@@ -25,10 +25,11 @@ class RemindCheck extends Command
         $alerts = [];
         $r = RemindService::check($alerts);
         $output->writeln(sprintf(
-            '[%s] 提醒引擎触发完成：合同提醒 %d 条，回款提醒 %d 条',
+            '[%s] 提醒引擎触发完成：合同提醒 %d 条，回款提醒 %d 条，客户跟进 %d 条',
             date('Y-m-d H:i:s'),
             $r['contracts'] ?? 0,
-            $r['payments'] ?? 0
+            $r['payments'] ?? 0,
+            $r['followups'] ?? 0
         ));
         return 0;
     }

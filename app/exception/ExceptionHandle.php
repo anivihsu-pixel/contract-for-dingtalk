@@ -76,7 +76,13 @@ class ExceptionHandle extends Handle
             View::assign('err_msg', '您访问的页面不存在或已被移除');
             $file = $this->app->getRootPath() . 'app/view/error/404.php';
             if (is_file($file)) {
-                return Response::create((string) View::fetch('error/404'), 'html', 404);
+                // PHP 原生视图驱动下错误页不依赖控制器视图路径，直接按绝对路径渲染。
+                $back_url = $isMobile ? '/m' : '/dashboard';
+                $home_text = $isMobile ? '返回工作台' : '返回驾驶舱';
+                $err_msg = '您访问的页面不存在或已被移除';
+                ob_start();
+                include $file;
+                return Response::create((string) ob_get_clean(), 'html', 404);
             }
             return Response::create('<h1 style="text-align:center;padding-top:80px;color:#666">404 页面不存在</h1>', 'html', 404);
         }

@@ -6,7 +6,7 @@ $__canManage = !empty($is_admin) || in_array('remind:manage', $user_permissions 
 ?>
 <h4 class="mb-3"><i class="bi bi-bell"></i> 待办中心</h4>
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="text-muted small">待办中心：<strong>待办</strong>（待我审批）· <strong>提醒</strong>（到期/回款）· <strong>审批消息</strong>（站内信）</div>
+  <div class="text-muted small">待办中心：<strong>待办</strong>（待我审批）· <strong>提醒</strong>（合同/回款/客户跟进）· <strong>审批消息</strong>（站内信）</div>
   <div class="d-flex gap-2">
     <button class="btn btn-outline-secondary btn-sm" onclick="checkRemind()"><i class="bi bi-arrow-clockwise"></i> 检查提醒</button>
     <?php if($__canManage): ?>
@@ -17,7 +17,7 @@ $__canManage = !empty($is_admin) || in_array('remind:manage', $user_permissions 
 </div>
 <?php if($__canManage): ?>
 <div class="alert alert-light border small text-muted mb-3 py-2">
-  <i class="bi bi-info-circle"></i> 提醒已支持每日自动推送（crontab 调用 <code>php think remind:dispatch</code>），到期/逾期项自动通过钉钉通知负责人与财务；上方「立即推送到钉钉」仅用于手动触发或测试。
+  <i class="bi bi-info-circle"></i> 提醒已支持每日自动推送（crontab 调用 <code>php think remind:dispatch</code>），合同、回款及客户跟进事项会自动通知对应负责人；上方「立即推送到钉钉」仅用于手动触发或测试。
 </div>
 <?php endif; ?>
 
@@ -51,9 +51,11 @@ $__canManage = !empty($is_admin) || in_array('remind:manage', $user_permissions 
   <div class="card stat-card"><div class="card-body p-0">
     <?php if(empty($alerts)): ?>
       <div class="text-center py-5 text-muted">今日暂无提醒 🎉</div>
-    <?php else: foreach($alerts as $a): ?>
+    <?php else: foreach($alerts as $a):
+      $alertLink = ($a['type'] ?? '') === 'customer' ? '/customer/'.(int)$a['id'] : '/contract/'.(int)$a['id'];
+    ?>
       <div class="p-3 border-bottom d-flex align-items-center">
-        <a href="/contract/<?=$a['id']?>" class="flex-grow-1 d-flex align-items-center text-decoration-none text-reset">
+        <a href="<?=$alertLink?>" class="flex-grow-1 d-flex align-items-center text-decoration-none text-reset">
           <i class="bi bi-<?=$a['level']=='danger'?'exclamation-triangle-fill text-danger':($a['level']=='warning'?'exclamation-circle text-warning':'info-circle text-info')?> fs-5 me-3"></i>
           <div class="flex-grow-1"><?=htmlspecialchars($a['text'])?></div>
           <i class="bi bi-chevron-right text-muted ms-2"></i>

@@ -14,7 +14,7 @@ class CustomerContactController extends BaseController
 {
     /**
      * 校验目标客户存在且在当前用户数据范围内（H2 修复：联系人子接口此前缺失客户归属校验，成为越权旁路）
-     * 供写操作（新增/编辑/删除/设主）使用：公海客户（owner_id=0）不在此放行，仅管理员（ALL 范围）可维护。
+     * 供写操作（新增/编辑/删除/设主）使用。
      * @return bool true=可访问；false=不存在/无权限
      */
     private function canAccessCustomer(int $customerId): bool
@@ -30,8 +30,8 @@ class CustomerContactController extends BaseController
     }
 
     /**
-     * S-12：只读可见性校验——与客户详情页一致，公海客户（owner_id=0）对已登录用户放开读取；
-     * 写操作仍走 canAccessCustomer（公海客户仅管理员可维护）。
+     * S-12：只读可见性校验——与客户详情页一致；
+     * 写操作仍走 canAccessCustomer。
      */
     private function canViewCustomer(int $customerId): bool
     {
@@ -41,9 +41,6 @@ class CustomerContactController extends BaseController
         $cust = CustomerLogic::findActive($customerId);
         if (!$cust) {
             return false;
-        }
-        if ((int)$cust['owner_id'] === 0) {
-            return true; // 公海客户：所有人只读可见
         }
         return \app\common\logic\AuthLogic::canAccessRecord((int)$cust['owner_id'], $cust['dept_id'] ?? 0);
     }
@@ -56,7 +53,7 @@ class CustomerContactController extends BaseController
     {
         $this->requirePermission('customer:view');
         $customerId = (int)$customerId;
-        // S-12：列表读取用只读可见性（公海客户放行），与客户详情页语义一致
+        // S-12：列表读取用只读可见性，与客户详情页语义一致
         if (!$this->canViewCustomer($customerId)) {
             return json_error('无权限查看该客户联系人', 403);
         }
@@ -66,7 +63,7 @@ class CustomerContactController extends BaseController
 
     /**
      * AJAX: 新增/编辑联系人。
-     * POST /ajax/customer/contact/save  body: id?(0=新增) customer_id name phone email role is_primary?
+     * POST /ajax/customer/contact/save  body: id?(0=新增) customer_id name phone email is_primary remark?
      */
     public function save()
     {
@@ -78,7 +75,6 @@ class CustomerContactController extends BaseController
             'name'       => $this->getPost('name', ''),
             'phone'      => $this->getPost('phone', ''),
             'email'      => $this->getPost('email', ''),
-            'role'       => $this->getPost('role', '商务负责人'),
             'is_primary' => (int)$this->getPost('is_primary', 0),
             'remark'     => $this->getPost('remark', ''),   // v2.38.12: 备注/更多信息（微信号等）
         ];

@@ -41,7 +41,7 @@ class ArchiveController extends BaseController
     /**
      * 执行归档 — 将合同状态流转至 ARCHIVED
      * 需 contract:edit 权限 + 数据范围校验
-     * 写来源态→目标态审计（contract_revision 由 transitionStatus 记录，audit_log 由 AuditService 补来源态）
+     * 写来源态→目标态审计（audit_log 由 AuditService 记录）
      */
     public function do($contractId)
     {
@@ -55,7 +55,7 @@ class ArchiveController extends BaseController
         $toStatus   = ContractLogic::STATUS_ARCHIVED;          // 目标态
 
         if (ContractLogic::transitionStatus((int)$contractId, $toStatus, $this->userId)) {
-            // m7：来源态→目标态审计留痕（contract_revision 已记 old→new，此处补审计日志便于审计中心检索）
+            // m7：来源态→目标态审计留痕（审计日志便于审计中心检索）
             AuditService::log($this->userId, 'archive', 'contract', (int)$contractId, [
                 'from'       => $fromStatus,
                 'to'         => $toStatus,

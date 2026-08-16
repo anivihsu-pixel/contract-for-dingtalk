@@ -106,13 +106,45 @@ class InvoiceLogic
     }
 
     /**
+     * 在合同额度锁内创建开票申请，避免并发申请合计超过合同金额。
+     * 无关联合同的独立申请不占合同额度，直接创建。
+     */
+    public static function createWithinLimit(array $data): int
+    {
+        $contractId = (int)($data['contract_id'] ?? 0);
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) throw new \RuntimeException('开票金额必须大于 0');
+        if ($contractId <= 0) return self::create($data);
+
+        return Db::transaction(function () use ($data, $contractId, $amount) {
+            $contract = self::lockContractForFinancialWrite($contractId);
+            if (!$contract) throw new \RuntimeException('合同不存在或已删除');
+            if ((int)($contract['trade_attr'] ?? 0) === 0) throw new \RuntimeException('该合同为非交易合同，不计入收支，无需开具发票');
+            if (($contract['direction'] ?? '') !== 'sales') throw new \RuntimeException('仅销售合同（我方收款）可申请开票');
+            if (!in_array($contract['status'] ?? '', [
+                ContractLogic::STATUS_EXECUTING,
+            ], true)) throw new \RuntimeException('该合同当前状态不可登记开票');
+            $committed = self::sumCommitted($contractId);
+            if ($committed + $amount > (float)$contract['amount'] + 0.001) {
+                throw new \RuntimeException('发票金额已超过合同金额（合同 ¥' . number_format((float)$contract['amount'], 2)
+                    . '，已开票 ¥' . number_format($committed, 2) . '）');
+            }
+            return self::create($data);
+        });
+    }
+
+    private static function lockContractForFinancialWrite(int $contractId): ?array
+    {
+        $q = Db::name('contract')->where('id', $contractId)->where('is_deleted', 0);
+        if (config('database.default') === 'mysql') $q->lock(true);
+        return $q->find() ?: null;
+    }
+
+    /**
      * P2-4（M6）：判断合同是否处于「可登记回款/开票」状态。
      * 采用「正向白名单（默认拒绝）」：仅处于生效/执行中的状态允许登记财务，
      * 其余状态一律拒绝，避免对未生效或已关闭的合同登记回款/开票导致财务失真。
-     * 允许登记的状态与合同状态字典（ContractLogic::STATUS_*）保持一致：
-     *   - APPROVED  已通过
-     *   - SIGNED    历史已签（签署功能已移除，仅存量）
-     *   - EXECUTING 执行中
+     * 允许登记的状态与合同状态字典（ContractLogic::STATUS_*）保持一致：仅 EXECUTING 执行中。
      * 拒绝的状态（示例）：DRAFT 草稿、PENDING_APPROVAL 待审批、REJECTED 已驳回、
      *   COMPLETED 已完成、TERMINATED 已终止、EXPIRED 已到期、ARCHIVED 已归档。
      * 注意：本方法仅校验状态，合同是否存在及数据权限（ContractLogic::accessible）由调用方把关。
@@ -133,8 +165,6 @@ class InvoiceLogic
         }
         // 可登记状态白名单：以 ContractLogic 状态常量为单一事实来源
         $registerable = [
-            ContractLogic::STATUS_APPROVED,
-            ContractLogic::STATUS_SIGNED,
             ContractLogic::STATUS_EXECUTING,
         ];
         return in_array($contract['status'] ?? '', $registerable, true);

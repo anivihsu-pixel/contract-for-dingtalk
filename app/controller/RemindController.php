@@ -61,9 +61,10 @@ class RemindController extends BaseController
         return json_success([
             'contracts' => $r['contracts'],
             'payments'  => $r['payments'],
+            'followups' => $r['followups'],
             'notified'  => $r['notified'],
             'mock'      => DingTalkService::isMock(),
-            'msg'       => sprintf('已推送：合同提醒 %d 条 / 回款提醒 %d 条 / 通知 %d 人', $r['contracts'], $r['payments'], $r['notified']),
+            'msg'       => sprintf('已推送：合同 %d 条 / 回款 %d 条 / 客户跟进 %d 条 / 通知 %d 人', $r['contracts'], $r['payments'], $r['followups'], $r['notified']),
         ]);
     }
 

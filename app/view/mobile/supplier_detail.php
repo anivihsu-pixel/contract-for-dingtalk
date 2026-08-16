@@ -35,9 +35,9 @@ include __DIR__ . '/_head.php';
     <div class="m-card-bd">
       <?php if(!empty($s['contact_name'])): ?><div class="m-kv"><div class="k">联系人</div><div class="v"><?=htmlspecialchars($s['contact_name'])?></div></div><?php endif; ?>
       <?php if(!empty($s['contact_mobile'])): ?><div class="m-kv"><div class="k">手机</div><div class="v"><?=phone_link($s['contact_mobile'], false)?></div></div><?php endif; ?>
-      <?php if(!empty($s['contact_email'])): ?><div class="m-kv"><div class="k">邮箱</div><div class="v"><?=htmlspecialchars($s['contact_email'])?></div></div><?php endif; ?>
+      <?php if(!empty($s['remark'])): ?><div class="m-kv"><div class="k">备注</div><div class="v"><?=htmlspecialchars($s['remark'])?></div></div><?php endif; ?>
       <?php if(!empty($s['address'])): ?><div class="m-kv"><div class="k">地址</div><div class="v"><?=htmlspecialchars($s['address'])?></div></div><?php endif; ?>
-      <div class="m-kv"><div class="k">归属人</div><div class="v"><?=htmlspecialchars($owner_name ?: '公海')?></div></div>
+      <div class="m-kv"><div class="k">归属人</div><div class="v"><?=htmlspecialchars($owner_name ?: '未分配')?></div></div>
       <?php if(!empty($s['created_at'])): ?><div class="m-kv"><div class="k">创建时间</div><div class="v"><?=htmlspecialchars(substr($s['created_at'],0,10))?></div></div><?php endif; ?>
     </div>
   </div>
@@ -64,8 +64,8 @@ include __DIR__ . '/_head.php';
         <div class="m-empty" style="padding:20px 0"><i class="bi bi-file-text"></i>暂无关联合同</div>
       <?php else:
         $ctShown = count($g360['contracts']);
-        $stMap = ['DRAFT'=>'m-tag-muted','PENDING_APPROVAL'=>'m-tag-warn','APPROVED'=>'m-tag-info','REJECTED'=>'m-tag-danger','SIGNED'=>'m-tag-info','EXECUTING'=>'m-tag-ok','COMPLETED'=>'m-tag-ok','TERMINATED'=>'m-tag-muted','EXPIRED'=>'m-tag-warn','ARCHIVED'=>'m-tag-muted'];
-        $stText = ['DRAFT'=>'草稿','PENDING_APPROVAL'=>'待审批','APPROVED'=>'已通过','REJECTED'=>'已驳回','SIGNED'=>'历史已签','EXECUTING'=>'执行中','COMPLETED'=>'已完成','TERMINATED'=>'已终止','EXPIRED'=>'已到期','ARCHIVED'=>'已归档'];
+        $stMap = ['DRAFT'=>'m-tag-muted','PENDING_APPROVAL'=>'m-tag-warn','REJECTED'=>'m-tag-danger','EXECUTING'=>'m-tag-ok','COMPLETED'=>'m-tag-ok','TERMINATED'=>'m-tag-muted','EXPIRED'=>'m-tag-warn','ARCHIVED'=>'m-tag-muted'];
+        $stText = ['DRAFT'=>'草稿','PENDING_APPROVAL'=>'待审批','REJECTED'=>'已驳回','EXECUTING'=>'执行中','COMPLETED'=>'已完成','TERMINATED'=>'已终止','EXPIRED'=>'已到期','ARCHIVED'=>'已归档'];
         foreach($g360['contracts'] as $ci => $c): ?>
         <a href="/m/contract/<?=$c['id']?>" class="m-row m-lst-more"<?=($ci >= 3)?' style="display:none"':''?> style="padding:12px var(--m-pad);border-bottom:1px solid #f2f3f5">
           <div class="main">

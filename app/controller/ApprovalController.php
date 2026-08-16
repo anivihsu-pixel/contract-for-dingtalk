@@ -10,6 +10,7 @@ use app\BaseController;
 use app\common\logic\ApprovalLogic;
 use app\common\logic\ApproverResolver;
 use app\common\logic\ContractLogic;
+use app\common\logic\CompanyLogic;
 use app\common\logic\RoleLogic;
 use app\common\logic\UserLogic;
 use app\common\service\AuditService;
@@ -81,7 +82,7 @@ class ApprovalController extends BaseController
         }
 
         // 自动匹配将使用的审批流程（预览，无需用户手动选择）
-        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['category'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
+        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($contract['business_type'] ?? '', $contract['direction'] ?? '', (float)($contract['amount'] ?? 0), (int)($contract['trade_attr'] ?? 1));
 
         // 解析每个审批节点的实际用户，便于提交页直接展示具体人员（含角色下的成员）
         $rawNodes = json_decode($flow['nodes'] ?? '[]', true) ?: [];
@@ -116,6 +117,11 @@ class ApprovalController extends BaseController
             $n['resolved_names'] = array_values(array_filter(array_map(function ($id) use ($userMap) {
                 return $userMap[$id] ?? null;
             }, $ids)));
+            // 指定审批人为提交人时会被自审批防护排除，明确提示配置原因，避免误显示为未配置人员。
+            if (empty($ids) && ($n['type'] ?? '') === 'SPECIFIC_USER'
+                && in_array($this->userId, ApproverResolver::specificUserIds($n), true)) {
+                $n['resolve_warning'] = '指定审批人不能是提交人，请更换审批人';
+            }
             $flowNodes[] = $n;
         }
         // 抄送用户姓名（去重后映射）
@@ -138,19 +144,13 @@ class ApprovalController extends BaseController
     {
         $this->requirePermission('approval:submit');
         $contractId = (int)$this->getPost('contract_id', 0);
-        // 尊重前端传入的流程 ID（流程选择）。
-        // 修复（v2.37.5）：此前此处硬编码只传 $contractId，导致 \app\common\logic\ApprovalSubmitService::submit 的 flowId 默认 0，
-        // 永远走 matchFlow 自动匹配——即便合同已配置好「含抄送节点」的流程，也会被自动匹配成
-        // 另一个把同一人设为审批人的流程，造成「纯抄送人收到审批催办且能审批」的错配。
-        // 传入 flow_id 后，引擎优先使用该流程；为 0 时回退 matchFlow（兼容未配置默认流的老合同）。
-        $flowId = (int)$this->getPost('flow_id', 0);
 
         if (!ContractLogic::accessible($contractId)) {
             return json_error('无权限提交该合同审批');
         }
 
         try {
-            $result = \app\common\logic\ApprovalSubmitService::submit($contractId, $this->userId, $flowId);
+            $result = \app\common\logic\ApprovalSubmitService::submit($contractId, $this->userId);
         } catch (\RuntimeException $e) {
             // 校验类错误（合同不存在 / 未匹配流程 / 审批人为空等）给出明确提示
             return json_error($e->getMessage());
@@ -170,6 +170,15 @@ class ApprovalController extends BaseController
         $detail = \app\common\logic\ApprovalQueryService::getDetail($id);
         if (!$detail) return '审批不存在';
 
+        // 2026-08-15：开票审批（biz_type=invoice）不关联合同，PC 端跳转「发票申请」页查看/管理
+        if (($detail['biz_type'] ?? '') === 'invoice') {
+            return redirect('/invoice-apply');
+        }
+
+        // 与移动端审批详情共用合同数据口径：审批页内直接完成合同查阅和决策。
+        $contract = ContractLogic::getById((int)$detail['contract_id']);
+        if (!$contract) return '关联合同不存在';
+
         // PERM-1：审批参与者（提交人 / 任一节点审批人 / 抄送人）默认可查看本审批实例及其合同，
         // 即使无 approval:view 权限或超出数据范围——其拥有合法的知悉权，不应被拦截。
         $isParticipant = \app\common\logic\ApprovalQueryService::isParticipant($id, $this->userId);
@@ -178,11 +187,9 @@ class ApprovalController extends BaseController
             if (!ContractLogic::accessible((int)$detail['contract_id'])) return '无权限查看该审批';
         }
 
-        // 检查当前用户是否是正在处理的审批人
-        // v2.40.1：叠加 approval:approve 权限判断——防止角色调整/历史数据导致
-        // 无审批权限的用户（如普通用户）成为节点审批人时仍看到「同意/驳回」按钮
-        $canAct = \app\common\logic\ApprovalQueryService::getPendingAction((int)$id, $this->userId)
-            && $this->hasPermission('approval:approve');
+        // 与移动端统一：当前节点的实际待审批记录就是操作授权依据。
+        // action 服务仍会在事务内复核实例状态、节点和审批人，避免越权或重复处理。
+        $canAct = \app\common\logic\ApprovalQueryService::getPendingAction((int)$id, $this->userId);
 
         // PC 端补齐转交/撤回入口（与移动端同口径）：转交目标用户 + 提交人可撤回
         $transferUsers = UserLogic::getTransferTargets(
@@ -194,17 +201,26 @@ class ApprovalController extends BaseController
         $canRecall = ((int)($detail['submitted_by'] ?? 0) === $this->userId)
             && ($detail['status'] ?? '') === 'PENDING';
 
+        $attachments = ContractLogic::parseFileUrls((string)($contract['file_url'] ?? ''));
+        $ourCompany = CompanyLogic::getName((int)($contract['our_company_id'] ?? 0));
+
         View::assign('detail', $detail);
+        View::assign('contract', $contract);
         View::assign('can_act', !empty($canAct));
         View::assign('can_recall', $canRecall);
         View::assign('transfer_users', $transferUsers);
+        View::assign('attachments', $attachments);
+        View::assign('our_company', $ourCompany);
         return View::fetch();
     }
 
     /** AJAX: 审批操作 (同意/驳回/转交) */
     public function action($id)
     {
-        $this->requirePermission('approval:approve');
+        // 指定人员审批、角色调整后仍以流程实例中的当前待审批人为准，与移动端按钮口径一致。
+        if (!\app\common\logic\ApprovalQueryService::getPendingAction((int)$id, $this->userId)) {
+            return json_error('当前用户不是该节点审批人或审批已处理');
+        }
         $action     = $this->getPost('action', 'APPROVED');
         $comment    = $this->getPost('comment', '');
         $transferTo = (int)$this->getPost('transfer_to', 0);
@@ -254,11 +270,12 @@ class ApprovalController extends BaseController
     public function matchedFlows()
     {
         $this->requirePermission('approval:view');
-        $category = $this->getParam('category', '');
+        $businessType = $this->getParam('business_type', '');
+        $direction = $this->getParam('direction', '');
         $amount   = (float)$this->getParam('amount', 0);
         $tradeAttr = (int)$this->getParam('trade_attr', 1); // M10：非交易合同跳过金额条件匹配
 
-        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($category, $amount, $tradeAttr);
+        $flow = \app\common\logic\ApprovalSubmitService::matchFlow($businessType, $direction, $amount, $tradeAttr);
 
         $allFlows = \app\common\logic\ApprovalQueryService::getEnabledFlows();
         return json_success([

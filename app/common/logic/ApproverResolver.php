@@ -32,7 +32,7 @@ class ApproverResolver
     public static function resolve(array $node, int $submitterId): array
     {
         $type = $node['type'] ?? 'SPECIFIC_USER';
-        $approvers = $node['approvers'] ?? [];
+        $approvers = self::specificUserIds($node);
         $result = [];
 
         if ($type === 'SPECIFIC_USER') {
@@ -94,6 +94,31 @@ class ApproverResolver
         }
         // 去重并保持顺序
         return array_values(array_unique($filtered));
+    }
+
+    /**
+     * 归一化指定用户节点的用户 ID。
+     *
+     * 备份/旧版本可能使用 approver_ids、user_ids 或单值 user_id；编辑器统一
+     * 写入 approvers，但读取和保存边界都兼容这些历史字段，避免编辑一次后丢失审批人。
+     */
+    public static function specificUserIds(array $node): array
+    {
+        $raw = $node['approvers'] ?? null;
+        if ($raw === null || $raw === '') {
+            foreach (['approver_ids', 'user_ids', 'user_id'] as $key) {
+                if (array_key_exists($key, $node)) {
+                    $raw = $node[$key];
+                    break;
+                }
+            }
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = $decoded !== null ? $decoded : preg_split('/\s*,\s*/', $raw, -1, PREG_SPLIT_NO_EMPTY);
+        }
+        if (!is_array($raw)) $raw = [$raw];
+        return array_values(array_unique(array_filter(array_map('intval', $raw), static fn(int $id): bool => $id > 0)));
     }
 
     /**

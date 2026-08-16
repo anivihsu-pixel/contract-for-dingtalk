@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>权限不足 · 合同管理系统</title>
 <link rel="stylesheet" href="<?=asset_url('vendor/bootstrap/css/bootstrap.min.css')?>">
-<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.43.2.min.css')?>">
+<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.48.0.min.css')?>">
 <style>
   body{ background:var(--bg-page); min-height:100vh; display:flex; align-items:center; justify-content:center; }
   .e-box{ background:#fff; border-radius:16px; box-shadow:0 4px 20px rgba(0,0,0,.06); padding:40px 36px; max-width:440px; text-align:center; }

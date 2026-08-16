@@ -43,19 +43,20 @@ class InvoiceFormConfig
             ['name' => 'our_company_id', 'label' => '开票主体', 'type' => 'company', 'required' => true],
             ['name' => 'invoice_type', 'label' => '开票类型', 'type' => 'select', 'required' => true,
              'options' => ['VAT_SPECIAL' => '我要开增值税专用发票', 'VAT_NORMAL' => '我要开普通发票']],
+            // 开票内容（v2.38.22：由多行文本改为下拉选择——Step1 设计器仅此字段选项可配置；
+            // 选项值=中文显示名，保证审批/通知等既有展示逻辑直接输出无需映射）
+            ['name' => 'content_desc', 'label' => '开票内容', 'type' => 'select', 'required' => true,
+             'options' => ['软件开发服务费' => '软件开发服务费', '咨询服务费' => '咨询服务费', '运维服务费' => '运维服务费', '硬件销售费' => '硬件销售费', '其他' => '其他']],
+            // v2.51.4：字段顺序调整——客户信息（客户/抬头/税号）、金额与上方主体/类型等基本信息分区分组
+            ['name' => 'customer_id', 'label' => '开票客户', 'type' => 'customer', 'required' => false, 'placeholder' => '选择客户自动带出抬头/税号'],
+            ['name' => 'invoice_title', 'label' => '发票抬头', 'type' => 'text', 'placeholder' => '对方公司名称（可选客户自动带出）'],
+            ['name' => 'tax_no', 'label' => '税号', 'type' => 'text', 'placeholder' => '对方纳税人识别号（可选客户自动带出）'],
             ['name' => 'amount', 'label' => '含税金额（元）', 'type' => 'number', 'required' => true, 'step' => '0.01'],
             // tax_rate：开票税率已绑定开票主体（company_profile.invoice_tax_rate，后台公司管理配置），
             // 2026-08-02 起不再作为独立表单组件（enabled=false 兜底不渲染；配置表种子亦 enabled=0）；
             // options 与公司管理下拉同步（含 1%/5% 常用档）
             ['name' => 'tax_rate', 'label' => '税率', 'type' => 'select', 'enabled' => false, 'default' => '0.06',
              'options' => ['0.01' => '1%', '0.03' => '3%', '0.05' => '5%', '0.06' => '6%', '0.09' => '9%', '0.13' => '13%']],
-            ['name' => 'customer_id', 'label' => '开票客户', 'type' => 'customer', 'required' => false, 'placeholder' => '选择客户自动带出抬头/税号'],
-            ['name' => 'invoice_title', 'label' => '发票抬头', 'type' => 'text', 'placeholder' => '对方公司名称（可选客户自动带出）'],
-            ['name' => 'tax_no', 'label' => '税号', 'type' => 'text', 'placeholder' => '对方纳税人识别号（可选客户自动带出）'],
-            // 开票内容（v2.38.22：由多行文本改为下拉选择——Step1 设计器仅此字段选项可配置；
-            // 选项值=中文显示名，保证审批/通知等既有展示逻辑直接输出无需映射）
-            ['name' => 'content_desc', 'label' => '开票内容', 'type' => 'select', 'required' => true,
-             'options' => ['软件开发服务费' => '软件开发服务费', '咨询服务费' => '咨询服务费', '运维服务费' => '运维服务费', '硬件销售费' => '硬件销售费', '其他' => '其他']],
             ['name' => 'remark', 'label' => '申请说明', 'type' => 'textarea', 'rows' => 3, 'placeholder' => '选填，说明开票事由/合同关联'],
         ];
     }
@@ -265,7 +266,13 @@ class InvoiceFormConfig
     public static function mobileRender(array $data = [], array $maps = []): string
     {
         $html = '';
+        // v2.51.4：申请表单分区——客户信息、开票金额与上方主体/类型等基本信息区分隔。
+        // 仅作用于系统预置字段（后台排序仍控制字段顺序），自定义字段按配置位置自然落入所在分区。
+        $sectionBefore = ['customer_id' => '客户信息', 'amount' => '开票金额'];
         foreach (self::fields() as $f) {
+            if (isset($sectionBefore[$f['name']])) {
+                $html .= '<div class="m-field-section">' . self::h($sectionBefore[$f['name']]) . '</div>';
+            }
             $name  = $f['name'];
             $val   = $data[$name] ?? ($f['default'] ?? '');
             $reqMark = !empty($f['required']) ? ' <span style="color:#fa5151">*</span>' : '';
@@ -279,26 +286,36 @@ class InvoiceFormConfig
                         . (!empty($f['required']) ? ' required' : '') . ' placeholder="' . self::h($ph) . '">' . self::h($val) . '</textarea></div>';
                     break;
                 case 'select':
+                    // v2.51.4：移动端下拉统一为「展示框 + 底部弹层」选择（与开票主体一致，替代原生 select）
                     $opts = self::optionList($f);
-                    $html .= '<div class="m-field">' . $label
-                        . '<select class="m-select" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . '><option value="">请选择</option>';
+                    $selLabel = '';
                     foreach ($opts as $code => $n) {
-                        $html .= '<option value="' . self::h($code) . '"' . ((string)$val === (string)$code ? ' selected' : '') . '>' . self::h($n) . '</option>';
+                        if ((string)$val === (string)$code) { $selLabel = $n; break; }
                     }
-                    $html .= '</select></div>';
+                    $optsJson = json_encode(array_map(function ($k, $v) { return ['value' => (string)$k, 'label' => (string)$v]; }, array_keys($opts), array_values($opts)), JSON_UNESCAPED_UNICODE);
+                    $html .= '<div class="m-field">' . $label
+                        . '<div class="m-pick-box" data-inv-pick="select" data-pick-name="' . self::h($name) . '" data-options=\'' . self::h($optsJson) . '\'><span class="m-pick-name">' . self::h($selLabel !== '' ? $selLabel : '请选择') . '</span><button type="button" class="m-pick-btn">选择</button></div>'
+                        . '<input type="hidden" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
                     break;
                 case 'company':
+                    // v2.51.4：开票主体选择复用新建合同「我方主体」交互——只读展示 + 切换按钮 + 底部 sheet 弹层
+                    // （mobile-common.js initInvPickers 驱动；数据源 __invCompanies 含税率供联动）
                     $companies = $maps['companies'] ?? [];
-                    $html .= '<div class="m-field">' . $label
-                        . '<select class="m-select" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . '><option value="0">请选择开票主体</option>';
+                    $selName = '';
                     foreach ($companies as $c) {
                         $cid = is_array($c) ? ($c['id'] ?? 0) : $c;
-                        $cname = is_array($c) ? ($c['name'] ?? '') : $c;
-                        // data-rate：开票税率随主体带出（后端 company_profile.invoice_tax_rate，前端联动填税率）
-                        $crate = is_array($c) ? (string)($c['invoice_tax_rate'] ?? '') : '';
-                        $html .= '<option value="' . self::h($cid) . '" data-rate="' . self::h($crate) . '"' . ((string)$val === (string)$cid ? ' selected' : '') . '>' . self::h($cname) . '</option>';
+                        if ((string)$val !== '' && (string)$cid === (string)$val) {
+                            $selName = is_array($c) ? ($c['name'] ?? '') : '';
+                            break;
+                        }
                     }
-                    $html .= '</select></div>';
+                    $companyJson = json_encode(array_map(function ($c) {
+                        return ['value' => (string)($c['id'] ?? 0), 'label' => (string)($c['name'] ?? ''),
+                            'rate' => (string)($c['invoice_tax_rate'] ?? ''), 'default' => (int)($c['is_default'] ?? 0)];
+                    }, $companies), JSON_UNESCAPED_UNICODE);
+                    $html .= '<div class="m-field">' . $label
+                        . '<div class="m-pick-box" data-inv-pick="company" data-pick-name="' . self::h($name) . '" data-options=\'' . self::h($companyJson) . '\'><span class="m-pick-name">' . self::h($selName !== '' ? $selName : '请选择开票主体') . '</span><button type="button" class="m-pick-btn">切换</button></div>'
+                        . '<input type="hidden" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
                     break;
                 case 'customer':
                     // 2026-08-11：同 PC 端——后端搜索 + data-fill-* 内建带出抬头/税号；

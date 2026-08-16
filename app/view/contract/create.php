@@ -35,6 +35,14 @@
 }
 .wz-dot.current .wz-num{ transform:scale(1.12); box-shadow:0 0 0 4px rgba(11,94,215,.15); }
 #uploadDropzone{ display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:130px; }
+/* 与移动端 selfSheetMask 保持同一交互：不依赖页面是否加载 Bootstrap 的 Modal 组件。 */
+.pc-company-sheet-mask{position:fixed;inset:0;z-index:1080;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.45)}
+.pc-company-sheet-mask.show{display:flex}
+.pc-company-sheet{width:min(480px,100%);max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(15,23,42,.28)}
+.pc-company-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e9ecef;font-weight:600}
+.pc-company-sheet-item{display:flex;align-items:center;gap:10px;width:100%;padding:14px 18px;border:0;border-bottom:1px solid #f1f5f9;background:#fff;text-align:left}
+.pc-company-sheet-item:hover{background:#f8fafc}
+.pc-company-sheet-item:last-child{border-bottom:0}
 </style>
 <h4 class="mb-3"><i class="bi bi-file-text"></i> <?=$contract?'编辑合同':'新建合同'?> <small class="text-muted fs-6">（向导）</small></h4>
 
@@ -57,10 +65,9 @@
 <?php
 use app\common\form\ContractFormConfig;
 $__maps = [
-    'categories'       => $categories ?? [],
+    'business_types'   => $business_types ?? [],
     'companies'        => $companies ?? [],
     'projects'         => $projects ?? [],
-    'parent_contracts' => $parent_contracts ?? [],
 ];
 $__dcid = $default_company_id ?? 0;
 ?>
@@ -117,6 +124,14 @@ $__dcid = $default_company_id ?? 0;
   if(initCust > 0 && initType === 'customer') loadPartyBContacts(initCust);
 })();
 </script>
+</div>
+
+<!-- 本公司主体选择器：复用移动端遮罩层交互，不依赖 Bootstrap Modal。 -->
+<div class="pc-company-sheet-mask" id="companyPickerMask" aria-hidden="true">
+  <div class="pc-company-sheet" role="dialog" aria-modal="true" aria-labelledby="companyPickerTitle">
+    <div class="pc-company-sheet-head"><span id="companyPickerTitle">选择本公司主体</span><button type="button" class="btn-close" id="companyPickerCancel" aria-label="关闭"></button></div>
+    <div id="companyPickerList"></div>
+  </div>
 </div>
 
 <!-- 向导导航 -->
@@ -357,81 +372,17 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
 </script>
 
 <script>
-// v2.47.x：我方侧「切换」签约主体（对齐移动端）——从 company_profile（本公司主体）取数，
-// 更新我方侧主体名展示 + hidden 名称 + 同步 step1 签约主体下拉
-(function(){
-    document.querySelectorAll('.pc-party-switch').forEach(function(btn){
-        btn.addEventListener('click', function(){
-            var side = this.dataset.side;
-            fetch('/ajax/company/options')
-            .then(function(r){ return r.json(); })
-            .then(function(res){
-                if (!res.data || !res.data.length) {
-                    showToast('尚未配置本公司主体，请前往 系统设置 → 本公司主体 添加。', 'error');
-                    return;
-                }
-                if (res.data.length === 1) {
-                    fillSelf(side, res.data[0]);
-                } else {
-                    showSelfPicker(side, res.data);
-                }
-            });
-        });
-    });
-
-    function fillSelf(side, item){
-        document.getElementById('party' + side + 'Name').value = item.name;   // hidden 名称
-        var mn = document.querySelector('[data-mine-name="' + side + '"]');
-        if(mn) mn.textContent = item.name;
-        // 同步签约主体下拉（深化：自动识别我方主体）
-        var cs = document.getElementById('companySelect');
-        if (cs) { cs.value = item.id; }
-        var box = document.getElementById('party' + side + 'Suggestions');
-        if(box){ box.style.display='none'; box.innerHTML=''; }
-        if (typeof showToast === 'function') showToast('已选择本公司主体：' + item.name, 'info');
-    }
-
-    function showSelfPicker(side, list){
-        var box = document.getElementById('party' + side + 'Suggestions');
-        var h = '';
-        list.forEach(function(item){
-            h += '<div class="party-item" data-id="' + item.id + '" data-name="' + escHtml(item.name) + '">';
-            h += '<i class="bi bi-building me-2 text-primary"></i>';
-            h += '<span class="flex-grow-1 fw-bold">' + escHtml(item.name) + '</span>';
-            if (item.is_default) h += '<span class="pc-tag pc-tag-muted" style="font-size:10px">默认</span>';
-            h += '</div>';
-        });
-        box.innerHTML = h;
-        box.style.display = 'block';
-        box.querySelectorAll('.party-item').forEach(function(el){
-            el.addEventListener('mousedown', function(e){
-                e.preventDefault();
-                fillSelf(side, {id: this.dataset.id, name: this.dataset.name});
-            });
-        });
-    }
-
-    function escHtml(s){
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
-})();
-</script>
-
-<script>
 // v2.45：PC 我方身份引导（与移动端 my|our 语义对齐）——切换「我是合同乙方/甲方」时，
 // 自动把签约主体名带出到我方侧名称，并清空对方侧误放的同一主体名，降低甲乙方填反概率。
 // v2.47.x：对齐移动端双形态——我方侧=主体名+切换按钮，对方侧=搜索框，按我方身份切换显隐。
 (function(){
     var labels = document.querySelectorAll('label[data-action="pc-our-side"]');
-    if(!labels.length) return;
     // v2.47.x：当前登录用户（我方侧联系人/电话按登录用户带出）
     var CURRENT_USER = <?=json_encode(isset($current_user) ? $current_user : ['name'=>'','mobile'=>''], JSON_UNESCAPED_UNICODE)?>;
+    var COMPANY_MAP = <?=json_encode(array_column($companies ?? [], 'name', 'id'), JSON_UNESCAPED_UNICODE)?>;
     function companyName(){
         var cs = document.getElementById('companySelect');
-        return (cs && cs.selectedIndex >= 0) ? (cs.options[cs.selectedIndex].text || '') : '';
+        return cs ? (COMPANY_MAP[String(cs.value)] || '') : '';
     }
     function getOurSide(){
         var os = document.getElementById('ourSideField');
@@ -475,6 +426,66 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
         if(rb) rb.checked = true;
         ensureMineFilledPC();
     }
+    // 与移动端 fillSelf/openSelfSheet 同源：选定主体后写入我方侧、同步主体 ID 与我方身份。
+    var companyPickerMask = document.getElementById('companyPickerMask');
+    var companyPickerList = document.getElementById('companyPickerList');
+    function closeCompanyPicker(){
+        if(companyPickerMask) companyPickerMask.classList.remove('show');
+    }
+    function fillSelf(side, item){
+        var name = item && item.name ? item.name : '';
+        if(!name) return;
+        var mineName = document.getElementById('party' + side + 'Name');
+        var otherSide = side === 'A' ? 'B' : 'A';
+        var otherName = document.getElementById('party' + otherSide + 'Name');
+        if(otherName && otherName.value.trim() === name) otherName.value = '';
+        if(mineName) mineName.value = name;
+        var companyId = document.getElementById('companySelect');
+        if(companyId && item.id != null) companyId.value = String(item.id);
+        var ourSide = document.getElementById('ourSideField');
+        if(ourSide) ourSide.value = side;
+        applyOurSidePC();
+        closeCompanyPicker();
+        if(typeof showToast === 'function') showToast('已填入我方主体到' + (side === 'A' ? '甲方' : '乙方'), 'info');
+    }
+    // 与移动端一致：每次点击均请求当前可用主体，避免页面缓存的主体列表失效。
+    function showCompanyPicker(side, list){
+        if(!list.length){
+            if(typeof showToast === 'function') showToast('尚未配置本公司主体，请前往系统设置添加。', 'error');
+            return;
+        }
+        if(list.length === 1){ fillSelf(side, list[0]); return; }
+        if(!companyPickerMask || !companyPickerList) return;
+        companyPickerList.innerHTML = '';
+        list.forEach(function(item){
+            var button = document.createElement('button');
+            button.type = 'button'; button.className = 'pc-company-sheet-item';
+            button.innerHTML = '<i class="bi bi-building text-primary"></i><span class="flex-grow-1"></span>';
+            button.querySelector('span').textContent = item.name || '';
+            if(item.is_default){ var tag=document.createElement('span'); tag.className='pc-tag pc-tag-muted'; tag.style.fontSize='10px'; tag.textContent='默认'; button.appendChild(tag); }
+            button.addEventListener('click', function(){ fillSelf(side, item); });
+            companyPickerList.appendChild(button);
+        });
+        companyPickerMask.classList.add('show');
+    }
+    function openCompanyPicker(side){
+        fetch('/ajax/company/options', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(function(response){ return response.json(); })
+        .then(function(result){
+            showCompanyPicker(side, result && result.code === 0 && Array.isArray(result.data) ? result.data : []);
+        })
+        .catch(function(){
+            if(typeof showToast === 'function') showToast('加载本公司主体失败，请重试。', 'error');
+        });
+    }
+    document.querySelectorAll('.pc-party-switch').forEach(function(btn){
+        btn.addEventListener('click', function(event){ event.preventDefault(); openCompanyPicker(this.dataset.side); });
+    });
+    var companyPickerCancel = document.getElementById('companyPickerCancel');
+    if(companyPickerCancel) companyPickerCancel.addEventListener('click', closeCompanyPicker);
+    if(companyPickerMask) companyPickerMask.addEventListener('click', function(event){
+        if(event.target === companyPickerMask) closeCompanyPicker();
+    });
     labels.forEach(function(lb){
         lb.addEventListener('click', function(){
             var side = this.dataset.side; // 'A'|'B'
@@ -507,129 +518,6 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
     });
     recomputeOurSidePC();  // 编辑态先按签约主体与两侧名称匹配反推我方身份（新建时 ourSideField 为空且两侧无匹配，保持默认乙方）
     applyOurSidePC();   // 页面初始化按我方身份应用形态（编辑态回显 ourSideField）
-    // step1 签约主体下拉变更 → 同步我方侧主体名展示（我方侧名称始终=签约主体）
-    var cs = document.getElementById('companySelect');
-    if(cs){
-        cs.addEventListener('change', function(){
-            var our = getOurSide();
-            var mn = document.querySelector('[data-mine-name="' + our + '"]');
-            var nm = document.getElementById('party' + our + 'Name');
-            var txt = (this.options[this.selectedIndex] || {}).text || '';
-            if(nm) nm.value = txt;
-            if(mn) mn.textContent = txt;
-        });
-    }
-})();
-</script>
-
-<script>
-// ========== 父合同（框架合同）搜索型选择器 ==========
-// 2026-08-05：限定仅搜索框架合同（scope=framework）+ 输入为空时展示「与我有关」推荐
-(function(){
-    var input = document.getElementById('parentSearch');
-    var sugg = document.getElementById('parentSuggestions');
-    var hidden = document.getElementById('parentIdField');
-    var timer = null, activeIdx = -1, activeList = [];
-
-    if(!input || !sugg) return;
-
-    function doSearch(q){
-        fetch('/ajax/contract/search?scope=framework&q=' + encodeURIComponent(q))
-        .then(function(r){ return r.json(); })
-        .then(function(res){
-            if(res.code !== 0 || !res.data || !res.data.length){
-                hideSuggestions(); return;
-            }
-            activeList = res.data;
-            activeIdx = -1;
-            renderSuggestions();
-        });
-    }
-
-    input.addEventListener('input', function(){
-        var q = this.value.trim();
-        clearTimeout(timer);
-        if(q.length < 1){
-            // 输入为空：拉「与我有关」推荐列表
-            timer = setTimeout(function(){ doSearch(''); }, 120);
-            return;
-        }
-        timer = setTimeout(function(){ doSearch(q); }, 200);
-    });
-
-    input.addEventListener('focus', function(){
-        if(!sugg.style.display || sugg.style.display === 'none') doSearch(input.value.trim());
-    });
-
-    input.addEventListener('keydown', function(e){
-        var items = sugg.querySelectorAll('.party-item');
-        if(e.key === 'ArrowDown'){
-            e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); highlight(items);
-        } else if(e.key === 'ArrowUp'){
-            e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); highlight(items);
-        } else if(e.key === 'Enter'){
-            e.preventDefault();
-            if(activeIdx >= 0 && activeIdx < activeList.length) selectItem(activeList[activeIdx]);
-        } else if(e.key === 'Escape'){
-            hideSuggestions();
-        }
-    });
-
-    input.addEventListener('blur', function(){
-        setTimeout(hideSuggestions, 150);
-    });
-
-    function renderSuggestions(){
-        var h = '';
-        activeList.forEach(function(c, i){
-            var statusMap = {DRAFT:'草稿',PENDING_APPROVAL:'待审批',APPROVED:'已通过',SIGNED:'历史已签',EXECUTING:'执行中',COMPLETED:'已完成',ARCHIVED:'已归档'};
-            var statusBadge = statusMap[c.status] ? '<span class="pc-tag pc-tag-muted" style="font-size:10px">' + statusMap[c.status] + '</span>' : '';
-            var myBadge = c.my ? '<span class="pc-tag pc-tag-info" style="font-size:10px">与我有关</span>' : '';
-            h += '<div class="party-item" data-idx="' + i + '">';
-            h += '<i class="bi bi-file-text me-2 text-muted"></i>';
-            h += '<span class="flex-grow-1">' + esc(c.contract_no) + ' ' + esc(c.title) + '</span>';
-            h += myBadge + statusBadge;
-            h += '</div>';
-        });
-        sugg.innerHTML = h;
-        sugg.style.display = 'block';
-        sugg.querySelectorAll('.party-item').forEach(function(el){
-            el.addEventListener('mousedown', function(e){
-                e.preventDefault();
-                var idx = parseInt(this.dataset.idx);
-                if(idx >= 0 && idx < activeList.length) selectItem(activeList[idx]);
-            });
-        });
-    }
-
-    function highlight(items){
-        items.forEach(function(el, i){ el.classList.toggle('active', i === activeIdx); });
-    }
-
-    function hideSuggestions(){
-        sugg.style.display = 'none';
-        sugg.innerHTML = '';
-        activeList = [];
-        activeIdx = -1;
-    }
-
-    function selectItem(c){
-        input.value = c.contract_no + ' ' + c.title;
-        hidden.value = c.id;
-        hideSuggestions();
-    }
-
-    var clearBtn = document.createElement('span');
-    clearBtn.innerHTML = '&times;';
-    clearBtn.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:#999;font-size:18px;z-index:2;display:' + (hidden.value > 0 ? 'block' : 'none');
-    clearBtn.onclick = function(){
-        input.value = ''; hidden.value = '0'; clearBtn.style.display = 'none'; input.focus(); doSearch('');
-    };
-    input.parentElement.appendChild(clearBtn);
-    input.addEventListener('input', function(){
-        clearBtn.style.display = 'none';
-    });
-    if(hidden.value > 0) clearBtn.style.display = 'block';
 })();
 </script>
 
@@ -724,6 +612,11 @@ syncTradeAttr();  // 初始化（编辑页按 $contract['trade_attr'] 回填）
     function selectItem(c){
         input.value = c.name;
         hidden.value = c.id;
+        var businessLine = document.getElementById('businessLineSelect');
+        if(businessLine && c.business_type && businessLine.querySelector('option[value="' + c.business_type + '"]')){
+            businessLine.value = c.business_type;
+            businessLine.dispatchEvent(new Event('change', {bubbles:true}));
+        }
         hideSuggestions();
     }
 

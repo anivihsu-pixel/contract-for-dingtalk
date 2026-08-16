@@ -52,7 +52,7 @@ $next = date('Y-m-d', strtotime($w['start'] . ' +7 days'));
         <div style="text-align:center;padding:16px 0;color:var(--m-muted)">上周无经营数据</div>
       <?php else: foreach($w['departments'] as $d): ?>
         <div style="border-bottom:1px solid var(--m-border);padding:10px 0" class="<?=$d!==end($w['departments'])?'':'last'?>">
-          <div style="font-weight:500;font-size:14px;margin-bottom:6px"><?=htmlspecialchars($d['dept_name'])?></div>
+          <a href="/m/dept?id=<?=intval($d['dept_id'])?>" style="font-weight:500;font-size:14px;margin-bottom:6px;color:inherit;text-decoration:none;display:flex;align-items:center;justify-content:space-between"><?=htmlspecialchars($d['dept_name'])?><i class="bi bi-chevron-right" style="font-size:13px;color:var(--m-text-3)"></i></a>
           <div class="m-row"><div class="main"><div class="t">新增合同</div></div><div class="aside amt"><?=$d['contract_cnt']?> 份 / ¥<?=number_format((float)$d['contract_amount'],0)?></div></div>
           <div class="m-row"><div class="main"><div class="t">上周回款</div></div><div class="aside amt pay-amt in">¥<?=number_format((float)$d['received'],0)?></div></div>
           <div class="m-row" style="border-bottom:none"><div class="main"><div class="t">当前逾期</div></div><div class="aside amt pay-amt" style="color:var(--m-danger)">¥<?=number_format((float)$d['overdue'],0)?> <?=$d['overdue_cnt']>0?'('.$d['overdue_cnt'].' 笔)':''?></div></div>

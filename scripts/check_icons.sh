@@ -14,7 +14,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 WL="scripts/icons_whitelist.txt"
-CSS="public/static/vendor/bootstrap-icons/bootstrap-icons.v2.43.2.min.css"
+VER="$(php -r 'echo include "config/version.php";' 2>/dev/null || true)"
+VER="${VER#v}"
+CSS="public/static/vendor/bootstrap-icons/bootstrap-icons.v${VER:-2.48.0}.min.css"
 err=0
 
 if [ ! -f "$CSS" ]; then

@@ -5,7 +5,7 @@
 <title><?=$title??'首页'?> - 合同管理系统</title>
 <!-- v2.42.0：静态资源本地化（P0 钉钉内网可用性）——弃用 jsDelivr CDN，随包自托管 -->
 <link rel="stylesheet" href="<?=asset_url('vendor/bootstrap/css/bootstrap.min.css')?>">
-<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.43.2.min.css')?>">
+<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.48.0.min.css')?>">
 <link rel="stylesheet" href="<?=asset_url('css/mobile.css')?>">
 <link rel="stylesheet" href="<?=asset_url('css/app.css')?>">
 <style>

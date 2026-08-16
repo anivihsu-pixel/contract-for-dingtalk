@@ -80,7 +80,8 @@ class InvoiceController extends BaseController
         $taxAmount = round($amount / (1 + $taxRate) * $taxRate, 2);
 
         // 写入发票（默认 PENDING_APPROVAL）
-        $id = InvoiceLogic::create([
+        try {
+            $id = InvoiceLogic::createWithinLimit([
             'contract_id'    => $contractId,
             'our_company_id' => $ourCompanyId,
             'content_desc'   => $contentDesc,
@@ -94,7 +95,13 @@ class InvoiceController extends BaseController
             'remark'         => $this->getPost('remark', ''),
             'applicant_id'   => $this->userId,
             'operator_id'    => $this->userId,
-        ]);
+            ]);
+        } catch (\RuntimeException $e) {
+            return json_error($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('开票申请创建失败', ['contract_id' => $contractId, 'error' => $e->getMessage()]);
+            return json_error('开票申请创建失败，请稍后重试');
+        }
 
         // 提交发票审批（biz_type=invoice 流程）；失败则删除发票并报错，避免孤儿申请
         try {
@@ -302,6 +309,99 @@ class InvoiceController extends BaseController
             return json_error('提交审批失败，请稍后重试或联系管理员');
         }
         return json_success(['id' => $id], '已重新提交审批');
+    }
+
+    /** 发票申请详情（AJAX，2026-08-15：我的申请/待我审批/待开票列表共用） */
+    public function detail()
+    {
+        $this->requirePermission('invoice:view');
+        $id = (int)$this->getParam('id', 0);
+        if ($id <= 0) {
+            return json_error('缺少申请 ID');
+        }
+        $res = self::detailData($id, $this->userId, $this->hasPermission('invoice:create'));
+        return $res['ok'] ? json_success($res['data']) : json_error($res['msg']);
+    }
+
+    /**
+     * 发票申请详情数据（AJAX 与独立详情页共用）
+     * @param int $id       发票申请 ID
+     * @param int $userId   当前用户 ID
+     * @param bool $isFinance 是否财务开票人（invoice:create）
+     * @return array ['ok'=>bool, 'msg'=>string, 'data'=>array]
+     */
+    public static function detailData(int $id, int $userId, bool $isFinance = false): array
+    {
+        $inv = InvoiceLogic::find($id);
+        if (!$inv) {
+            return ['ok' => false, 'msg' => '申请不存在'];
+        }
+        // 可见范围：本人申请 / 财务（invoice:create 开票人）/ 该申请审批链上的审批人
+        $isApprover = Db::name('approval_record')->alias('r')
+            ->join('approval_instance i', 'r.instance_id = i.id')
+            ->where('i.biz_type', 'invoice')->where('i.target_id', $id)
+            ->where('r.approver_id', $userId)->count() > 0;
+        if ((int)$inv['applicant_id'] !== $userId && !$isFinance && !$isApprover) {
+            return ['ok' => false, 'msg' => '无权限查看该申请'];
+        }
+
+        // 关联合同
+        $contractNo = $contractTitle = '';
+        if ((int)($inv['contract_id'] ?? 0) > 0) {
+            $c = Db::name('contract')->where('id', (int)$inv['contract_id'])->field('title,contract_no')->find();
+            if ($c) {
+                $contractTitle = (string)$c['title'];
+                $contractNo    = (string)$c['contract_no'];
+            }
+        }
+        // 开票主体 / 申请人
+        $companyName = (string)Db::name('company_profile')->where('id', (int)($inv['our_company_id'] ?? 0))->value('name');
+        $applicantName = (string)Db::name('user')->where('id', (int)($inv['applicant_id'] ?? 0))->value('name');
+        // 发票类型中文（与移动端审批详情口径一致）
+        $invTypeMap = ['VAT_SPECIAL' => '增值税专用发票', 'VAT_NORMAL' => '增值税普通发票', 'E_INVOICE' => '电子发票', 'OTHER' => '其他'];
+        // 审批流水（该发票全部审批实例，按实例与节点排序）
+        $records = Db::name('approval_record')->alias('r')
+            ->join('approval_instance i', 'r.instance_id = i.id')
+            ->leftJoin('user u', 'r.approver_id = u.id')
+            ->where('i.biz_type', 'invoice')->where('i.target_id', $id)
+            ->field('r.node_name,r.action,r.comment,r.acted_at,u.name as approver_name')
+            ->order('r.instance_id', 'asc')->order('r.id', 'asc')
+            ->select()->toArray();
+        $actionLabels = [
+            'PENDING'     => '待处理',
+            'APPROVED'    => '通过',
+            'REJECTED'    => '驳回',
+            'TRANSFERRED' => '转交',
+            'RECALLED'    => '撤回',
+        ];
+        foreach ($records as &$rec) {
+            $rec['action_label'] = $actionLabels[$rec['action']] ?? $rec['action'];
+        }
+        unset($rec);
+
+        return ['ok' => true, 'msg' => '', 'data' => [
+            'id'               => (int)$inv['id'],
+            'content_desc'     => $inv['content_desc'] ?? '',
+            'invoice_title'    => $inv['invoice_title'] ?? '',
+            'tax_no'           => $inv['tax_no'] ?? '',
+            'invoice_type'     => $inv['invoice_type'] ?? '',
+            'invoice_type_label' => $invTypeMap[$inv['invoice_type'] ?? ''] ?? ($inv['invoice_type'] ?? ''),
+            'amount'           => (float)($inv['amount'] ?? 0),
+            'tax_rate'         => $inv['tax_rate'] ?? 0,
+            'tax_amount'       => (float)($inv['tax_amount'] ?? 0),
+            'invoice_no'       => $inv['invoice_no'] ?? '',
+            'issued_date'      => $inv['issued_date'] ?? '',
+            'status'           => $inv['status'] ?? '',
+            'status_label'     => InvoiceLogic::STATUS_LABELS[$inv['status'] ?? ''] ?? ($inv['status'] ?? ''),
+            'remark'           => $inv['remark'] ?? '',
+            'contract_id'      => (int)($inv['contract_id'] ?? 0),
+            'contract_no'      => $contractNo,
+            'contract_title'   => $contractTitle,
+            'our_company_name' => $companyName,
+            'applicant_name'   => $applicantName,
+            'created_at'       => $inv['created_at'] ?? '',
+            'records'          => $records,
+        ]];
     }
 
     /** 列表装饰：复用 InvoiceLogic::decorateList（开票主体名/申请人名/状态标签） */

@@ -17,7 +17,7 @@ class PartyLogic
      * 相对方行查询（客户/供应商共用骨架，P2-8【M-A2】收敛重复逻辑）
      * 原 CustomerLogic/SupplierLogic::getPartyRows 两处近乎一致的查询统一到此。
      * @param string $table      表名 customer|supplier
-     * @param string $extraField 除公共字段外额外选择的字段（客户 level / 供应商 type）
+     * @param string $extraField 除公共字段外额外选择的字段（当前供应商使用 type，客户不传）
      * @param string $keyword    关键词（名称/联系人/电话）
      * @param int    $limit      安全上限（arch P1-3：客户/供应商合并列表防全量载入，命中即截断）
      */
@@ -168,15 +168,14 @@ class PartyLogic
         $contractIds = self::getContractIds($type, $id);
 
         // 关联合同（含项目名、方向、交易属性）
-        // P0-2（2026-08-09）：客户/供应商 360 视图此前无数据范围，公海客户对任意用户放行后
-        // 可看到引用该客户的其他部门合同金额/状态/回款——补 appendDataScope（带 c. 别名）
+        // 客户/供应商 360 视图按数据范围收敛（带 c. 别名）
         $contracts = [];
         if ($contractIds) {
             $q = Db::name('contract')->alias('c')
                 ->leftJoin('project p', 'c.project_id = p.id')
                 ->whereIn('c.id', $contractIds)
                 ->where('c.is_deleted', 0)
-                ->field('c.id, c.contract_no, c.title, c.category, c.direction, c.trade_attr,
+                ->field('c.id, c.contract_no, c.title, c.business_type, c.direction, c.trade_attr,
                          c.amount, c.status, c.effective_date, c.expiry_date, p.name as project_name')
                 ->order('c.id', 'desc');
             AuthLogic::appendDataScope($q, 'c.owner_id', 'c.dept_id');
@@ -185,7 +184,7 @@ class PartyLogic
             $contractIds = array_column($contracts, 'id') ?: [];
         }
 
-        // 统计：应收/应付总额（仅交易合同；P1-3：排除未生效状态 + 排除框架合同预算上限）
+        // 统计：应收/应付总额（仅交易且已生效合同）
         $totalAmount = 0.0;
         $tradeIds = [];
         $excluded = \exclude_framework_contracts_ids();
@@ -237,14 +236,15 @@ class PartyLogic
                 ->limit(10)->select()->toArray();
         }
 
-        // 最近动态（审计日志：关联合同的操作）
+        // 最近动态（审计日志：关联合同的操作；join contract 取标题，避免显示「合同 #id」）
         $activity = [];
         if ($contractIds) {
-            $activity = Db::name('audit_log')
-                ->where('target_type', 'contract')
-                ->whereIn('target_id', $contractIds)
-                ->field('id, user_id, action, target_id, content, created_at')
-                ->order('id', 'desc')
+            $activity = Db::name('audit_log')->alias('al')
+                ->leftJoin('contract c', 'al.target_id = c.id')
+                ->where('al.target_type', 'contract')
+                ->whereIn('al.target_id', $contractIds)
+                ->field('al.id, al.user_id, al.action, al.target_id, al.content, al.created_at, c.title as contract_title')
+                ->order('al.id', 'desc')
                 ->limit(10)->select()->toArray();
         }
 
@@ -307,7 +307,7 @@ class PartyLogic
         $contractIds = self::getContractIds($type, $id);
         $payType     = self::paymentTypeOf($type);
 
-        // 统计：应收/应付总额（仅交易合同，与 get360 口径一致；P1-3：排除未生效状态 + 排除框架合同）
+        // 统计：应收/应付总额（仅交易且已生效合同，与 get360 口径一致）
         $totalAmount = 0.0;
         $tradeIds = [];
         $excluded = \exclude_framework_contracts_ids();
@@ -341,8 +341,6 @@ class PartyLogic
             'type'           => $type,
             'id'             => (int)$id,
             'name'           => (string)($base['name'] ?? ''),
-            'high_risk'      => (int)($base['high_risk'] ?? 0),
-            'credit_score'   => (int)($base['credit_score'] ?? 100),
             'contract_count' => count($contractIds),
             'total_amount'   => round($totalAmount, 2),
             'received_paid'  => round($receivedPaid, 2),
@@ -372,7 +370,7 @@ class PartyLogic
             if (!$ids) {
                 continue;
             }
-            // 关联合同 + 交易合同判定（按相对方分组，一次查询；P1-3：排除未生效状态 + 排除框架合同）
+            // 关联合同 + 交易合同判定（按相对方分组，一次查询；排除未生效状态）
             // v2.46.0 同步：与 getContractIds/linkFieldOf 同源，客户=乙方客户+甲方客户、供应商=乙方供应商+甲方供应商，
             // 避免「对方为甲方（我方=乙方）」的合同在往来档案列表漏统计（此前仅 party_b_customer_id/supplier_id）。
             // P0-2：批量往来汇总同样限定数据范围——仅统计用户可见合同的金额，防止跨部门金额泄露

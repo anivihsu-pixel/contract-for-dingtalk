@@ -40,32 +40,8 @@ abstract class BaseController
         View::assign('site_copyright', $copyright);
         View::assign('app_version', app_version());
 
-        // 全局提醒角标（仅页面渲染时计算，AJAX 请求不计，避免无谓查询）
+        // 常用创建权限（供视图按钮灰化，避免无权限者打开表单后提交被拒）
         if ($this->userId > 0 && !request()->isAjax()) {
-            // CR-52：角标计数加 60s 短缓存，避免每次页面渲染重复聚合查询
-            $remindKey = 'badge_remind_' . $this->userId;
-            $remindCount = Cache::get($remindKey);
-            if ($remindCount === null) {
-                try {
-                    $remindCount = \app\common\service\RemindService::getOutstandingCount(
-                        $this->userId, !empty($this->user['is_admin']),
-                        $this->hasPermission('payment:view')
-                    );
-                } catch (\Throwable $e) {
-                    $remindCount = 0;
-                }
-                // 合并站内审批消息未读数：与「今日提醒」共用侧边栏红点，避免两个入口/两个铃铛
-                try {
-                    $msgUnread = \app\common\service\InternalNotify::unreadCount($this->userId);
-                } catch (\Throwable $e) {
-                    $msgUnread = 0;
-                }
-                $remindCount = (int) $remindCount + (int) $msgUnread;
-                Cache::set($remindKey, $remindCount, 60);
-            }
-            View::assign('remind_count', $remindCount);
-
-            // 常用创建权限（供视图按钮灰化，避免无权限者打开表单后提交被拒）
             View::assign('can_create_contract', $this->hasPermission('contract:create'));
             View::assign('can_create_customer', $this->hasPermission('customer:create'));
             View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
@@ -82,7 +58,6 @@ abstract class BaseController
             }
             View::assign('approval_pending', $approvalPending);
         } else {
-            View::assign('remind_count', 0);
             View::assign('can_create_contract', false);
             View::assign('can_create_customer', false);
             View::assign('can_create_supplier', false);

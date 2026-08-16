@@ -238,9 +238,18 @@ class ApprovalActionService
         // P0-5【严重·并发/可靠性】修复：仅当事务成功提交后才发送钉钉通知（网络 I/O 不持锁）；失败则清空队列避免泄漏
         if ($ok) {
             \app\common\logic\ApprovalNotifyService::flushNotify();
-            // P2-10（arch）：审批动作完成后主动失效操作人的角标短缓存（待办红点/提醒），避免 60s 滞后
+            $finished = Db::name('approval_instance')->where('id', $instanceId)->find();
+            if (($finished['status'] ?? '') === 'APPROVED'
+                && ($finished['biz_type'] ?? 'contract') === 'contract') {
+                $executingContract = Db::name('contract')->where('id', (int)$finished['contract_id'])->find();
+                if (($executingContract['status'] ?? '') === ContractLogic::STATUS_EXECUTING) {
+                    \app\common\service\ContractExecutionNotifyService::dispatch($executingContract, $approverId);
+                }
+            }
+            // 审批人已在详情页完成处理：自动读掉进入该审批的站内消息，保持移动工作台各角标一致。
+            InternalNotify::markApprovalRead($approverId, $instanceId);
+            // P2-10（arch）：审批动作完成后主动失效操作人的待办角标短缓存，避免 60s 滞后
             \think\facade\Cache::delete('badge_approval_' . $approverId);
-            \think\facade\Cache::delete('badge_remind_' . $approverId);
         } else {
             \app\common\logic\ApprovalNotifyService::$notifyQueue = [];
         }
@@ -339,16 +348,13 @@ class ApprovalActionService
                 'status'      => 'APPROVED',
                 'finished_at' => date('Y-m-d H:i:s'),
             ]);
-            // P1-1（M4）：审批通过后合同状态应推进至 EXECUTING（而非停留在 APPROVED）。
-            // 沿状态机合法跃迁：PENDING_APPROVAL -> APPROVED -> EXECUTING；
-            // transitionStatus 内部已写 contract_revision 审计日志，审计留痕不丢失。
+            // 合同审批通过后直接进入执行；发票走独立状态机。
             // F1/F3：发票审批通过→发票 APPROVED（待开票，由财务开票时再置 ISSUED），不进入合同状态机。
             $bizType = (string)($instance['biz_type'] ?? 'contract');
             if ($bizType === 'invoice') {
                 $ok = \app\common\logic\InvoiceLogic::transitionStatus((int)($instance['target_id'] ?: $instance['contract_id']), 'APPROVED', $actorId);
             } else {
-                $ok = ContractLogic::transitionStatus($instance['contract_id'], 'APPROVED', $actorId)
-                    && ContractLogic::transitionStatus($instance['contract_id'], 'EXECUTING', $actorId);
+                $ok = ContractLogic::transitionStatus($instance['contract_id'], ContractLogic::STATUS_EXECUTING, $actorId);
             }
             // P2-5：审批通过后业务状态推进失败（transitionStatus 返回 false，多为状态机不允许当前跃迁）
             // 则抛异常整体回滚，杜绝「实例已通过、业务对象仍停留旧状态」的脏数据
@@ -362,9 +368,7 @@ class ApprovalActionService
                 '审批已通过',
                 $bizType === 'invoice'
                     ? "发票申请「{$contract['title']}」审批已通过，请财务开票。"
-                    : "合同 {$contract['title']} 审批已全部通过，已进入执行阶段！", $link, InternalNotify::TYPE_APPROVAL_APPROVED);
-            // v2.38.1：抄送通知移至审批全部通过后触发（不再在提交时发送）
-            \app\common\logic\ApprovalSubmitService::fireCc($instanceId, $flow, $contract, (int)($instance['submitted_by'] ?? 0)); // M1：显式传提交人
+                    : "合同 {$contract['title']} 审批已全部通过，现已进入执行。", $link, InternalNotify::TYPE_APPROVAL_APPROVED);
         }
     }
 

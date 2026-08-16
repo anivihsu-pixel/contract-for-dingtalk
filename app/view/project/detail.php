@@ -19,10 +19,9 @@ $__stage=$project['stage']??'PLANNING';
 </div>
 
 <!-- 经营聚合卡片（仅统计交易合同 trade_attr=1） -->
-<div class="row g-3 mb-3 row-cols-2 row-cols-md-3 row-cols-xl-5">
+<div class="row g-3 mb-3 row-cols-2 row-cols-md-3 row-cols-xl-4">
   <div class="col"><div class="card stat-card h-100"><div class="card-body text-center"><div class="text-muted small">交易合同数</div><div class="fs-4 fw-bold"><?=$stat['contract_count']?></div></div></div></div>
   <div class="col"><div class="card stat-card h-100"><div class="card-body text-center"><div class="text-muted small">销售合同额</div><div class="fs-5 fw-bold text-danger">¥<?=number_format($stat['sales_amount'],0)?></div></div></div></div>
-  <div class="col"><div class="card stat-card h-100"><div class="card-body text-center"><div class="text-muted small">项目毛利（毛利率）</div><div class="fs-5 fw-bold <?=$stat['gross_margin']>=0?'text-success':'text-danger'?>">¥<?=number_format($stat['gross_margin'],0)?> <span class="fs-6 text-muted">(<?=$stat['gross_margin_rate']?>%)</span></div></div></div></div>
   <div class="col"><div class="card stat-card h-100"><div class="card-body text-center"><div class="text-muted small">应收 / 已收</div><div class="fs-6 fw-bold">¥<?=number_format($stat['receivable'],0)?> <span class="text-muted">/ ¥<?=number_format($stat['received'],0)?></span></div></div></div></div>
   <div class="col"><div class="card stat-card h-100"><div class="card-body text-center"><div class="text-muted small">回款率</div><div class="fs-4 fw-bold text-success"><?=$stat['recovery_rate']?>%</div></div></div></div>
 </div>
@@ -67,7 +66,7 @@ function acceptProject(){
     }).catch(function(){showToast('网络错误','error');});
   });
 }
-// v2.44.1：终止项目（联动终止执行中/已通过/历史已签的销售合同）
+// 终止项目（联动终止执行中/已通过/历史已签的销售合同）
 function terminateProject(){
   pcConfirm({message:'确认终止该项目？\n将联动终止项目下执行中/已通过/历史已签的销售合同，存在逾期未结回款的合同将跳过。'}).then(function(ok){
     if(!ok) return;
@@ -77,7 +76,7 @@ function terminateProject(){
     }).catch(function(){showToast('网络错误','error');});
   });
 }
-// v2.44.1：撤销项目终止（恢复进行中；合同状态不联动恢复）
+// 撤销项目终止（恢复进行中；合同状态不联动恢复）
 function restoreProject(){
   pcConfirm({message:'确认撤销终止？\n项目将恢复为进行中状态，合同状态不联动恢复。'}).then(function(ok){
     if(!ok) return;

@@ -9,7 +9,7 @@
 
 -- ============ MySQL ============
 ALTER TABLE `approval_flow`
-    ADD COLUMN `category_list` TEXT DEFAULT '[]' COMMENT '适用分类列表(JSON数组，空=适用全部分类)'  -- 适用分类列表(JSON数组，空=适用全部分类)
+    ADD COLUMN `category_list` TEXT COMMENT '适用分类列表(JSON数组，空=适用全部分类)'  -- 适用分类列表(JSON数组，空=适用全部分类)
     AFTER `category`;
 ALTER TABLE `approval_flow`
     ADD COLUMN `use_amount` TINYINT DEFAULT 1 COMMENT '是否启用金额条件(1=启用/0=不启用)'  -- 是否启用金额条件(1=启用/0=不启用)

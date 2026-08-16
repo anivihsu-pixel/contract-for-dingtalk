@@ -8,7 +8,7 @@ use think\facade\Log;
 class RemindService
 {
     /**
-     * 提醒触发引擎（写入型）：扫描到期预警/已到期/逾期回款/即将到期回款，
+     * 提醒触发引擎（写入型）：扫描合同到期、回款到期/逾期及客户计划跟进，
      * 经 shouldRemind() 以「非 push_ 前缀」的 remind_type 原子写入 remind_log 全局去重，
      * 同时把本次触发的提醒文本累积进 $alerts（引用传参），并返回 {contracts,payments} 计数。
      *
@@ -27,12 +27,12 @@ class RemindService
         // 高频调用（刷接口）会造成 DB 写放大与锁竞争；同一时间窗内只真正执行一次引擎扫描。
         $throttleKey = 'remind_check_throttle';
         if (\think\facade\Cache::get($throttleKey)) {
-            return ['contracts' => 0, 'payments' => 0, 'throttled' => true];
+            return ['contracts' => 0, 'payments' => 0, 'followups' => 0, 'throttled' => true];
         }
         \think\facade\Cache::set($throttleKey, 1, 60);
 
         $today = date('Y-m-d');
-        $results = ['contracts' => 0, 'payments' => 0];
+        $results = ['contracts' => 0, 'payments' => 0, 'followups' => 0];
 
         // 2026-08-01：提醒提前天数由 PC 后台「系统设置→系统配置→业务规则」配置（逗号分隔），
         // 缺省保持原 30/15/7/3/1 与 7/3/1。非法输入（空/非数字）自动过滤，避免异常。
@@ -45,7 +45,7 @@ class RemindService
             $date = date('Y-m-d', strtotime("+{$days} days"));
             $contracts = Db::name('contract')
                 ->where('is_deleted', 0)
-                ->where('status', 'in', ['SIGNED', 'EXECUTING'])
+                ->where('status', 'EXECUTING')
                 ->where('expiry_date', $date)
                 ->select()->toArray();
 
@@ -60,7 +60,7 @@ class RemindService
         // 2. Contracts already expired but status not updated
         $expired = Db::name('contract')
             ->where('is_deleted', 0)
-            ->where('status', 'in', ['SIGNED', 'EXECUTING'])
+            ->where('status', 'EXECUTING')
             ->where('expiry_date', '<', $today)
             ->select()->toArray();
         foreach ($expired as $c) {
@@ -103,6 +103,14 @@ class RemindService
             }
         }
 
+        // 5. 已到跟进时间的客户（仅每个客户最新一条跟进计划有效；新跟进会自然关闭旧计划）
+        foreach (self::dueCustomerFollowups() as $follow) {
+            if (self::shouldRemind('customer_activity', (int)$follow['id'], 'follow_due', $today)) {
+                $alerts[] = "客户跟进：{$follow['customer_name']} 已到计划跟进时间";
+                $results['followups']++;
+            }
+        }
+
         return $results;
     }
 
@@ -110,12 +118,12 @@ class RemindService
      * 每日提醒调度：扫描到期/逾期项，按合同负责人 + 财务分组，通过钉钉工作通知主动推送。
      * - 复用 remind_log 去重（remind_type 前缀 push_，与仪表盘 check() 独立），保证同一项每天只推一次。
      * - 供 CLI 命令 `php think remind:dispatch`（crontab 每日调用）与管理员「立即触发推送」共用。
-     * @return array ['contracts'=>int,'payments'=>int,'notified'=>int]
+     * @return array ['contracts'=>int,'payments'=>int,'followups'=>int,'notified'=>int]
      */
     public static function dispatch(): array
     {
         $today   = date('Y-m-d');
-        $results = ['contracts' => 0, 'payments' => 0, 'notified' => 0, 'failed' => 0];
+        $results = ['contracts' => 0, 'payments' => 0, 'followups' => 0, 'notified' => 0, 'failed' => 0];
 
         // 财务人员（按 role.code='finance' 关联查询，避免硬编码 role_id，CR-25）
         $financeRoleId = Db::name('role')->where('code', 'finance')->value('id');
@@ -131,11 +139,12 @@ class RemindService
             }
         };
 
-        // P3b-10：4 路扫描拆分到独立方法，主方法聚焦编排（推送去重 + 钉钉分发）
+        // 各业务扫描拆分到独立方法，主方法聚焦编排（推送去重 + 钉钉分发）
         self::scanContractExpiry($enqueue, $results, $today);
         self::scanExpiredContracts($enqueue, $results, $adminIds, $today);
         self::scanOverduePayments($enqueue, $results, $financeIds, $today);
         self::scanUpcomingPayments($enqueue, $results, $financeIds, $today);
+        self::scanDueCustomerFollowups($enqueue, $results, $today);
 
         // 分用户推送钉钉工作通知；失败重试一次并告警（CR-11）
         self::pushToUsers($byUser, $results, $today);
@@ -153,7 +162,7 @@ class RemindService
         foreach ($expireDays as $days) {
             $date = date('Y-m-d', strtotime("+{$days} days"));
             $rows = Db::name('contract')->where('is_deleted', 0)
-                ->where('status', 'in', ['SIGNED', 'EXECUTING'])->where('expiry_date', $date)
+                ->where('status', 'EXECUTING')->where('expiry_date', $date)
                 ->select()->toArray();
             foreach ($rows as $c) {
                 if (self::shouldRemind('contract', $c['id'], "push_expiry_{$days}d", $today)) {
@@ -167,12 +176,12 @@ class RemindService
 
     /**
      * 扫描已到期未处理合同（P3b-10 从 dispatch 拆分）
-     * 状态仍为 SIGNED/EXECUTING 但 expiry_date < today，提醒归属人 + 创建人，并抄送管理员。
+     * 状态仍为 EXECUTING 但 expiry_date < today，提醒归属人 + 创建人，并抄送管理员。
      */
     private static function scanExpiredContracts(callable $enqueue, array &$results, array $adminIds, string $today): void
     {
         $rows = Db::name('contract')->where('is_deleted', 0)
-            ->where('status', 'in', ['SIGNED', 'EXECUTING'])->where('expiry_date', '<', $today)
+            ->where('status', 'EXECUTING')->where('expiry_date', '<', $today)
             ->select()->toArray();
         foreach ($rows as $c) {
             if (self::shouldRemind('contract', $c['id'], 'push_expired', $today)) {
@@ -224,6 +233,42 @@ class RemindService
                 }
             }
         }
+    }
+
+    /**
+     * 扫描已到期的客户跟进计划。只有客户最新一条活动中的计划有效，接收人为当前客户负责人；
+     * 新增跟进或发生认领、转移、释放后旧计划自动关闭，避免把历史承诺错误推给新负责人。
+     */
+    private static function scanDueCustomerFollowups(callable $enqueue, array &$results, string $today): void
+    {
+        foreach (self::dueCustomerFollowups() as $follow) {
+            if (self::shouldRemind('customer_activity', (int)$follow['id'], 'push_follow_due', $today)) {
+                $time = date('m-d H:i', strtotime((string)$follow['next_follow_at']));
+                $enqueue([(int)$follow['owner_id']],
+                    "📞 客户跟进：{$follow['customer_name']}（计划 {$time}）已到时间，请及时联系");
+                $results['followups']++;
+            }
+        }
+    }
+
+    /** 查询每个有效客户最新且已到期的跟进计划，供站内提醒、检查和钉钉推送共用。 */
+    private static function dueCustomerFollowups(?int $ownerId = null, int $limit = 200): array
+    {
+        $q = Db::name('customer_activity')->alias('a')
+            ->join('customer c', 'a.customer_id = c.id')
+            ->field('a.id,a.customer_id,a.next_follow_at,c.name AS customer_name,c.owner_id')
+            ->whereRaw('a.id = (SELECT MAX(latest.id) FROM customer_activity latest WHERE latest.customer_id = a.customer_id)')
+            ->whereNotNull('a.next_follow_at')
+            ->where('a.next_follow_at', '<=', date('Y-m-d H:i:s'))
+            ->where('c.is_deleted', 0)
+            ->where('c.owner_id', '>', 0)
+            ->order('a.next_follow_at', 'asc')
+            ->limit($limit);
+        if ($ownerId !== null) {
+            if ($ownerId <= 0) return [];
+            $q->where('c.owner_id', $ownerId);
+        }
+        return $q->select()->toArray();
     }
 
     /**
@@ -320,7 +365,7 @@ class RemindService
         }
     }
 
-    /** 扫描当前需要提醒的项（到期预警/已到期/逾期回款/即将到期回款），仅读取不写日志，返回提醒数组 */
+    /** 扫描当前需要提醒的项（合同、回款、客户跟进），仅读取不写日志，返回提醒数组 */
     private static function scanAlerts(int $userId = 0, bool $isAdmin = false, bool $hasFinancePerm = false): array
     {
         $alerts = [];
@@ -331,7 +376,7 @@ class RemindService
         foreach ($expireDays as $days) {
             $date = date('Y-m-d', strtotime("+{$days} days"));
             $q = Db::name('contract')->where('is_deleted', 0)
-                ->where('status', 'in', ['SIGNED', 'EXECUTING'])->where('expiry_date', $date);
+                ->where('status', 'EXECUTING')->where('expiry_date', $date);
             self::scopeOwner($q, $userId, $isAdmin, false, $hasFinancePerm);
             // P2-2（arch）：每类扫描加 limit 上限，防管理员全公司提醒单次全量载入
             foreach ($q->limit(100)->select()->toArray() as $c) {
@@ -343,7 +388,7 @@ class RemindService
 
         // 2. 已到期未处理
         $q = Db::name('contract')->where('is_deleted', 0)
-            ->where('status', 'in', ['SIGNED', 'EXECUTING'])->where('expiry_date', '<', $today);
+            ->where('status', 'EXECUTING')->where('expiry_date', '<', $today);
         self::scopeOwner($q, $userId, $isAdmin, false, $hasFinancePerm);
         foreach ($q->limit(100)->select()->toArray() as $c) {
             $alerts[] = ['type' => 'contract', 'id' => $c['id'], 'level' => 'danger',
@@ -372,6 +417,17 @@ class RemindService
                     'level' => $days <= 3 ? 'warning' : 'info',
                     'text' => "回款提醒：{$p['title']} ¥{$p['amount']} 将于 {$days} 天后到期"];
             }
+        }
+
+        // 5. 客户跟进提醒严格按当前负责人隔离；管理员也不默认查看他人的个人跟进计划
+        foreach (self::dueCustomerFollowups($userId, 100) as $follow) {
+            $alerts[] = [
+                'type'  => 'customer',
+                'id'    => (int)$follow['customer_id'],
+                'level' => strtotime((string)$follow['next_follow_at']) < strtotime($today) ? 'danger' : 'warning',
+                'text'  => '客户《' . $follow['customer_name'] . '》计划跟进时间：'
+                    . date('m-d H:i', strtotime((string)$follow['next_follow_at'])),
+            ];
         }
 
         return $alerts;

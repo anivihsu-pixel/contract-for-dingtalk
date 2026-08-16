@@ -8,8 +8,8 @@
 <div class="col-md-3"><label class="form-label" for="fSupStatus">状态</label><select name="status" id="fSupStatus" class="form-select"><option value="1" <?=($s['status']??1)==1?'selected':''?>>正常</option><option value="0">禁用</option></select></div>
 <div class="col-md-4"><label class="form-label" for="fSupContact">联系人</label><input type="text" name="contact_name" id="fSupContact" class="form-control" value="<?=htmlspecialchars($s['contact_name']??'')?>"></div>
 <div class="col-md-4"><label class="form-label" for="fSupMobile">联系电话</label><input type="text" name="contact_mobile" id="fSupMobile" class="form-control" value="<?=htmlspecialchars($s['contact_mobile']??'')?>"></div>
-<div class="col-md-4"><label class="form-label" for="fSupEmail">邮箱</label><input type="text" name="contact_email" id="fSupEmail" class="form-control" value="<?=htmlspecialchars($s['contact_email']??'')?>"></div>
 <div class="col-12"><label class="form-label" for="fSupAddress">地址</label><input type="text" name="address" id="fSupAddress" class="form-control" value="<?=htmlspecialchars($s['address']??'')?>"></div>
+<div class="col-12"><label class="form-label" for="fSupRemark">备注</label><textarea name="remark" id="fSupRemark" class="form-control" rows="2" placeholder="简短备注（如结算要求、资质说明等）"><?=htmlspecialchars($s['remark']??'')?></textarea></div>
 <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> 保存</button> <a href="/supplier" class="btn btn-outline-secondary ms-2">取消</a></div>
 </form>
 <script>

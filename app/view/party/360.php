@@ -11,7 +11,7 @@ $directionMap = [
     ''         => '<span class="pc-tag pc-tag-muted">非交易</span>',
 ];
 // 合同状态标签统一复用 contract_status_label()（单一事实来源，避免状态机漂移导致英文原始码外泄）
-// $statusMap 旧实现误用 APPROVING / DONE 等不存在的状态键，且遗漏 APPROVED/REJECTED/SIGNED 等，已弃用。
+// 状态标签统一使用公共合同状态映射。
 $payStatusMap = [
     'PAID'     => '<span class="pc-tag pc-tag-ok">已' . $isTradeRole . '</span>',
     'PENDING'  => '<span class="pc-tag pc-tag-warn">待' . $isTradeRole . '</span>',

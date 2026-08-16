@@ -22,7 +22,7 @@ class FinanceLogic
             ->where('direction', 'in', ['sales', 'purchase'])
             // P1-3：与 getSummaryByPeriod 口径一致，经营聚合排除未生效状态（草稿/驳回/审批中）
             ->where('status', 'not in', [ContractLogic::STATUS_DRAFT, ContractLogic::STATUS_REJECTED, ContractLogic::STATUS_PENDING_APPROVAL]);
-        // P1-3：经营聚合排除框架合同（预算上限不参与成交额统计）
+        // 兼容旧版本函数调用；轻量合同管理下不会排除任何合同。
         \exclude_framework_contracts($finQuery);
         // 数据权限收敛：管理员看全部，SELF/DEPT 仅见范围内
         AuthLogic::appendDataScope($finQuery, 'owner_id', 'dept_id');
@@ -52,7 +52,7 @@ class FinanceLogic
             ->where('direction', 'in', ['sales', 'purchase'])
             // P1-3：经营聚合排除未生效状态（草稿/驳回/审批中）
             ->where('status', 'not in', [ContractLogic::STATUS_DRAFT, ContractLogic::STATUS_REJECTED, ContractLogic::STATUS_PENDING_APPROVAL]);
-        // P1-3：经营聚合排除框架合同（预算上限不参与成交额统计）
+        // 兼容旧版本函数调用；轻量合同管理下不会排除任何合同。
         \exclude_framework_contracts($finQuery);
         if ($range !== null) {
             [$start, $end] = $range;

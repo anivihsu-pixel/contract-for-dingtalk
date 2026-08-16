@@ -82,6 +82,8 @@
 window.__formRules = <?= json_encode($invoice_form_rules ?? [], JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
 // H3：联动 fill 动作数据源（选客户 → 自动带出抬头=客户名/税号=信用代码）
 window.__formData = <?= json_encode(['customer_id' => $invoice_customers ?? []], JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
+// v2.51.4：列表发票类型中文映射（dict('invoice_type')，与 finance/contract 详情同源）
+window.__invTypeLabels = <?= json_encode(dict('invoice_type'), JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?: '{}' ?>;
 </script>
 <script src="<?=asset_url('js/form-linkage.js')?>"></script>
 <script src="<?=asset_url('js/search-picker.js')?>"></script>

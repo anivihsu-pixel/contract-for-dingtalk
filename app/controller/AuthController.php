@@ -67,6 +67,11 @@ class AuthController extends BaseController
             $this->getParam('redirect', ''),
             is_mobile_request() ? '/m' : '/dashboard'
         );
+        // 根路径在部分 PHP 内置服务器路由模式下不会命中显式路由；
+        // 登录后的默认首页统一使用稳定的桌面驾驶舱地址。
+        if ($redirect === '/') {
+            $redirect = is_mobile_request() ? '/m' : '/dashboard';
+        }
         return json_success([
             'redirect'    => $redirect,
             'force_reset' => $forceReset,

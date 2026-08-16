@@ -102,6 +102,11 @@ class AdminLogic
      */
     public static function getDicts(): array
     {
+        // 客户表单已依赖该基础字典。早期部署若只升级了字段而漏执行字典迁移，
+        // 后台会因 system_config 中无记录而不展示「客户行业」。在读取字典设置
+        // 前幂等补齐，既修复存量库，也不覆盖管理员已经维护过的选项。
+        self::ensureCustomerIndustryDict();
+
         $dicts = Db::name('system_config')
             ->where('group_name', 'dict')
             ->where('config_key', 'not like', 'dict_disabled_%') // v2.40.7：停用集合为元数据行，不视作字典
@@ -113,6 +118,26 @@ class AdminLogic
             $d['disabled'] = self::getDictDisabled($name);
         }
         return $dicts;
+    }
+
+    /** 补齐客户行业基础字典（仅用于兼容漏执行历史迁移的存量库）。 */
+    private static function ensureCustomerIndustryDict(): void
+    {
+        $key = 'dict_customer_industry';
+        if (Db::name('system_config')->where('config_key', $key)->value('config_key')) {
+            return;
+        }
+
+        Db::name('system_config')->insert([
+            'config_key'   => $key,
+            'config_value' => json_encode([
+                'GOV'          => '政府单位',
+                'REAL_ESTATE'  => '房地产',
+                'FOOD_TOURISM' => '餐饮旅游',
+                'OTHER'        => '其他',
+            ], JSON_UNESCAPED_UNICODE),
+            'group_name'   => 'dict',
+        ]);
     }
 
     /**
@@ -470,6 +495,8 @@ class AdminLogic
             Db::transaction(function () use ($fromUserId, $toUserId, $toUser, $scope, $disableFrom, &$counts) {
                 $now = date('Y-m-d H:i:s');
                 $toDeptId = (int)($toUser['dept_id'] ?? 0);
+                // v2.51.4：交接来源显示实际用户名，替代「用户#id」占位
+                $fromName = Db::name('user')->where('id', $fromUserId)->value('name') ?: ('用户#' . $fromUserId);
 
                 // 1) 客户批量转移（owner_id=from → to，部门同步，生命周期保持业务态）
                 if (!empty($scope['customer'])) {
@@ -486,33 +513,21 @@ class AdminLogic
                             'to_user_id'   => $toUserId,
                             'created_at'   => $now,
                         ]);
-                        \app\common\logic\CustomerLogic::addActivity($cid, $toUserId, 'TRANSFER', '离职交接：从用户#' . $fromUserId . ' 转入');
+                        \app\common\logic\CustomerLogic::addActivity($cid, $toUserId, 'TRANSFER', '离职交接：从 ' . $fromName . ' 转入');
                         $counts['customer']++;
                     }
                 }
 
-                // 2) 合同批量转移（owner_id=from → to，部门同步，creator_id 保留原值追溯；写变更日志）
+                // 2) 合同批量转移（owner_id=from → to，部门同步，creator_id 保留原值追溯）
                 if (!empty($scope['contract'])) {
                     $contractIds = Db::name('contract')->where('owner_id', $fromUserId)->where('is_deleted', 0)->column('id');
-                    $revisions = [];
                     foreach ($contractIds as $cid) {
                         Db::name('contract')->where('id', $cid)->where('owner_id', $fromUserId)->update([
                             'owner_id'   => $toUserId,
                             'dept_id'    => $toDeptId,
                             'updated_at' => $now,
                         ]);
-                        $revisions[] = [
-                            'contract_id' => $cid,
-                            'field_name'  => 'owner_id',
-                            'old_value'   => $fromUserId,
-                            'new_value'   => $toUserId,
-                            'operator_id' => 0, // 系统操作，操作人 0
-                            'created_at'  => $now,
-                        ];
                         $counts['contract']++;
-                    }
-                    if (!empty($revisions)) {
-                        Db::name('contract_revision')->insertAll($revisions);
                     }
                 }
 
@@ -668,7 +683,7 @@ class AdminLogic
      * 全量保存合同审批流程（v2.38.22 画布式编辑器：分支卡片并列，一次提交全部流程）。
      * 由 AdminController::saveAllFlows 下沉（P2-10【M-A1】控制器 Db 直查清零）。
      * 语义：全量重存——本次提交的流程更新/新增；原库中本次未提交的流程停用（status=0，保留历史实例关联）。
-     * @param array $flows     流程行 [{id,name,code,category_list,use_amount,min_amount,max_amount,status,nodes,cc_list}]
+     * @param array $flows     流程行 [{id,name,code,business_type_list,direction,trade_attr_condition,use_amount,min_amount,max_amount,status,nodes,cc_list}]
      * @param int   $operatorId 操作人 id（新流程 creator_id）
      * @return array ['ok'=>bool,'msg'=>string]
      */
@@ -686,15 +701,11 @@ class AdminLogic
             $code = trim((string)($g['code'] ?? ''));
             if ($name === '' || $code === '') { $errs[] = '存在未命名的流程分支'; continue; }
 
-            // 分类多选：优先 category_list(JSON)，回退遗留单值 category
-            $catList = [];
-            $clRaw = $g['category_list'] ?? '';
-            if (is_string($clRaw) && $clRaw !== '') {
-                $decoded = json_decode($clRaw, true);
-                if (is_array($decoded)) $catList = array_values(array_filter($decoded, fn($v) => $v !== ''));
-            }
-            if (empty($catList) && !empty($g['category'])) {
-                $catList = array_values(array_filter(explode(',', (string)$g['category']), fn($v) => $v !== ''));
+            $typeList = [];
+            $rawTypes = $g['business_type_list'] ?? '';
+            if (is_string($rawTypes) && $rawTypes !== '') {
+                $decoded = json_decode($rawTypes, true);
+                if (is_array($decoded)) $typeList = array_values(array_filter($decoded, fn($v) => $v !== ''));
             }
 
             // 节点 JSON 校验（高危路径：非法 nodes 拒绝保存，避免合同免审批直接通过）
@@ -715,8 +726,9 @@ class AdminLogic
             $data = [
                 'name'          => $name,
                 'code'          => $code,
-                'category'      => implode(',', $catList), // 遗留单值字段：存逗号分隔（兼容旧匹配逻辑）
-                'category_list' => json_encode($catList, JSON_UNESCAPED_UNICODE),
+                'business_type_list' => json_encode($typeList, JSON_UNESCAPED_UNICODE),
+                'direction'     => in_array(($g['direction'] ?? 'ALL'), ['sales','purchase','ALL'], true) ? $g['direction'] : 'ALL',
+                'trade_attr_condition' => in_array((string)($g['trade_attr_condition'] ?? 'ALL'), ['0','1','ALL'], true) ? (string)($g['trade_attr_condition'] ?? 'ALL') : 'ALL',
                 'use_amount'    => $useAmount,
                 'min_amount'    => $minAmount,
                 'max_amount'    => $maxAmount,
@@ -1029,6 +1041,10 @@ class AdminLogic
             if (!$existing) {
                 return ['ok' => false, 'msg' => '字典不存在'];
             }
+            // 业务类型允许维护；一旦已有业务数据引用，只能停用以保证历史记录可追溯。
+            if ($key === 'dict_business_type' && self::businessTypeInUse($itemKey)) {
+                return ['ok' => false, 'msg' => '该业务类型已被合同或项目使用，只能停用，不能删除'];
+            }
             $items = json_decode($existing['config_value'], true) ?: [];
             unset($items[$itemKey]);
             Db::name('system_config')->where('config_key', $key)
@@ -1090,6 +1106,20 @@ class AdminLogic
         self::clearDictCache($key);
         if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
         return ['ok' => true, 'msg' => '保存成功'];
+    }
+
+    /** 业务类型被业务数据引用后禁止删除，保留停用以保障历史数据展示。 */
+    private static function businessTypeInUse(string $code): bool
+    {
+        if ($code === '') {
+            return false;
+        }
+        foreach (['contract', 'project'] as $table) {
+            if (Db::name($table)->where('business_type', $code)->limit(1)->find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ========================================================================

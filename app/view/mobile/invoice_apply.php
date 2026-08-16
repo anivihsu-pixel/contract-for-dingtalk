@@ -13,35 +13,42 @@ include __DIR__ . '/_head.php';
   <div class="right"></div>
 </div>
 
+<div class="m-tabs" id="invPageTabs">
+  <a href="javascript:;" class="m-tab active" data-tab="apply" onclick="switchInvPage('apply')">申请开票</a>
+  <a href="javascript:;" class="m-tab" data-tab="mine" onclick="switchInvPage('mine')">我的申请</a>
+</div>
+
 <div class="m-page" id="page">
   <!-- 申请开票表单（卡片：关联合同 + 配置化字段 + 价税拆分） -->
-  <div class="m-card">
-    <div class="m-card-hd"><span><i class="bi bi-receipt-cutoff me-1 text-primary"></i>申请开票</span></div>
-    <div class="m-card-bd">
-      <div class="m-field" style="position:relative">
-        <label for="mInvContractSearch">关联合同 <span style="color:var(--m-text-3);font-size:12px">（选填，可不选直接快捷申请）</span></label>
-        <input type="text" class="m-input" id="mInvContractSearch" placeholder="搜索合同编号 / 标题" autocomplete="off">
-        <input type="hidden" id="mInvContractId" value="0">
-        <div class="m-party-suggest" id="mInvSuggest"></div>
+  <div id="panel-apply">
+    <div class="m-card">
+      <div class="m-card-bd">
+        <div class="m-field" style="position:relative">
+          <label for="mInvContractSearch">关联合同 <span style="color:var(--m-text-3);font-size:12px">（选填，可不选直接快捷申请；选择后自动带出开票抬头/税号）</span></label>
+          <input type="text" class="m-input" id="mInvContractSearch" placeholder="搜索合同编号 / 标题" autocomplete="off">
+          <input type="hidden" id="mInvContractId" value="0">
+          <div class="m-party-suggest" id="mInvSuggest"></div>
+        </div>
+        <div id="mInvFields">
+          <!-- 2026-08-02：税率绑定开票主体，表单不渲染税率组件；隐藏字段承接主体税率供价税拆分与提交（后端强制从公司读取，防篡改） -->
+          <input type="hidden" name="tax_rate" id="mInvTaxRate" value="0.06">
+          <?= $m_invoice_fields ?>
+        </div>
+        <!-- H2：含税金额价税拆分实时展示（含税 = 不含税 + 税额） -->
+        <div style="color:var(--m-text-3);font-size:13px;margin-top:6px;display:none" id="mInvTaxCalc"></div>
+        <div style="color:#fa5151;font-size:13px;min-height:18px;margin-top:8px" id="mInvErr"></div>
+        <button class="m-btn m-btn-primary" onclick="submitMInvApply()" style="width:100%;margin-top:4px"><i class="bi bi-send"></i> 提交申请</button>
       </div>
-      <div id="mInvFields">
-        <!-- 2026-08-02：税率绑定开票主体，表单不渲染税率组件；隐藏字段承接主体税率供价税拆分与提交（后端强制从公司读取，防篡改） -->
-        <input type="hidden" name="tax_rate" id="mInvTaxRate" value="0.06">
-        <?= $m_invoice_fields ?>
-      </div>
-      <!-- H2：含税金额价税拆分实时展示（含税 = 不含税 + 税额） -->
-      <div style="color:var(--m-text-3);font-size:13px;margin-top:6px;display:none" id="mInvTaxCalc"></div>
-      <div style="color:#fa5151;font-size:13px;min-height:18px;margin-top:8px" id="mInvErr"></div>
-      <button class="m-btn m-btn-primary" onclick="submitMInvApply()" style="width:100%;margin-top:4px"><i class="bi bi-send"></i> 提交申请</button>
     </div>
   </div>
 
-  <!-- 我的申请列表（异步加载 /ajax/invoice/my-list） -->
-  <div class="m-card">
-    <div class="m-card-hd"><span><i class="bi bi-clipboard-data me-1"></i>我的申请</span><span class="m-tag" id="invMineCount">0 条</span></div>
-    <div class="m-card-bd">
-      <div id="invMineList"><div class="m-empty"><i class="bi bi-arrow-repeat"></i> 加载中…</div></div>
-      <div class="text-center py-2" id="invMineMore" style="display:none"><button class="m-btn m-btn-ghost" onclick="loadMineInv(false)">加载更多</button></div>
+  <!-- 我的申请列表（异步加载 /ajax/invoice/my-list；v2.51.4 改为标签页展示） -->
+  <div id="panel-mine" style="display:none">
+    <div class="m-card">
+      <div class="m-card-bd">
+        <div id="invMineList"><div class="m-empty"><i class="bi bi-arrow-repeat"></i> 加载中…</div></div>
+        <div class="text-center py-2" id="invMineMore" style="display:none"><button class="m-btn m-btn-ghost" onclick="loadMineInv(false)">加载更多</button></div>
+      </div>
     </div>
   </div>
 </div>
@@ -57,7 +64,7 @@ include __DIR__ . '/_head.php';
     return m[s] || esc(s);
   }
 
-  // 价税拆分实时展示（税率随主体下拉带出由 refreshMInvRate 维护）
+  // 价税拆分实时展示（税率随主体带出由 mInvCompanyPicked 维护）
   function refreshTaxCalc(){
     var f = document.getElementById('mInvFields');
     if(!f) return;
@@ -72,28 +79,31 @@ include __DIR__ . '/_head.php';
     calc.style.display = '';
   }
 
-  // 税率随开票主体联动（公司下拉 option 带 data-rate）
-  function refreshMInvRate(){
+  // 开票主体选中回调：带出该主体税率并刷新价税拆分（initInvPickers 触发）
+  window.mInvCompanyPicked = function(rate){
     var f = document.getElementById('mInvFields');
     if(!f) return;
-    var co = f.querySelector('select[name="our_company_id"]');
     var rateEl = f.querySelector('input[name="tax_rate"]') || document.getElementById('mInvTaxRate');
-    if(co && rateEl){
-      var opt = co.options[co.selectedIndex];
-      if(opt && opt.getAttribute('data-rate') !== null) rateEl.value = opt.getAttribute('data-rate');
-      if(co.onchange_prev) {} // 防止重复绑定（渲染阶段已由 form-linkage 或内联 onchange 处理）
-    }
+    if(rateEl && rate !== '' && rate !== null && rate !== undefined){ rateEl.value = rate; }
     refreshTaxCalc();
-  }
+  };
   var f0 = document.getElementById('mInvFields');
   if(f0){
-    var co0 = f0.querySelector('select[name="our_company_id"]');
-    if(co0) co0.addEventListener('change', refreshMInvRate);
     var amt0 = f0.querySelector('input[name="amount"]');
     if(amt0) amt0.addEventListener('input', refreshTaxCalc);
   }
+  // 初始化开票主体/下拉选择器（复用新建合同「我方主体」底部弹层交互）
+  if(typeof window.initInvPickers === 'function') window.initInvPickers(document.getElementById('mInvFields'));
 
-  // 提交申请（复用财务页同款逻辑）
+  // 申请开票 / 我的申请 标签切换（v2.51.4）
+  window.switchInvPage = function(tab){
+    document.querySelectorAll('#invPageTabs .m-tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab === tab); });
+    document.getElementById('panel-apply').style.display = tab === 'apply' ? '' : 'none';
+    document.getElementById('panel-mine').style.display = tab === 'mine' ? '' : 'none';
+    if(tab === 'mine') loadMineInv(true);
+  };
+
+  // 提交申请（复用财务页同款逻辑；2026-08-15：加二次确认，与合同审批提交对齐）
   window.submitMInvApply = function(){
     var err = document.getElementById('mInvErr');
     var fd = new FormData();
@@ -104,12 +114,16 @@ include __DIR__ . '/_head.php';
       if(!el.value.trim()){ var lb = el.closest('.m-field') ? el.closest('.m-field').querySelector('label') : null; miss.push(lb ? lb.textContent.replace('*','').trim() : el.name); }
     });
     if(miss.length){ err.textContent = '请填写：' + miss.join('、'); return; }
-    err.textContent = '提交中…';
-    $ajax('/ajax/invoice/add', {method:'POST', body:fd, loading:false}).then(function(res){
-      err.textContent = '';
-      toast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
-      if(res.code === 0){ loadMineInv(true); }
-    }).catch(function(){ err.textContent = '网络异常，请重试'; });
+    err.textContent = '';
+    var amt = parseFloat(fd.get('amount')) || 0;
+    mConfirm('确认提交开票申请？金额 ¥' + amt.toLocaleString() + '，提交后将进入审批流程。', function(){
+      err.textContent = '提交中…';
+      $ajax('/ajax/invoice/add', {method:'POST', body:fd, loading:false}).then(function(res){
+        err.textContent = '';
+        toast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
+        if(res.code === 0){ loadMineInv(true); switchInvPage('mine'); }
+      }).catch(function(){ err.textContent = '网络异常，请重试'; });
+    });
   };
 
   // 我的申请列表（与财务页 loadInv(mine) 同口径）
@@ -139,7 +153,6 @@ include __DIR__ . '/_head.php';
           + '<span style="font-size:12px;color:var(--m-text-3)">'+(v.created_at||v.submitted_at||'')+'</span></div>'
           + (act ? '<div style="margin-top:8px;display:flex;gap:8px">'+act+'</div>' : '') + '</div>');
       });
-      var cnt = document.getElementById('invMineCount'); if(cnt) cnt.textContent = total + ' 条';
       var more = document.getElementById('invMineMore');
       if(more){
         var cardCnt = box.querySelectorAll('.m-card').length;
@@ -192,7 +205,15 @@ include __DIR__ . '/_head.php';
             el.addEventListener('mousedown', function(e){
               e.preventDefault();
               var c = mSuggest._list[parseInt(this.dataset.idx, 10)];
-              if(c){ mInvContractId = c.id; mSearch.value = c.title; mSuggest.style.display = 'none'; }
+              if(c){
+                mInvContractId = c.id;
+                var hid0 = document.getElementById('mInvContractId'); if(hid0) hid0.value = c.id; // 同步隐藏字段供提交读取
+                mSearch.value = c.title; mSuggest.style.display = 'none';
+                // v2.51.4：关联合同 → 自动带出乙方抬头/税号（可再改选开票客户覆盖）
+                $ajax('/ajax/contract/invoice-info?id=' + c.id, {loading:false}).then(function(res){
+                  if(res && res.code === 0 && typeof window.mInvFillByContract === 'function') window.mInvFillByContract(res.data);
+                }).catch(function(){});
+              }
             });
           });
         }).catch(function(){});

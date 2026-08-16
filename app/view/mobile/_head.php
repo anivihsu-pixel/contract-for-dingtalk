@@ -21,7 +21,7 @@ $extraCss  = $extraCss ?? '';
 <meta name="theme-color" content="#ffffff">
 <title><?=htmlspecialchars($pageTitle)?></title>
 <link rel="stylesheet" href="<?=asset_url('css/mobile.css')?>">
-<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.43.2.min.css')?>">
+<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.48.0.min.css')?>">
 <?php if($extraCss): ?><link rel="stylesheet" href="<?=htmlspecialchars($extraCss)?>">
 <?php endif; ?>
 <script src="<?=asset_url('js/mobile-common.js')?>"></script>

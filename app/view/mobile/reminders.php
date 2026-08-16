@@ -15,7 +15,7 @@ include __DIR__ . '/_head.php';
 <div class="m-tabs" id="tabBar">
   <a class="m-tab active" href="javascript:;" data-tab="todo">待办<?php if(count($todo_list ?? [])>0):?><span class="badge"><?=count($todo_list)?></span><?php endif;?></a>
   <a class="m-tab" href="javascript:;" data-tab="remind">提醒<?php if(count($alerts)>0):?><span class="badge"><?=count($alerts)?></span><?php endif;?></a>
-  <a class="m-tab" href="javascript:;" data-tab="notif">审批消息</a>
+  <a class="m-tab" href="javascript:;" data-tab="notif">站内消息</a>
 </div>
 
 <div class="m-page" id="page">
@@ -23,17 +23,18 @@ include __DIR__ . '/_head.php';
   <div id="tab-todo">
     <div class="notif-list">
       <?php if(empty($todo_list)): ?>
-        <div class="empty"><i class="bi bi-emoji-smile"></i> 暂无待我审批的流程</div>
+        <div class="empty"><i class="bi bi-emoji-smile"></i> 暂无待处理事项</div>
       <?php else:
           foreach($todo_list as $t):
+            $isNotif = ($t['kind'] ?? '') === 'notif';
       ?>
         <a href="<?=$t['link'] ?: '#'?>" class="notif-item" style="display:block;text-decoration:none;color:inherit"<?=$t['link']==='#'?' style="pointer-events:none"':''?>>
           <div class="notif-row">
-            <div class="notif-icon notif-icon-approval"><i class="bi bi-clipboard-check"></i></div>
+            <div class="notif-icon <?=$isNotif ? 'notif-icon-info' : 'notif-icon-approval'?>"><i class="bi <?=$isNotif ? 'bi-bell' : 'bi-clipboard-check'?>"></i></div>
             <div class="notif-body">
-              <div class="notif-title"><span class="notif-tag notif-tag-approval">审批</span><?=htmlspecialchars($t['text'] ?? '')?></div>
+              <div class="notif-title"><span class="notif-tag <?=$isNotif ? 'notif-tag-info' : 'notif-tag-approval'?>"><?=$isNotif ? '消息' : '审批'?></span><?=htmlspecialchars($t['text'] ?? '')?></div>
               <?php if(!empty($t['sub'])): ?><div class="notif-desc"><?=htmlspecialchars($t['sub'])?></div><?php endif; ?>
-              <div class="notif-meta"><span>待我审批</span><i class="bi bi-chevron-right"></i></div>
+              <div class="notif-meta"><span><?=$isNotif ? '站内消息' : '待我审批'?></span><i class="bi bi-chevron-right"></i></div>
             </div>
           </div>
         </a>
@@ -49,7 +50,7 @@ include __DIR__ . '/_head.php';
   <div id="tab-remind" style="display:none">
     <div class="notif-list">
       <?php if(empty($alerts)): ?>
-        <div class="empty"><i class="bi bi-emoji-smile"></i> 今日无到期/逾期提醒</div>
+        <div class="empty"><i class="bi bi-emoji-smile"></i> 今日无合同、回款或客户跟进提醒</div>
       <?php else: $__ai = 0; foreach($alerts as $a):
           $lv = $a['level'] ?? 'info';
           $iconCls = $lv==='danger' ? 'notif-icon-danger bi-exclamation-triangle-fill' : ($lv==='warning' ? 'notif-icon-warn bi-exclamation-circle-fill' : 'notif-icon-info bi-info-circle-fill');
@@ -57,10 +58,11 @@ include __DIR__ . '/_head.php';
           $tagTxt  = $lv==='danger' ? '逾期' : ($lv==='warning' ? '紧急' : '提醒');
           $type = $a['type'] ?? '';
           // 合同/回款提醒均可跳转：contract 跳合同详情；payment 跳合同详情并定位到回款区块（对齐 PC 端 remind/index.php 的 payment 分支）
-          $link = in_array($type, ['contract', 'payment'], true) && !empty($a['id'])
-              ? '/m/contract/'.$a['id'].($type === 'payment' ? '#payments' : '')
-              : '#';
-          $typeTxt = $type === 'payment' ? '回款' : '合同';
+          $link = $type === 'customer' && !empty($a['id'])
+              ? '/m/customer/'.$a['id']
+              : (in_array($type, ['contract', 'payment'], true) && !empty($a['id'])
+                  ? '/m/contract/'.$a['id'].($type === 'payment' ? '#payments' : '') : '#');
+          $typeTxt = $type === 'payment' ? '回款' : ($type === 'customer' ? '客户跟进' : '合同');
       ?>
         <a href="<?=$link?>" class="notif-item" data-idx="<?=$__ai++?>" style="display:block;text-decoration:none;color:inherit"<?=$link==='#'?' style="pointer-events:none"':''?>>
           <div class="notif-row">

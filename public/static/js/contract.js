@@ -227,7 +227,7 @@ function load(n){
                     h+='<div class="m-ccard" onclick="location.href=\'/m/contract/'+c.id+'\'">';
                     h+='<div class="m-ccard-top"><span class="m-ccard-t">'+esc(c.title)+'</span>'+statusB(c.status)+'</div>';
                     h+='<div class="m-ccard-no">'+esc(c.contract_no||'')+'</div>';
-                    h+='<div class="m-ccard-meta">'+dirBadge(c)+(window._categories&&window._categories[c.category]?('<span class="m-ctag m-ctag-muted">'+esc(window._categories[c.category])+'</span>'):'')+amt+'</div>';
+                    h+='<div class="m-ccard-meta">'+dirBadge(c)+(window._businessTypes&&window._businessTypes[c.business_type]?('<span class="m-ctag m-ctag-muted">'+esc(window._businessTypes[c.business_type])+'</span>'):'')+amt+'</div>';
                     if(c.party_b_name){ h+='<div class="m-ccard-party"><i class="bi bi-people me-1"></i>'+esc(c.party_b_name)+'</div>'; }
                     h+='</div>';
                     h+='</td></tr>';
@@ -237,7 +237,7 @@ function load(n){
                     h+='<td onclick="event.stopPropagation()"><input type="checkbox" class="batch-cb" value="'+c.id+'" onchange="updateBatchBar()"></td>';
                     h+='<td><small>'+esc(c.contract_no)+'</small></td>';
                     h+='<td>'+esc(c.title)+'</td>';
-                    h+='<td>'+(window._categories&&window._categories[c.category]?esc(window._categories[c.category]):esc(c.category))+'</td>';
+                    h+='<td>'+(window._businessTypes&&window._businessTypes[c.business_type]?esc(window._businessTypes[c.business_type]):esc(c.business_type))+'</td>';
                     h+='<td>'+dirBadge(c)+'</td>';
                     h+='<td class="text-end">'+parseFloat(c.amount||0).toLocaleString('zh-CN',{minimumFractionDigits:2})+'</td>';
                     h+='<td>'+statusB(c.status)+'</td>';
@@ -299,7 +299,7 @@ function load(n){
 
 /** 合同状态 → Bootstrap 标签 HTML */
 function statusB(s){
-    var m={DRAFT:'<span class="pc-tag pc-tag-warn">草稿</span>',PENDING_APPROVAL:'<span class="pc-tag pc-tag-warn">待审批</span>',APPROVED:'<span class="pc-tag pc-tag-info">已通过</span>',REJECTED:'<span class="pc-tag pc-tag-danger">已驳回</span>',SIGNED:'<span class="pc-tag pc-tag-info">已签署</span>',EXECUTING:'<span class="pc-tag pc-tag-ok">执行中</span>',COMPLETED:'<span class="pc-tag pc-tag-muted">已完成</span>',TERMINATED:'<span class="pc-tag pc-tag-danger">已终止</span>',EXPIRED:'<span class="pc-tag pc-tag-muted">已到期</span>',ARCHIVED:'<span class="pc-tag pc-tag-muted">已归档</span>'};
+    var m={DRAFT:'<span class="pc-tag pc-tag-warn">草稿</span>',PENDING_APPROVAL:'<span class="pc-tag pc-tag-warn">待审批</span>',REJECTED:'<span class="pc-tag pc-tag-danger">已驳回</span>',EXECUTING:'<span class="pc-tag pc-tag-ok">执行中</span>',COMPLETED:'<span class="pc-tag pc-tag-muted">已完成</span>',TERMINATED:'<span class="pc-tag pc-tag-danger">已终止</span>',EXPIRED:'<span class="pc-tag pc-tag-muted">已到期</span>',ARCHIVED:'<span class="pc-tag pc-tag-muted">已归档</span>'};
     return m[s]||s;
 }
 
@@ -398,10 +398,6 @@ if (document.readyState === 'loading') {
 
 // ---- 导出合同（携带当前筛选条件；P1-5：防重复连点 + 进度提示） ----
 window.exportContracts = function(){
-    if(window.__contractExporting){ showToast('导出生成中，请稍候…', 'warning'); return; }
-    window.__contractExporting = true;
-    showToast('正在生成导出文件…', 'info');
-    setTimeout(function(){ window.__contractExporting = false; }, 5000);
     var sf = document.getElementById('searchForm');
     var params = new URLSearchParams();
     if(sf){
@@ -413,7 +409,11 @@ window.exportContracts = function(){
     var url = '/ajax/export/contracts';
     var qs = params.toString();
     if(qs) url += '?' + qs;
-    location.href = url;
+    fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(resp){
+        var ct=resp.headers.get('content-type')||'';
+        if(ct.indexOf('application/json')>=0)return resp.json().then(function(r){if(r.data&&r.data.requires_confirmation){return pcConfirm({message:r.msg}).then(function(ok){if(ok){params.set('confirmed','1');location.href='/ajax/export/contracts?'+params.toString();}});}showToast(r.msg||'导出失败','error');});
+        return resp.blob().then(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='contracts_'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);});
+    }).catch(function(){showToast('导出失败，请稍后重试','error');});
 };
 
 // ---- REV-28：批量操作（全选/清除/批量归档/批量删除） ----

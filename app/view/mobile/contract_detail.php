@@ -5,9 +5,7 @@ $status = $contract['status'] ?? '';
 $statusMap = [
     'DRAFT' => ['t' => '草稿', 'c' => 'warn'],   // v2.44.4：草稿徽标统一琥珀（方案 A，与列表一致）
     'PENDING_APPROVAL' => ['t' => '待审批', 'c' => 'warn'],
-    'APPROVED' => ['t' => '已通过', 'c' => 'info'],
     'REJECTED' => ['t' => '已驳回', 'c' => 'danger'],
-    'SIGNED' => ['t' => '历史已签', 'c' => 'info'],  // v2.38.10: 签署功能已移除，SIGNED 仅历史存量
     'EXECUTING' => ['t' => '执行中', 'c' => 'ok'],
     'COMPLETED' => ['t' => '已完成', 'c' => 'muted'],
     'TERMINATED' => ['t' => '已终止', 'c' => 'danger'],
@@ -17,7 +15,7 @@ $statusMap = [
 $st = $statusMap[$status] ?? ['t' => $status, 'c' => 'muted'];
 $dirMap = ['sales' => '销售', 'purchase' => '采购'];
 $dirText = $dirMap[$contract['direction'] ?? ''] ?? '';
-$categoryName = function_exists('contract_category_name') ? contract_category_name($contract['category'] ?? '') : ($contract['category'] ?? '');
+$businessTypeName = dict_enabled('business_type')[$contract['business_type'] ?? ''] ?? ($contract['business_type'] ?? '');
 $payStatusMap = ['PENDING' => ['t' => '待收', 'c' => 'warn'], 'PAID' => ['t' => '已收', 'c' => 'ok'], 'OVERDUE' => ['t' => '逾期', 'c' => 'danger']];
 // 审批实例状态映射（与 approval_status_label 文本一致；注意：审批实例状态用 PENDING/APPROVED/REJECTED/RECALLED，
 // 与合同状态（PENDING_APPROVAL 等）不同，不能用上面的 $statusMap，否则 PENDING/RECALLED 查不到键会原样输出英文）
@@ -116,7 +114,7 @@ include __DIR__ . '/_head.php';
     <?php endif; ?>
     <div class="tags">
       <?php if ($dirText): ?><span class="m-tag m-tag-info"><?=$dirText?></span><?php endif; ?>
-      <span class="m-tag m-tag-muted"><?=htmlspecialchars($categoryName)?></span>
+      <span class="m-tag m-tag-muted"><?=htmlspecialchars($businessTypeName)?></span>
       <?php if (!empty($contract['project_name'])): ?><span class="m-tag m-tag-muted"><?=htmlspecialchars($contract['project_name'])?></span><?php endif; ?>
     </div>
   </div>
@@ -129,7 +127,6 @@ include __DIR__ . '/_head.php';
       <div class="info-item"><div class="info-label">创建人</div><div class="info-val"><?=htmlspecialchars($contract['creator_name'] ?? '-')?></div></div>
       <div class="info-item"><div class="info-label">生效日期</div><div class="info-val"><?=htmlspecialchars($contract['effective_date'] ?? '-')?></div></div>
       <div class="info-item"><div class="info-label">到期日期</div><div class="info-val"><?=htmlspecialchars($contract['expiry_date'] ?? '-')?></div></div>
-      <?php if (!empty($contract['parent_title'])): ?><div class="info-item"><div class="info-label">关联框架</div><div class="info-val"><?=htmlspecialchars($contract['parent_title'])?></div></div><?php endif; ?>
       <div class="info-item"><div class="info-label">创建时间</div><div class="info-val"><?=htmlspecialchars($contract['created_at'] ?? '-')?></div></div>
     </div>
   </div>
@@ -189,10 +186,8 @@ include __DIR__ . '/_head.php';
         <!-- v2.46.0：甲方往来摘要（甲方客户/甲方供应商，点击跳相对方全景） -->
         <?php if(!empty($party360['customer_a']) || !empty($party360['supplier_a'])):
             $pa = $party360['customer_a'] ?? $party360['supplier_a']; $ptypea = !empty($party360['customer_a']) ? 'customer' : 'supplier';
-            $pga = $pa['high_risk'] ? 'danger' : 'm-tag-credit-' . credit_grade($pa['credit_score']);
         ?>
         <a href="/m/party/<?=$ptypea?>/<?=$pa['id']?>" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:var(--m-brand-light);border-radius:10px;text-decoration:none">
-          <span class="m-tag <?=$pga?>" style="flex:none"><?=$pa['high_risk']?'高风险':'信用 '.$pa['credit_score']?></span>
           <span style="flex:1;font-size:12px;color:var(--m-text-2)">往来余额 <b style="color:var(--m-text-1)">¥<?=number_format((float)$pa['balance'],0)?></b> · 待<?=$pa['role']==='应收'?'收':'付'?></span>
           <span style="font-size:12px;color:var(--m-brand)">往来全景 <i class="bi bi-chevron-right"></i></span>
         </a>
@@ -209,10 +204,8 @@ include __DIR__ . '/_head.php';
         <!-- v2.38.14：乙方往来摘要（360 能力内嵌，点击跳相对方全景） -->
         <?php if(!empty($party360['customer']) || !empty($party360['supplier'])):
             $p = $party360['customer'] ?? $party360['supplier']; $ptype = !empty($party360['customer']) ? 'customer' : 'supplier';
-            $pg = $p['high_risk'] ? 'danger' : 'm-tag-credit-' . credit_grade($p['credit_score']);
         ?>
         <a href="/m/party/<?=$ptype?>/<?=$p['id']?>" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:var(--m-brand-light);border-radius:10px;text-decoration:none">
-          <span class="m-tag <?=$pg?>" style="flex:none"><?=$p['high_risk']?'高风险':'信用 '.$p['credit_score']?></span>
           <span style="flex:1;font-size:12px;color:var(--m-text-2)">往来余额 <b style="color:var(--m-text-1)">¥<?=number_format((float)$p['balance'],0)?></b> · 待<?=$p['role']==='应收'?'收':'付'?></span>
           <span style="font-size:12px;color:var(--m-brand)">往来全景 <i class="bi bi-chevron-right"></i></span>
         </a>
@@ -385,6 +378,10 @@ include __DIR__ . '/_head.php';
   </div>
 <?php endif; ?>
 
+<?php if(!empty($execution_cc) && !empty($execution_cc['needs_ack']) && empty($execution_cc['acknowledged_at'])): ?>
+<div class="m-actionbar"><button class="m-btn m-btn-brand" onclick="ackExecution()"><i class="bi bi-check2-square"></i> 确认知悉</button></div>
+<?php endif; ?>
+
 <!-- Phase 2.7：附件预览 Lightbox 提取为独立 JS（消除与审批详情页的重复代码） -->
 <script src="<?=asset_url('js/mobile/lightbox.js')?>"></script>
 <script>
@@ -413,6 +410,7 @@ function closeStatusSheet(){
   var m = document.getElementById('statusSheetMask');
   if(m) m.classList.remove('show');
 }
+function ackExecution(){confirmAndPost('确认已知悉该合同进入执行？','/ajax/contract/execution-ack',{id:window._contractId},600);}
 (function(){
   var m = document.getElementById('statusSheetMask');
   if(!m) return;

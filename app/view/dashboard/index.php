@@ -1,5 +1,5 @@
 <?php $title='仪表盘'; $menu_active='dashboard';
-$sc=['DRAFT'=>'muted','PENDING_APPROVAL'=>'warn','APPROVED'=>'info','SIGNED'=>'info','EXECUTING'=>'ok','COMPLETED'=>'muted','EXPIRED'=>'danger'];
+$sc=['DRAFT'=>'muted','PENDING_APPROVAL'=>'warn','EXECUTING'=>'ok','COMPLETED'=>'muted','EXPIRED'=>'danger'];
 include __DIR__.'/../layout/header.php'; ?>
 <style>
 .trend-bars{display:flex;align-items:flex-end;gap:12px;height:100px;padding:0 4px}
@@ -15,6 +15,16 @@ include __DIR__.'/../layout/header.php'; ?>
 .period-chips a.active{background:#fff;color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 </style>
 
+<!-- 全局搜索统一收敛到仪表盘，避免在各业务页面重复占位。 -->
+<div class="card stat-card mb-4">
+  <div class="card-body py-3">
+    <form class="row g-2 align-items-center" action="/search" method="get">
+      <div class="col"><input class="form-control" name="q" minlength="2" required placeholder="搜索客户、联系人、合同、项目或供应商" aria-label="全局搜索"></div>
+      <div class="col-auto"><button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> 全局搜索</button></div>
+    </form>
+  </div>
+</div>
+
 <!-- 快捷操作（动作型入口，对齐移动端工作台；按权限裁剪；周期筛选随数据区刷新见 _partial.php） -->
 <div class="card stat-card mb-4">
   <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-grid-3x3-gap text-primary"></i> 快捷操作</h6></div>
@@ -29,23 +39,20 @@ include __DIR__.'/../layout/header.php'; ?>
   </div>
 </div>
 
+
 <!-- 今日提醒 + 近期回款：宽屏两列并排（避免提醒单卡过宽空旷），窄屏自动堆叠 -->
 <div class="row g-3 mb-4">
 <div class="col-lg-6">
 <div class="card stat-card h-100">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <h6 class="mb-0"><i class="bi bi-bell"></i> 今日提醒 <span class="badge bg-danger rounded-pill ms-1"><?=count($remind_alerts)?></span></h6>
+    <h6 class="mb-0"><i class="bi bi-bell"></i> 今日提醒</h6>
     <a href="/remind" class="btn btn-sm btn-outline-secondary">查看全部</a>
   </div>
-  <?php if(!empty($msg_unread)): ?>
-  <div class="card-body py-2 px-3 small d-flex justify-content-between align-items-center" style="background:#fff8e1">
-    <span><i class="bi bi-chat-left-text text-primary"></i> 你有 <?=$msg_unread?> 条审批消息未读（驳回/通过/转交等）</span>
-    <a href="/remind" class="fw-bold text-decoration-none">前往查看 <i class="bi bi-chevron-right"></i></a>
-  </div>
-  <?php endif; ?>
   <div class="card-body p-0" style="max-height:220px;overflow-y:auto">
-  <?php if(!empty($remind_alerts)): foreach($remind_alerts as $a): ?>
-    <a href="/contract/<?=$a['id']?>" class="p-2 border-bottom d-block text-decoration-none text-reset"><i class="bi bi-<?=$a['level']=='danger'?'exclamation-triangle-fill text-danger':($a['level']=='warning'?'exclamation-circle text-warning':'info-circle text-info')?>"></i> <?=htmlspecialchars($a['text'])?></a>
+  <?php if(!empty($remind_alerts)): foreach($remind_alerts as $a):
+    $alertLink = ($a['type'] ?? '') === 'customer' ? '/customer/'.(int)$a['id'] : '/contract/'.(int)$a['id'];
+  ?>
+    <a href="<?=$alertLink?>" class="p-2 border-bottom d-block text-decoration-none text-reset"><i class="bi bi-<?=$a['level']=='danger'?'exclamation-triangle-fill text-danger':($a['level']=='warning'?'exclamation-circle text-warning':'info-circle text-info')?>"></i> <?=htmlspecialchars($a['text'])?></a>
   <?php endforeach; else: ?>
     <div class="text-center py-3 text-muted small">今日暂无提醒 🎉</div>
   <?php endif; ?>
@@ -138,7 +145,7 @@ include __DIR__.'/../layout/header.php'; ?>
 <div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>编号</th><th>标题</th><th>分类</th><th>金额</th><th>状态</th><th>乙方</th><th>日期</th></tr></thead><tbody>
 <?php if(!empty($recent_contracts)): foreach($recent_contracts as $c): ?>
 <tr role="link" tabindex="0" onclick="location.href='/contract/<?=$c['id']?>'" style="cursor:pointer" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='/contract/<?=$c['id']?>';}">
-<td><small><?=htmlspecialchars($c['contract_no'])?></small></td><td><?=htmlspecialchars($c['title'])?></td><td><?=contract_category_name($c['category'])?></td>
+<td><small><?=htmlspecialchars($c['contract_no'])?></small></td><td><?=htmlspecialchars($c['title'])?></td><td><?=htmlspecialchars(dict_enabled('business_type')[$c['business_type'] ?? ''] ?? ($c['business_type'] ?? ''))?></td>
 <td class="text-end">&yen;<?=format_money($c['amount'])?></td><td><?=contract_status_label($c['status'])?></td>
 <td><?=htmlspecialchars($c['party_b_name'])?></td><td><small><?=$c['created_at']?></small></td></tr>
 <?php endforeach; else: ?><tr><td colspan="7" class="text-center py-4 text-muted">暂无合同数据</td></tr><?php endif; ?>

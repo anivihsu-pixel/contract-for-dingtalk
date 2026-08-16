@@ -8,6 +8,13 @@ $phpPath = "C:\Users\wow\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.4_Mic
 $pyPath = "C:\Users\wow\.workbuddy\binaries\python\versions\3.13.12"
 if ($env:PATH -notlike "*$phpPath*") { $env:PATH = "$phpPath;$env:PATH" }
 if ($env:PATH -notlike "*$pyPath*") { $env:PATH = "$pyPath;$env:PATH" }
+$pythonExe = Join-Path $pyPath "python.exe"
+if (-not (Test-Path $pythonExe)) {
+    $pythonExe = (Get-Command python3 -ErrorAction SilentlyContinue).Source
+}
+if (-not $pythonExe) {
+    $pythonExe = (Get-Command python -ErrorAction SilentlyContinue).Source
+}
 
 $GateScripts = [ordered]@{
     "schema_parity" = "check_schema_parity.sh"
@@ -43,7 +50,12 @@ function Invoke-GateScript {
     $tempFile = [System.IO.Path]::GetTempFileName() + ".py"
     $pyCode = $py -join "`n"
     [System.IO.File]::WriteAllText($tempFile, $pyCode, [System.Text.UTF8Encoding]::new($false))
-    $output = & python3 $tempFile 2>&1
+    if (-not $pythonExe) {
+        Write-Host "[ERROR] Python not found" -ForegroundColor Red
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        return 1
+    }
+    $output = & $pythonExe $tempFile 2>&1
     $exitCode = $LASTEXITCODE
     $output | ForEach-Object { Write-Host $_ }
     Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
@@ -61,6 +73,21 @@ function Invoke-PhpUnit {
         Write-Host "[ERROR] PHPUnit not found" -ForegroundColor Red
         return 1
     }
+    return $LASTEXITCODE
+}
+
+function Invoke-JsTests {
+    Write-Host ""
+    Write-Host "== JavaScript tests ==" -ForegroundColor Cyan
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Host "[ERROR] Node.js not found" -ForegroundColor Red
+        return 1
+    }
+    if (-not (Test-Path "node_modules/jsdom")) {
+        Write-Host "[ERROR] JavaScript dependencies not installed; run npm ci" -ForegroundColor Red
+        return 1
+    }
+    & npm test 2>&1 | ForEach-Object { Write-Host $_ }
     return $LASTEXITCODE
 }
 
@@ -97,6 +124,8 @@ if ($GateScripts.Contains($Gate)) {
 
 if ($runTest) {
     $code = Invoke-PhpUnit
+    if ($code -ne 0) { $totalFail++ }
+    $code = Invoke-JsTests
     if ($code -ne 0) { $totalFail++ }
 }
 

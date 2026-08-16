@@ -269,26 +269,98 @@ function mShowMore(btn) {
   btn.style.display = 'none';
 }
 
-// ─── 键盘遮挡处理（v2.44.4）───
-// 移动端新建/编辑表单底部固定提交栏（.m-submitbar）：软键盘弹出时 fixed bottom 元素被浏览器
-// 顶到键盘上方，悬在正在编辑的字段上造成遮挡。输入控件聚焦即隐藏提交栏，失焦且焦点已离开
-// 输入控件后恢复（延迟 0ms 判断 activeElement，避免输入框 A→B 切换时闪烁）。
-// 脚本在 <head> 加载时 DOM 未就绪，故在事件回调内动态查询 .m-submitbar。
-(function () {
-  var isInput = function (el) {
-    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
-  };
-  var getSb = function () { return document.querySelector('.m-submitbar'); };
-  document.addEventListener('focusin', function (e) {
-    if (!isInput(e.target)) return;
-    var sb = getSb(); if (sb) sb.style.display = 'none';
+// 发票申请「展示框 + 底部弹层」选择器（v2.51.4）：统一处理开票主体(company)与下拉(select)字段，
+// 复用新建合同「我方主体」交互视觉（.m-pick-* 弹层）。由 InvoiceFormConfig::mobileRender 渲染
+// data-inv-pick 结构；选中后回填同名 hidden、刷新展示名、触发 change；company 额外回调 mInvCompanyPicked(rate)。
+window.initInvPickers = function (scope) {
+  scope = scope || document;
+  var boxes = scope.querySelectorAll('[data-inv-pick]');
+  if (!boxes.length) return;
+
+  var mask = document.createElement('div');
+  mask.className = 'm-pick-mask';
+  var sheet = document.createElement('div');
+  sheet.className = 'm-pick-sheet';
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+
+  function parseOptions(json) {
+    try { var o = JSON.parse(json); return Array.isArray(o) ? o : []; } catch (e) { return []; }
+  }
+  function show(box) {
+    var opts = parseOptions(box.getAttribute('data-options') || '[]');
+    var kind = box.getAttribute('data-inv-pick');
+    var title = kind === 'company' ? '选择开票主体' : '请选择';
+    var h = '<div class="m-pick-hd">' + title + '</div>';
+    opts.forEach(function (item) {
+      var defTxt = item.default ? '<span class="m-pick-def">默认</span>' : '';
+      h += '<div class="m-pick-item" data-value="' + esc(String(item.value)) + '"><span>' + esc(item.label) + '</span>' + defTxt + '</div>';
+    });
+    h += '<button type="button" class="m-pick-cancel">取消</button>';
+    sheet.innerHTML = h;
+    mask._box = box;
+    mask.classList.add('show');
+    sheet.querySelectorAll('.m-pick-item').forEach(function (it) {
+      it.addEventListener('click', function () { pick(box, it.getAttribute('data-value')); });
+    });
+    sheet.querySelector('.m-pick-cancel').addEventListener('click', function () { mask.classList.remove('show'); });
+  }
+  function pick(box, value) {
+    var opts = parseOptions(box.getAttribute('data-options') || '[]');
+    var item = null;
+    for (var i = 0; i < opts.length; i++) { if (String(opts[i].value) === String(value)) { item = opts[i]; break; } }
+    if (!item) return;
+    mask.classList.remove('show');
+    var name = box.getAttribute('data-pick-name');
+    var hid = scope.querySelector('[name="' + name + '"]');
+    if (hid) hid.value = String(item.value);
+    var nameEl = box.querySelector('.m-pick-name');
+    if (nameEl) nameEl.textContent = item.label;
+    if (hid) hid.dispatchEvent(new Event('change', { bubbles: true }));
+    if (box.getAttribute('data-inv-pick') === 'company' && typeof window.mInvCompanyPicked === 'function') window.mInvCompanyPicked(item.rate);
+  }
+  boxes.forEach(function (box) {
+    box.addEventListener('click', function () { show(box); });
   });
-  document.addEventListener('focusout', function (e) {
-    if (!isInput(e.target)) return;
-    setTimeout(function () {
-      if (!isInput(document.activeElement)) {
-        var sb = getSb(); if (sb) sb.style.display = '';
-      }
-    }, 0);
+  mask.addEventListener('click', function (e) { if (e.target === mask) mask.classList.remove('show'); });
+
+  // 默认带出：company 选默认主体（is_default=1，无则第一个）；select 已有服务端回显则不动
+  boxes.forEach(function (box) {
+    if (box.getAttribute('data-inv-pick') !== 'company') return;
+    var name = box.getAttribute('data-pick-name');
+    var hid = scope.querySelector('[name="' + name + '"]');
+    if (!hid || (hid.value && hid.value !== '0')) return;
+    var opts = parseOptions(box.getAttribute('data-options') || '[]');
+    var def = null;
+    for (var i = 0; i < opts.length; i++) { if (opts[i].default) { def = opts[i]; break; } }
+    if (!def && opts.length) def = opts[0];
+    if (def) pick(box, def.value);
   });
-})();
+};
+
+// v2.51.4：关联合同 → 自动带出乙方抬头/税号（申请开票；用户仍可通过「开票客户」选择器改选覆盖）
+window.mInvFillByContract = function (d) {
+  if (!d || !d.id) return;
+  var f = document.getElementById('mInvFields');
+  if (!f) return;
+  var t = f.querySelector('input[name="invoice_title"]');
+  var n = f.querySelector('input[name="tax_no"]');
+  if (t) t.value = d.party_b_name || '';
+  if (n) n.value = d.party_b_credit_code || '';
+};
+
+// 移动端表单本地草稿：仅保存普通字段，不保存密码、文件或令牌；成功提交后页面可显式清除。
+window.mobileFormDraft = function(form, key) {
+  if (!form || !key || !window.localStorage) return { clear: function(){} };
+  var storageKey = 'form_draft:' + key;
+  try {
+    var saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    Object.keys(saved).forEach(function(name){var el=form.elements[name];if(el && !el.value && el.type!=='password' && el.type!=='file')el.value=saved[name];});
+  } catch(e) {}
+  var timer;
+  form.addEventListener('input', function(){clearTimeout(timer);timer=setTimeout(function(){var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name&&el.type!=='password'&&el.type!=='file'&&el.type!=='hidden')data[el.name]=el.value;});try{localStorage.setItem(storageKey,JSON.stringify(data));}catch(e){}},300);});
+  return {clear:function(){try{localStorage.removeItem(storageKey);}catch(e){}}};
+};
+
+// 单次页面生命周期幂等键，用于弱网安全重试；后端按用户+接口+键去重。
+window.mobileIdempotencyKey = function(scope){var k='idem:'+scope;try{var v=sessionStorage.getItem(k);if(v)return v;v=Date.now().toString(36)+Math.random().toString(36).slice(2);sessionStorage.setItem(k,v);return v;}catch(e){return Date.now().toString(36);}};

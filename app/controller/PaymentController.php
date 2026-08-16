@@ -11,6 +11,30 @@ use think\facade\Log;
 
 class PaymentController extends BaseController
 {
+    public function collectionList($paymentId)
+    {
+        $this->requirePermission('payment:view');
+        $payment = PaymentLogic::getById((int)$paymentId);
+        if (!$payment || !ContractLogic::accessible((int)$payment['contract_id'])) return json_error('无权限或记录不存在', 403);
+        return json_success(PaymentLogic::getCollectionFollows((int)$paymentId));
+    }
+
+    public function collectionAdd()
+    {
+        $this->requirePermission('customer:edit');
+        $paymentId = (int)$this->getPost('payment_id', 0);
+        $payment = PaymentLogic::getById($paymentId);
+        if (!$payment || !ContractLogic::accessible((int)$payment['contract_id'])) return json_error('无权限或记录不存在', 403);
+        try {
+            $id = PaymentLogic::addCollectionFollow($paymentId, $this->userId, [
+                'content'=>$this->getPost('content',''), 'customer_promise'=>$this->getPost('customer_promise',''),
+                'reason'=>$this->getPost('reason',''), 'promise_date'=>$this->getPost('promise_date',''),
+                'next_follow_at'=>$this->getPost('next_follow_at',''),
+            ]);
+            AuditService::log($this->userId, 'collection_follow', 'payment_record', $paymentId, ['follow_id'=>$id]);
+            return json_success(['id'=>$id], '催收跟进已记录');
+        } catch (\RuntimeException $e) { return json_error($e->getMessage()); }
+    }
     /** 合同的回款列表 */
     public function list($contractId)
     {
@@ -47,7 +71,7 @@ class PaymentController extends BaseController
         if ((int)$contract['trade_attr'] === 0) {
             return json_error('该合同为非交易合同，不计入收支，无需登记回款');
         }
-        // P2-4（M6）：合同状态校验——仅处于可登记状态（APPROVED/SIGNED/EXECUTING）才允许登记回款，
+        // P2-4（M6）：合同审批通过进入执行后才允许登记回款，
         // 草稿/待审批/已驳回/已完成/已终止/已到期/已归档等状态禁止登记，给出明确提示。
         // 复用 InvoiceLogic::canRegister 作为状态校验单一来源，与发票登记保持一致。
         if (!InvoiceLogic::canRegister($contractId)) {
@@ -59,8 +83,10 @@ class PaymentController extends BaseController
         }
 
         try {
-            $id = PaymentLogic::create($contractId, $paymentType, $amount, $plannedDate ?: null, $description, $this->userId, $paymentMethod, $milestone);
+            $id = PaymentLogic::createWithinLimit($contractId, $paymentType, $amount, $plannedDate ?: null, $description, $this->userId, $paymentMethod, $milestone);
             return json_success(['id' => $id], '添加成功');
+        } catch (\RuntimeException $e) {
+            return json_error($e->getMessage());
         } catch (\Throwable $e) {
             Log::error('回款添加失败', ['error' => $e->getMessage(), 'contract_id' => $contractId]);
             return json_error('添加失败，请稍后重试');
@@ -149,21 +175,10 @@ class PaymentController extends BaseController
         }
 
         try {
-            Db::transaction(function () use ($contractId, $paymentType, $items) {
-                foreach ($items as $it) {
-                    PaymentLogic::create(
-                        $contractId,
-                        $paymentType,
-                        (float)$it['amount'],
-                        !empty($it['planned_date']) ? trim((string)$it['planned_date']) : null,
-                        trim((string)($it['description'] ?? '')),
-                        $this->userId,
-                        trim((string)($it['payment_method'] ?? '')),
-                        trim((string)($it['milestone'] ?? ''))
-                    );
-                }
-            });
+            PaymentLogic::createBatchWithinLimit($contractId, $paymentType, $items, $this->userId);
             return json_success(null, '已生成 ' . count($items) . ' 期计划');
+        } catch (\RuntimeException $e) {
+            return json_error($e->getMessage());
         } catch (\Throwable $e) {
             Log::error('批量生成回款计划失败', ['error' => $e->getMessage(), 'contract_id' => $contractId]);
             return json_error('生成失败，请稍后重试');
@@ -193,8 +208,6 @@ class PaymentController extends BaseController
 
         try {
             PaymentLogic::confirm($id, $method, $actDate, $confirmAmount, $invoiceNo, $description);
-            // P2-10（arch）：确认回款后主动失效操作人提醒角标，避免 60s 滞后
-            \think\facade\Cache::delete('badge_remind_' . $this->userId);
             return json_success(null, '确认收款成功');
         } catch (\RuntimeException $e) {
             // 业务校验异常（如确认金额超过应收/非法金额）：回显友好文案

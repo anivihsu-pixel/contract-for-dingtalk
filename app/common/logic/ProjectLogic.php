@@ -74,11 +74,11 @@ class ProjectLogic
 
     /**
      * 项目经营聚合（口径沿用 v2.18：仅交易合同 trade_attr=1、direction in sales/purchase）
-     * @return array{contract_count:int,sales_amount:float,purchase_amount:float,gross_margin:float,gross_margin_rate:float,receivable:float,received:float,recovery_rate:float}
+     * @return array{contract_count:int,sales_amount:float,purchase_amount:float,receivable:float,received:float,recovery_rate:float}
      */
     public static function aggregate(int $projectId): array
     {
-        // 交易合同额（销售/采购分开；P1-3：排除未生效状态 + 排除框架合同预算上限，避免草稿/驳回/审批中/框架金额计入经营与毛利）
+        // 交易合同额（销售/采购分开；排除草稿/驳回/审批中）
         // v2.44.1 P1：项目经营聚合补数据范围——此前仅按 project_id 过滤，跨部门合同金额会泄入本项目聚合
         $dirQuery = Db::name('contract')->alias('c')->where('c.is_deleted', 0)
             ->where('c.project_id', $projectId)
@@ -98,7 +98,7 @@ class ProjectLogic
         }
 
         // 应收 / 已收（回款口径同驾驶舱：payment_record RECEIVABLE / PAID）
-        // P1-3：回款口径与上方 dirQuery 合同额侧对齐——排除未生效合同关联的回款 + 排除框架合同
+        // 回款口径与上方合同额侧对齐——排除未生效合同关联的回款
         $payBase = function () use ($projectId) {
             $q = Db::name('payment_record')->alias('p')
                 ->join('contract c', 'p.contract_id = c.id')
@@ -117,16 +117,10 @@ class ProjectLogic
         $received   = $payBase()->where('p.status', 'PAID')->sum('p.paid_amount') ?? 0;
         $recoveryRate = $receivable > 0 ? round($received / $receivable * 100, 1) : 0;
 
-        // P0-1：项目毛利 = 销售合同额 − 采购合同额；毛利率按销售口径计算
-        $grossMargin     = (float)$salesAmount - (float)$purchaseAmount;
-        $grossMarginRate = $salesAmount > 0 ? round($grossMargin / $salesAmount * 100, 1) : 0;
-
         return [
             'contract_count'     => $contractCount,
             'sales_amount'       => (float)$salesAmount,
             'purchase_amount'    => (float)$purchaseAmount,
-            'gross_margin'       => (float)$grossMargin,
-            'gross_margin_rate'  => (float)$grossMarginRate,
             'receivable'         => (float)$receivable,
             'received'           => (float)$received,
             'recovery_rate'      => (float)$recoveryRate,
@@ -166,9 +160,9 @@ class ProjectLogic
     /** 下拉选项（供合同创建页关联项目用） */
     public static function options(): array
     {
-        $query = Db::name('project')->where('is_deleted', 0)->where('status', 'not in', ['ARCHIVED', 'TERMINATED']);
+        $query = Db::name('project')->where('is_deleted', 0)->where('status', '<>', 'ARCHIVED');
         AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
-        return $query->field('id,name,code')->order('id', 'desc')->select()->toArray();
+        return $query->field('id,name,code,business_type')->order('id', 'desc')->select()->toArray();
     }
 
     /**
@@ -181,14 +175,14 @@ class ProjectLogic
     public static function search(string $keyword, int $limit = 20): array
     {
         $uid = (int)\think\facade\Session::get('user_id', 0);
-        $query = Db::name('project')->where('is_deleted', 0)->where('status', 'not in', ['ARCHIVED', 'TERMINATED']);
+        $query = Db::name('project')->where('is_deleted', 0)->where('status', '<>', 'ARCHIVED');
         AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
         if ($keyword !== '') {
             $query->where(function ($q) use ($keyword) {
                 $q->whereLike('name', '%' . $keyword . '%')->whereOr('code', 'like', '%' . $keyword . '%');
             });
         }
-        $list = $query->field('id,name,code,owner_id')->order('id', 'desc')->limit($limit)->select()->toArray();
+        $list = $query->field('id,name,code,owner_id,business_type')->order('id', 'desc')->limit($limit)->select()->toArray();
         // 「与我有关」置顶：owner_id=当前用户标记 my=1 并排最前，作为推荐备选
         usort($list, function ($a, $b) use ($uid) {
             $am = ((int)$a['owner_id'] === $uid) ? 0 : 1;
@@ -208,27 +202,38 @@ class ProjectLogic
         return Db::name('project')->find($id) ?: null;
     }
 
+    /** 删除项目时解除关联合同的项目绑定（project_id 置 0，避免悬空引用）
+     * 与软删除包裹在同一调用处的业务语义内，由控制器编排事务/审计。
+     */
+    public static function unlinkContracts(int $projectId): void
+    {
+        Db::name('contract')->where('project_id', $projectId)->update([
+            'project_id'  => 0,
+            'updated_at'  => date('Y-m-d H:i:s'),
+        ]);
+    }
+
     /**
-     * 验收联动：项目下销售交易合同（执行中/已通过/历史已签）批量置已完成（P1-1：从控制器下沉）
-     * v2.44.1 P1：写操作限定数据范围——仅联动当前用户有权访问的合同，
-     * 防止把项目中其他部门的销售合同批量置 COMPLETED（跨范围写）。
+     * 验收联动：项目下销售交易合同（执行中/已通过/历史已签）批量置已完成（v2.40.0 P1-6）
+     * 写操作限定数据范围——仅联动当前用户有权访问的合同，防止把项目中其他部门的销售合同批量置 COMPLETED（跨范围写）。
+     * 注意：SQLite 不支持 UPDATE 表别名，故此处不 alias，数据范围谓词走无前缀字段。
      * @return int 受影响行数
      */
     public static function completeSalesContracts(int $projectId): int
     {
-        $query = Db::name('contract')->alias('c')
-            ->where('c.project_id', $projectId)
-            ->where('c.is_deleted', 0)
-            ->where('c.trade_attr', 1)
-            ->where('c.direction', 'sales')
-            ->where('c.status', 'in', ['EXECUTING', 'APPROVED', 'SIGNED']);
-        AuthLogic::appendDataScope($query, 'c.owner_id', 'c.dept_id');
+        $query = Db::name('contract')
+            ->where('project_id', $projectId)
+            ->where('is_deleted', 0)
+            ->where('trade_attr', 1)
+            ->where('direction', 'sales')
+            ->where('status', 'in', ['EXECUTING', 'APPROVED', 'SIGNED']);
+        AuthLogic::appendDataScope($query);
         return $query->update(['status' => 'COMPLETED', 'updated_at' => date('Y-m-d H:i:s')]);
     }
 
     /**
-     * 待收尾款统计：项目关联合同下的 PENDING 尾款（FINAL_PAYMENT 或说明含「尾款」）合计（P1-1：从控制器下沉）
-     * v2.44.1 P1：统计同样限定合同数据范围
+     * 待收尾款统计：项目关联合同下的 PENDING 尾款（FINAL_PAYMENT 或说明含「尾款」）合计（v2.40.0 P1-6）
+     * 统计同样限定合同数据范围
      */
     public static function sumPendingTailAmount(int $projectId): float
     {
@@ -246,18 +251,6 @@ class ProjectLogic
                 $q->where('milestone', 'FINAL_PAYMENT')->whereOr('description', 'like', '%尾款%');
             })
             ->sum('amount') ?: 0);
-    }
-
-    /**
-     * 删除项目时解除关联合同的项目绑定（project_id 置 0，避免悬空引用）
-     * 与软删除包裹在同一调用处的业务语义内，由控制器编排事务/审计。
-     */
-    public static function unlinkContracts(int $projectId): void
-    {
-        Db::name('contract')->where('project_id', $projectId)->update([
-            'project_id'  => 0,
-            'updated_at'  => date('Y-m-d H:i:s'),
-        ]);
     }
 
     /**

@@ -75,6 +75,8 @@ class SupplierController extends BaseController
      */
     public function save()
     {
+        $idemKey=(string)$this->getPost('idempotency_key','');
+        try{$cached=\app\common\service\IdempotencyService::cached($this->userId,'supplier.save',$idemKey);if($cached)return json_success($cached,'保存成功');}catch(\RuntimeException $e){return json_error($e->getMessage());}
         $id = (int)$this->getPost('id', 0);
         // 新建需 supplier:create，编辑需 supplier:edit
         $this->requirePermission($id ? 'supplier:edit' : 'supplier:create');
@@ -83,17 +85,15 @@ class SupplierController extends BaseController
             'type'           => $this->getPost('type', 'MEDIA'),
             'contact_name'   => $this->getPost('contact_name', ''),
             'contact_mobile' => $this->getPost('contact_mobile', ''),
-            'contact_email'  => $this->getPost('contact_email', ''),
             'address'        => $this->getPost('address', ''),
+            // v2.51.3：原联系邮箱改为备注（供应商表单语义统一为客户口径，字段更名）
+            'remark'         => mb_substr(trim($this->getPost('remark', '')), 0, 255),
             'status'         => (int)$this->getPost('status', 1),
         ];
         if (empty($data['name'])) return json_error('请输入供应商名称');
-        // CR-46：手机号 / 邮箱格式校验（非空时校验）
+        // CR-46：手机号格式校验（非空时校验）；邮箱已随 v2.51.3 下架
         if (!validate_mobile($data['contact_mobile'])) {
             return json_error('联系人手机号格式不正确');
-        }
-        if (!validate_email($data['contact_email'])) {
-            return json_error('联系人邮箱格式不正确');
         }
         if ($id) {
             $existing = SupplierLogic::findRaw($id);
@@ -106,7 +106,8 @@ class SupplierController extends BaseController
             $id = SupplierLogic::create($data);
         }
         AuditService::log($this->userId, $id ? 'update' : 'create', 'supplier', $id);
-        return json_success(['id' => $id], '保存成功');
+        $result=['id'=>$id];\app\common\service\IdempotencyService::remember($this->userId,'supplier.save',$idemKey,$result);
+        return json_success($result, '保存成功');
     }
 
     /**

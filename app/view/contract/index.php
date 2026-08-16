@@ -75,17 +75,14 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
   </div>
   <div class="offcanvas-body">
     <div class="row g-2">
-      <div class="col-6"><label class="form-label small text-muted mb-1" for="fCategory">合同分类</label><select name="category" id="fCategory" class="form-select form-select-sm"><option value="">全部分类</option>
-      <?php foreach($categories as $code=>$name): ?><option value="<?=$code?>" <?=($filter['category']??'')==$code?'selected':''?>><?=$name?></option><?php endforeach; ?></select></div>
+      <div class="col-6"><label class="form-label small text-muted mb-1" for="fBusinessType">业务类型</label><select name="business_type" id="fBusinessType" class="form-select form-select-sm"><option value="">全部业务类型</option>
+      <?php foreach($business_types as $code=>$name): ?><option value="<?=$code?>" <?=($filter['business_type']??'')==$code?'selected':''?>><?=$name?></option><?php endforeach; ?></select></div>
       <div class="col-6"><label class="form-label small text-muted mb-1" for="fDirection">收付方向</label><select name="direction" id="fDirection" class="form-select form-select-sm"><option value="">全部方向</option>
       <option value="sales" <?=($filter['direction']??'')=='sales'?'selected':''?>>销售（我方收款）</option>
       <option value="purchase" <?=($filter['direction']??'')=='purchase'?'selected':''?>>采购（我方付款）</option></select></div>
       <div class="col-6"><label class="form-label small text-muted mb-1" for="fTradeAttr">合同性质</label><select name="trade_attr" id="fTradeAttr" class="form-select form-select-sm"><option value="">全部性质</option>
       <option value="1" <?=($filter['trade_attr']??'')=='1'?'selected':''?>>交易合同</option>
       <option value="0" <?=($filter['trade_attr']??'')=='0'?'selected':''?>>非交易合同</option></select></div>
-      <div class="col-6"><label class="form-label small text-muted mb-1" for="fFramework">合同类型</label><select name="framework" id="fFramework" class="form-select form-select-sm"><option value="">全部类型</option>
-      <option value="1" <?=($filter['framework']??'')==='1'?'selected':''?>>框架合同</option>
-      <option value="2" <?=($filter['framework']??'')==='2'?'selected':''?>>执行订单</option></select></div>
       <div class="col-12"><label class="form-label small text-muted mb-1" for="fProjectId">关联项目</label><select name="project_id" id="fProjectId" class="form-select form-select-sm"><option value="">全部项目</option>
       <?php foreach(($projects??[]) as $__p): ?><option value="<?=$__p['id']?>" <?=(string)($filter['project_id']??'')===(string)$__p['id']?'selected':''?>><?=htmlspecialchars($__p['name'])?></option><?php endforeach; ?></select></div>
       <div class="col-6"><label class="form-label small text-muted mb-1" for="fAmountMin">最低金额</label><input type="number" name="amount_min" id="fAmountMin" class="form-control form-control-sm" placeholder="0.00" step="0.01" value="<?=htmlspecialchars($filter['amount_min']??'')?>"></div>
@@ -130,7 +127,7 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
 <tr><td colspan="11" style="padding:0 12px">
 <?php for($__i=0;$__i<5;$__i++): ?><div class="sk-row"><div class="sk sk-w1"></div><div class="sk sk-w2"></div><div class="sk sk-w3"></div><div class="sk sk-w4"></div><div class="sk sk-w5"></div><div class="sk sk-w6"></div></div><?php endfor; ?>
 </td></tr></tbody></table></div><div class="card-footer bg-white" id="pagination"></div></div>
-<script>window._categories=<?=json_encode($categories,JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._canCreateContract=<?=!empty($can_create_contract)?'true':'false'?>;window._contractOwners=<?=json_encode($owners ?? [],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;</script>
+<script>window._businessTypes=<?=json_encode($business_types,JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._canCreateContract=<?=!empty($can_create_contract)?'true':'false'?>;window._contractOwners=<?=json_encode($owners ?? [],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;</script>
 <script src="<?=asset_url('js/contract.js')?>"></script>
 <script src="<?=asset_url('js/search-picker.js')?>"></script>
 <style>

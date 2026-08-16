@@ -1,0 +1,52 @@
+name: Quality Gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: contract_dingtalk
+          MYSQL_ROOT_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptest_password"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      APP_DEBUG: 'false'
+      DB_TYPE: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: contract_dingtalk
+      DB_USER: root
+      DB_PASS: test_password
+      DINGTALK_MOCK_MODE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci
+      - name: Initialize MySQL schema
+        run: php database/init_mysql.php
+      - name: Verify MySQL and runtime
+        run: php think system:check --basic
+      - name: Run quality gates
+        run: bash scripts/test.sh && for gate in scripts/check_schema_parity.sh scripts/check_db_comments.sh scripts/check_view_globals.sh scripts/check_frontend.sh scripts/check_dead_entry.sh; do bash "$gate"; done
+      - name: Audit PHP dependencies
+        run: composer audit --locked
+      - name: Audit JavaScript dependencies
+        run: npm audit --audit-level=high

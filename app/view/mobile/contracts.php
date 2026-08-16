@@ -2,6 +2,7 @@
 // 移动端共享布局（Phase 1 重构 1.7）：头部与尾部由 _head.php / _foot.php 统一输出
 $title = '合同';   // 页面标题，自动追加「 · 合同管理」
 $tab = 'contract';     // 底部导航高亮：home/contract/customer/todo
+$show_add_tab = !empty($can_create_contract); $render_add_menu_here = false;
 include __DIR__ . '/_head.php';
 ?>
 
@@ -78,10 +79,6 @@ include __DIR__ . '/_head.php';
   <?php endif; ?>
 </div>
 
-<?php if(!empty($can_create_contract)): ?>
-<a href="/m/contract/create" class="m-fab" aria-label="新建合同"><i class="bi bi-plus-lg"></i></a>
-<?php endif; ?>
-
 <!-- 高级筛选底部抽屉（Phase 2.2）：复用 mobile.css 的 .m-sheet-mask / .m-sheet 体系（遮罩包面板，.show 控制滑入） -->
 <div class="m-sheet-mask" id="filterMask">
   <div class="m-sheet" id="filterSheet">
@@ -109,12 +106,12 @@ include __DIR__ . '/_head.php';
           <a href="javascript:;" class="m-chip m-dir-chip" data-dir="purchase">采购（我方付款）</a>
         </div>
       </div>
-      <!-- 合同类别 -->
+      <!-- 业务类型 -->
       <div class="m-field">
-        <label class="m-field-label" for="f_category">合同类别</label>
-        <select id="f_category" class="m-select">
-          <option value="">全部类别</option>
-          <?php foreach($categories as $code=>$name): ?>
+        <label class="m-field-label" for="f_business_type">业务类型</label>
+        <select id="f_business_type" class="m-select">
+          <option value="">全部业务类型</option>
+          <?php foreach($business_types as $code=>$name): ?>
           <option value="<?=htmlspecialchars($code)?>"><?=htmlspecialchars($name)?></option>
           <?php endforeach; ?>
         </select>
@@ -126,15 +123,6 @@ include __DIR__ . '/_head.php';
           <option value="">全部性质</option>
           <option value="1">交易合同</option>
           <option value="0">非交易合同</option>
-        </select>
-      </div>
-      <!-- 合同类型 -->
-      <div class="m-field">
-        <label class="m-field-label" for="f_framework">合同类型</label>
-        <select id="f_framework" class="m-select">
-          <option value="">全部类型</option>
-          <option value="1">框架合同</option>
-          <option value="2">执行订单</option>
         </select>
       </div>
       <!-- 签约主体 -->
@@ -189,7 +177,7 @@ window._statusBadge = <?=json_encode($statusBadge, JSON_UNESCAPED_UNICODE|JSON_H
 window._filter = <?=json_encode($filter, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 // v2.40.1：字典供已选标签文本映射（类别/签约主体/归属人）
 window._filterDict = <?=json_encode([
-    'categories' => $categories,
+    'business_types' => $business_types,
     'companies'  => array_map(fn($co) => ['id' => intval($co['id']), 'name' => (string)($co['name'] ?? '')], $companies),
     'owners'     => array_map(fn($u) => ['id' => intval($u['id']), 'name' => (string)($u['name'] ?? '')], $owners),
 ], JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
@@ -288,9 +276,8 @@ window._filterDict = <?=json_encode([
     setDir(filter.direction || '');
     syncStatusSelect();
     syncSearchInputs();
-    document.getElementById('f_category').value = filter.category || '';
+    document.getElementById('f_business_type').value = filter.business_type || '';
     document.getElementById('f_trade').value   = (filter.trade_attr != null) ? String(filter.trade_attr) : '';
-    document.getElementById('f_framework').value = filter.framework || '';
     document.getElementById('f_company').value = (filter.our_company_id != null) ? String(filter.our_company_id) : '';
     document.getElementById('f_amt_min').value = filter.amount_min || '';
     document.getElementById('f_amt_max').value = filter.amount_max || '';
@@ -303,9 +290,8 @@ window._filterDict = <?=json_encode([
     var st = document.getElementById('f_status').value;
     if(st) filter.status = st;
     else if(HIGH_STATUS.indexOf(filter.status || '') < 0) delete filter.status;
-    filter.category       = document.getElementById('f_category').value;
+    filter.business_type  = document.getElementById('f_business_type').value;
     filter.trade_attr     = document.getElementById('f_trade').value;
-    filter.framework      = document.getElementById('f_framework').value;
     filter.our_company_id = document.getElementById('f_company').value;
     // v2.40.1：归属人从搜索式选择器的选中态取值；输入框被清空/改动时视为未选择（默认全部）
     var ownerInputVal = document.getElementById('f_owner').value.trim();
@@ -329,9 +315,8 @@ window._filterDict = <?=json_encode([
     switch(k){
       case 'direction': return v === 'sales' ? '方向:销售' : (v === 'purchase' ? '方向:采购' : v);
       case 'status':    return '状态:' + ((window._status && window._status[v]) ? window._status[v] : v);
-      case 'category':  return '类别:' + ((d.categories && d.categories[v]) ? d.categories[v] : v);
+      case 'business_type': return '业务类型:' + ((d.business_types && d.business_types[v]) ? d.business_types[v] : v);
       case 'trade_attr':return v === '1' ? '性质:交易' : (v === '0' ? '性质:非交易' : v);
-      case 'framework': return v === '1' ? '类型:框架' : (v === '2' ? '类型:执行订单' : v);
       case 'our_company_id': { var co = (d.companies || []).find(function(x){ return String(x.id) === String(v); }); return '主体:' + (co ? co.name : v); }
       case 'owner_id':  { var u = (d.owners || []).find(function(x){ return String(x.id) === String(v); }); return '归属:' + (u ? u.name : v); }
       case 'party_name':return '相对方:' + v;

@@ -1,0 +1,6 @@
+<?php $title='全局搜索';$menu_active='search';include __DIR__.'/../layout/header.php'; ?>
+<h4 class="mb-3"><i class="bi bi-search"></i> 全局搜索</h4>
+<form class="d-flex gap-2 mb-4" method="get"><input class="form-control" name="q" minlength="2" required value="<?=htmlspecialchars($keyword)?>" placeholder="搜索客户、联系人、合同、项目或供应商"><button class="btn btn-primary text-nowrap">搜索</button></form>
+<?php if($error): ?><div class="alert alert-warning"><?=htmlspecialchars($error)?></div><?php elseif($keyword!=='' && empty($result['total'])): ?><div class="text-center text-muted py-5">未找到有权查看的结果</div><?php else: ?>
+<?php foreach($result['groups'] as $group): if(empty($group['items']))continue; ?><div class="card stat-card mb-3"><div class="card-header bg-white"><strong><?=htmlspecialchars($group['label'])?></strong> <span class="text-muted small"><?=count($group['items'])?> 项</span></div><div class="list-group list-group-flush"><?php foreach($group['items'] as $item): ?><a class="list-group-item list-group-item-action" href="<?=htmlspecialchars($item['url'])?>"><div class="fw-semibold"><?=htmlspecialchars($item['label'])?></div><small class="text-muted"><?=htmlspecialchars($item['meta'])?></small></a><?php endforeach; ?></div></div><?php endforeach; endif; ?>
+<?php include __DIR__.'/../layout/footer.php'; ?>

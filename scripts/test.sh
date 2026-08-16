@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 运行 PHPUnit 测试基线（P1-1）
+# 运行 PHP + JavaScript 测试基线
 # 优先使用项目根 phpunit.phar；其次 vendor/bin/phpunit（composer require-dev 安装）。
 set -e
 cd "$(dirname "$0")/.."
@@ -18,3 +18,15 @@ fi
 
 echo ">>> 使用：$PHPUNIT"
 $PHPUNIT --configuration phpunit.xml.dist
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "未找到 Node.js，无法运行 JavaScript 测试。"
+  exit 1
+fi
+if [ ! -d node_modules/jsdom ]; then
+  echo "未安装 JavaScript 测试依赖，请先执行 npm ci。"
+  exit 1
+fi
+
+echo ">>> JavaScript tests"
+npm test

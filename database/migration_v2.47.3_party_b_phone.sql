@@ -14,4 +14,4 @@
 -- 与三脚本（init_mysql.php/init_sqlite.php/init.sql）同步：均含 party_b_phone 列
 -- ============================================================================
 
-ALTER TABLE `contract` ADD COLUMN `party_b_phone` VARCHAR(32) DEFAULT '' COMMENT '乙方电话' AFTER `party_b_contact`;
+ALTER TABLE `contract` ADD COLUMN `party_b_phone` VARCHAR(32) DEFAULT '' COMMENT '乙方电话' AFTER `party_b_contact`; -- 乙方电话(v2.47.3：联系人/电话拆分填写)

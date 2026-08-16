@@ -109,8 +109,6 @@ a { color: inherit; }
 /* 详情页：底部含操作栏(m-actionbar) + 全局 Tab，需额外留白
    2026-08-03 方案：状态动作收进动作面板后操作栏仅单行（~60px），留白 76px 恢复 */
 .m-page.detail { padding-bottom: calc(var(--m-tabbar-h) + 76px + var(--safe-bottom)); }
-/* 含底部提交栏的页面（合同新建/编辑），为 m-submitbar 预留空间避免遮挡上传区 */
-.m-page.has-submitbar { padding-bottom: calc(var(--m-tabbar-h) + var(--safe-bottom) + 16px + 72px); }
 
 /* ===== 卡片 ===== */
 .m-card {
@@ -335,6 +333,22 @@ a { color: inherit; }
 .m-sheet-item:active { background: var(--m-bg); }
 .m-sheet-item-danger { color: var(--m-danger); }
 
+/* ===== 列表选择弹层（v2.51.4，发票申请复用新建合同主体选择视觉） =====
+   与 contract_form.php 内联的「本公司主体选择器」同款：底部弹层 + 标题 + 列表项 + 取消。
+   专用类名 .m-pick-*，避免与上方动作面板 .m-sheet-item 样式冲突。 */
+.m-pick-mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:900;align-items:flex-end}
+.m-pick-mask.show{display:flex}
+.m-pick-sheet{width:100%;background:#fff;border-radius:16px 16px 0 0;padding:0 0 12px;max-height:70vh;overflow:auto;animation:m-sheet-up .2s ease}
+.m-pick-hd{font-size:15px;font-weight:600;text-align:center;padding:14px;color:#333;position:sticky;top:0;background:#fff}
+.m-pick-item{display:flex;align-items:center;gap:8px;padding:14px 18px;font-size:15px;border-top:1px solid #f0f0f0;color:#333;cursor:pointer}
+.m-pick-item:active{background:#f5f7fa}
+.m-pick-item .m-pick-def{margin-left:auto;font-size:11px;color:#888;background:#f0f0f0;border-radius:4px;padding:2px 6px}
+.m-pick-cancel{margin:10px 18px 0;width:calc(100% - 36px);padding:12px;border:none;background:#f0f0f0;border-radius:10px;font-size:15px;color:#333;cursor:pointer}
+/* 选择展示框（主体/下拉统一）：与 contract_form .m-mine 同款 */
+.m-pick-box{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border:1px solid #3b82f6;background:#e7f1ff;color:#2563eb;border-radius:8px;font-size:14px;font-weight:500}
+.m-pick-box .m-pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.m-pick-box .m-pick-btn{background:#fff;border:1px solid #c9dcf7;color:#2563eb;border-radius:6px;padding:4px 12px;font-size:13px;flex-shrink:0}
+
 /* ===== 大按钮 ===== */
 .m-btn {
   flex: 1;
@@ -432,6 +446,15 @@ a { color: inherit; }
 }
 .m-tabbar a.active { color: var(--m-brand); }
 .m-tabbar a i { font-size: 21px; }
+.m-tabbar-add {
+  flex: 1; border: 0; background: transparent; color: var(--m-brand);
+  display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+}
+.m-tabbar-add i {
+  width: 40px; height: 40px; border-radius: 50%; background: var(--m-brand);
+  color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px;
+  box-shadow: 0 2px 8px rgba(11,94,215,.3);
+}
 
 /* ===== 空态 ===== */
 .m-empty {
@@ -552,6 +575,40 @@ a { color: inherit; }
 
 /* ===== 用户选择器（m-sheet 内用户列表）——审批转交 / 客户转移共用（2026-08-03 抽取自 approval_detail） ===== */
 .m-sheet { max-height: 82vh; overflow: auto; }
+/* 长文本时避免 WebView 对带 transform 的整块底部面板做低清合成。 */
+#qFollowActMask .m-sheet {
+  max-height: calc(100vh - var(--safe-bottom) - 12px);
+  overflow-y: auto;
+  transform: none;
+  transition: none;
+  -webkit-backface-visibility: visible;
+  backface-visibility: visible;
+}
+#actSheetMask .m-sheet {
+  max-height: calc(100vh - var(--safe-bottom) - 12px);
+  overflow-y: auto;
+  transform: none;
+  transition: none;
+  -webkit-backface-visibility: visible;
+  backface-visibility: visible;
+}
+#qFollowActMask .m-phrase-row,
+#actSheetMask .m-phrase-row {
+  display: none;
+}
+#actSheetMask .m-input,
+#qFollowActMask .m-input {
+  min-height: 84px;
+  max-height: 180px;
+  resize: vertical;
+  line-height: 1.6;
+}
+#qFollowActMask .m-input {
+  min-height: 84px;
+  max-height: 180px;
+  resize: vertical;
+  line-height: 1.6;
+}
 .m-user-list { max-height: 38vh; overflow: auto; -webkit-overflow-scrolling: touch; margin: 0 0 14px; border: 1px solid var(--m-line); border-radius: 12px; }
 .m-user-opt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--m-line); font-size: 15px; cursor: pointer; }
 .m-user-opt:last-child { border-bottom: none; }
@@ -561,6 +618,31 @@ a { color: inherit; }
 /* ===== 移动表单（新建/编辑页） ===== */
 .m-form { padding: var(--m-gap); }
 .m-field { margin-bottom: 14px; }
+/* 表单分区标题（v2.51.4：发票申请客户信息/金额区与基本信息区分隔；系统预置字段渲染时插入） */
+.m-field-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 14px;
+  padding-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--m-text-2);
+}
+.m-field-section:first-child { margin-top: 0; }
+.m-field-section::before {
+  content: '';
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--m-brand);
+}
+.m-field-section::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--m-line);
+}
 .m-field > label {
   display: block;
   font-size: 14px;
@@ -594,20 +676,6 @@ a { color: inherit; }
 /* 开关（是否本公司等） */
 .m-switch { display: flex; align-items: center; gap: 10px; }
 .m-switch input { width: 20px; height: 20px; accent-color: var(--m-brand); }
-
-/* 底部固定提交栏（表单页：含全局 Tab 时一并留白） */
-.m-submitbar {
-  position: fixed;
-  left: 0; right: 0;
-  bottom: calc(var(--m-tabbar-h) + var(--safe-bottom));
-  z-index: 60;
-  display: flex;             /* v2.44.4：补 flex——子按钮 .m-btn flex:1 撑满全宽（此前缺 display:flex 导致按钮收缩为居左窄块） */
-  gap: 12px;
-  padding: 10px var(--m-pad) calc(10px + var(--safe-bottom));
-  background: #fff;
-  border-top: 1px solid var(--m-line);
-  box-shadow: 0 -2px 10px rgba(0,0,0,.04);
-}
 
 /* ===== 悬浮按钮（FAB） ===== */
 .m-fab {
@@ -747,7 +815,7 @@ a { color: inherit; }
   border-radius: var(--m-radius-sm);
   margin: 14px 0;
   background: #fff;
-  overflow: hidden;
+  overflow: visible;   /* v2.51.4：原 hidden 会裁剪「关联项目」搜索下拉（absolute 浮层超出卡片下边缘被截断）——body 有 padding 不贴边，圆角无影响 */
 }
 .m-fold summary {
   display: flex;
@@ -1067,8 +1135,9 @@ a { color: inherit; }
 /* v2.38.11 修复：移动端未引 Bootstrap，_foot.php 的 text-center 类无定义 → 版权信息不居中 */
 .m-footer-copyright { text-align: center; }
 
-/* v2.38.11：客户生命周期漏斗阶段选中态（点击筛选，与 lcChips 联动） */
-.lc-funnel-stage.active { background: var(--m-brand-light); }
+/* v2.51.5：标签左右滑动时隐藏滚动条（保留滑动能力，不显示下方线条） */
+.m-hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.m-hide-scrollbar::-webkit-scrollbar { display: none; }
 
 /* ===== Bootstrap 工具类子集（v2.42.0 本地化：移动端不再加载完整 bootstrap.min.css，
    PC/工作台等仍用 Bootstrap 的页面由 app.css/header.php 覆盖；此处补齐移动端用到的工具类语义） ===== */
@@ -1099,7 +1168,7 @@ a { color: inherit; }
 .m-act-ic-meeting{background:#7c4dff}
 .m-act-ic-wechat{background:#07a050}
 .m-act-bd{flex:1;min-width:0}
-.m-act-txt{font-size:14px;color:var(--m-text);word-break:break-all}
+.m-act-txt{font-size:14px;color:var(--m-text);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .m-act-meta{font-size:12px;color:var(--m-text-3);margin-top:2px}
 .m-act-next{display:inline-block;margin-left:6px;font-size:12px;color:#d4860b;background:#fff4e5;border-radius:999px;padding:0 8px}
 /* 快捷录入弹层：方式图标按钮 + 快捷短语/选时 chips */
@@ -1122,4 +1191,3 @@ a { color: inherit; }
    不再遮挡添加共享/集团归属/记录跟进等弹层底部按钮（v2.47.8 后修复） */
 .m-follow-dock{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:90}
 .m-follow-dock .m-btn{width:100%;box-shadow:0 4px 16px rgba(11,108,246,.25)}
-

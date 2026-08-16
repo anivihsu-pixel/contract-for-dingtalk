@@ -13,7 +13,8 @@
     'APPROVAL_APPROVED': '已通过',
     'APPROVAL_TRANSFERRED': '已转交',
     'APPROVAL_CC': '抄送',
-    'APPROVAL_OVERDUE': '超时'
+    'APPROVAL_OVERDUE': '超时',
+    'CONTRACT_EXECUTION_CC': '执行抄送'
   };
   var TAG_ICON = {
     'APPROVAL_SUBMITTED': 'bi-clipboard-check',
@@ -21,7 +22,8 @@
     'APPROVAL_APPROVED': 'bi-check-circle',
     'APPROVAL_TRANSFERRED': 'bi-forward',
     'APPROVAL_CC': 'bi-people',
-    'APPROVAL_OVERDUE': 'bi-exclamation-triangle'
+    'APPROVAL_OVERDUE': 'bi-exclamation-triangle',
+    'CONTRACT_EXECUTION_CC': 'bi-bell'
   };
 
   function fmtTime(t) {

@@ -27,7 +27,7 @@ include __DIR__ . '/_head.php';
     <?php else: foreach($list as $p):
         $st = $p['status'] ?? 'ACTIVE';
         $stTxt = $statusDict[$st] ?? $st;
-        $stCls = $st === 'ARCHIVED' ? 'm-tag-muted' : ($st === 'DONE' ? 'm-tag-ok' : ($st === 'TERMINATED' ? 'm-tag-danger' : 'm-tag-info'));
+        $stCls = $st === 'ARCHIVED' ? 'm-tag-muted' : ($st === 'DONE' ? 'm-tag-ok' : 'm-tag-info');
     ?>
       <a class="m-card" href="/m/project/<?=$p['id']?>" style="display:block">
         <div class="m-card-bd" style="padding-top:14px;padding-bottom:14px">
@@ -66,7 +66,7 @@ window._statusDict = <?=json_encode($statusDict, JSON_UNESCAPED_UNICODE|JSON_HEX
   
   
   function stTxt(s){ return (window._statusDict && window._statusDict[s]!=null)? window._statusDict[s] : s; }
-  function stCls(s){ return s==='ARCHIVED' ? 'm-tag-muted' : (s==='DONE' ? 'm-tag-ok' : (s==='TERMINATED' ? 'm-tag-danger' : 'm-tag-info')); }
+  function stCls(s){ return s==='ARCHIVED' ? 'm-tag-muted' : (s==='DONE' ? 'm-tag-ok' : 'm-tag-info'); }
   function cardHtml(p){
     return '<a class="m-card" href="/m/project/'+p.id+'" style="display:block"><div class="m-card-bd" style="padding-top:14px;padding-bottom:14px">'
       + '<div class="m-row" style="border-bottom:none;padding:0"><div class="pic"><i class="bi bi-folder2"></i></div>'

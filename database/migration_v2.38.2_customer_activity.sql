@@ -1,12 +1,11 @@
 -- migration_v2.38.2_customer_activity.sql
--- 客户跟进记录表：支撑公海自动回落规则（v2.38.2）
+-- 客户跟进记录表（v2.38.2）
 -- 说明：
 --   - 记录客户跟进活动（电话/拜访/邮件/备注等）；
---   - 配合 claim_record.created_at 计算「认领后 N 天无跟进 → 自动释放回公海」；
---   - 认领/释放/转移操作自动写入活动记录，无需手动重复。
+--   - 转移操作自动写入活动记录。
 
 CREATE TABLE IF NOT EXISTS `customer_activity` (
-    -- 表注释：客户跟进记录——支撑公海自动回落规则（认领后 N 天无跟进自动释放）
+    -- 表注释：客户跟进记录
     `id` BIGINT AUTO_INCREMENT COMMENT '主键ID',    -- 主键ID
     `customer_id` BIGINT NOT NULL DEFAULT 0 COMMENT '客户ID',    -- 客户ID
     `user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '跟进人用户ID',    -- 跟进人用户ID

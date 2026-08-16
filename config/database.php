@@ -23,7 +23,7 @@ return [
         'mysql' => [
             'type'            => 'mysql',
             'hostname'        => env('DB_HOST', '127.0.0.1'),
-            'port'            => env('DB_PORT', '3306'),
+            'hostport'        => env('DB_PORT', '3306'),
             'database'        => env('DB_NAME', 'contract_dingtalk'),
             'username'        => env('DB_USER', 'root'),
             // P2：不内置默认口令——DB 口令必须在部署环境的 .env 显式配置（DB_PASS），

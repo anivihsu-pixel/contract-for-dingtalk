@@ -31,9 +31,8 @@ class ContractController extends BaseController
         $filter = [
             'keyword'       => $this->getParam('keyword', ''),
             'status'        => $this->getParam('status', ''),
-            'category'      => $this->getParam('category', ''),
+            'business_type' => $this->getParam('business_type', ''),
             'direction'     => $this->getParam('direction', ''),
-            'framework'     => $this->getParam('framework', ''),
             'date_start'    => $this->getParam('date_start', ''),
             'date_end'      => $this->getParam('date_end', ''),
             // REV-29：高级筛选 — 金额区间 / 相对方 / 签约主体 / 归属人
@@ -76,7 +75,9 @@ class ContractController extends BaseController
         View::assign('contracts', $result['list']);
         View::assign('total', $result['total']);
         View::assign('filter', $filter);
-        View::assign('categories', contract_categories());
+        View::assign('business_types', dict_enabled('business_type'));
+        // 兼容旧版/缓存模板中仍可能引用的变量名，避免合同列表页因历史编译缓存报「Undefined variable $categories」。
+        View::assign('categories', dict_enabled('business_type'));
         // P1-1（deep review）：状态筛选补全 10 态 — 与状态机单一真源 ContractLogic::STATUS_LABELS 同源渲染，
         // 避免视图硬编码 4 态漏掉 REJECTED/COMPLETED/EXPIRED/ARCHIVED 等。
         View::assign('status_labels', ContractLogic::STATUS_LABELS);
@@ -124,10 +125,7 @@ class ContractController extends BaseController
         }
 
         View::assign('contract', $contract);
-        View::assign('categories', contract_categories());
-        // REV-34：关联框架合同下拉按数据权限收敛（非管理员仅见本人/本部门范围），并加安全上限避免全表加载
-        View::assign('parent_contracts', ContractLogic::getFrameworkOptions(500));
-
+        View::assign('business_types', dict_options('business_type', $contract['business_type'] ?? ''));
         // 本公司主体（默认带出，用于新建合同自动识别签约主体）
         $companies = CompanyLogic::getListWithDefault();
         $defaultCompanyId = CompanyLogic::getDefaultId();
@@ -149,6 +147,8 @@ class ContractController extends BaseController
     /** AJAX: 保存合同 */
     public function save()
     {
+        $idemKey=(string)$this->getPost('idempotency_key','');
+        try{$cached=\app\common\service\IdempotencyService::cached($this->userId,'contract.save',$idemKey);if($cached)return json_success($cached,'保存成功');}catch(\RuntimeException $e){return json_error($e->getMessage());}
         $id = (int)$this->getPost('id', 0);
         // 新建需 contract:create，编辑需 contract:edit
         $this->requirePermission($id ? 'contract:edit' : 'contract:create');
@@ -191,7 +191,7 @@ class ContractController extends BaseController
 
         $data = [
             'title'               => $this->getPost('title', ''),
-            'category'            => $this->getPost('category', 'SERVICE'),
+            'business_type'       => $this->getPost('business_type', ''),
             'direction'           => $direction,
             'trade_attr'          => $tradeAttr,
             'project_id'          => (int)$this->getPost('project_id', 0),
@@ -220,7 +220,7 @@ class ContractController extends BaseController
             // 防止同部门同事编辑他人合同后归属被改写、原 owner 丢失访问（归属变更走显式"转移"流程）
             'owner_id'            => $this->userId,
             'dept_id'             => $this->user['dept_id'] ?? 0,
-            'parent_id'           => (int)$this->getPost('parent_id', 0),
+            'parent_id'           => 0,
             'supplier_id'         => (int)$this->getPost('supplier_id', 0),
         ];
         // v2.44.1 P1：更新分支移除归属字段——编辑不改写 owner_id/dept_id
@@ -232,10 +232,13 @@ class ContractController extends BaseController
         if ($tradeAttr === 0) {
             $data['amount'] = 0.00;
         }
+        if (!array_key_exists($data['business_type'], dict_enabled('business_type'))) {
+            return json_error('请选择有效的业务类型');
+        }
 
-        // v2.44.1 P1：外键数据范围校验——project/party/supplier/parent 直接来自 POST，
+        // v2.44.1 P1：外键数据范围校验——project/party/supplier 直接来自 POST，
         // 若不校验可见性可把本人合同挂到他人项目/客户名下（间接读他人数据 + 污染对方项目聚合）。
-        // 仅当外键非 0 时校验；公海客户（owner_id=0）仍允许（合同关联客户不要求归属本人）。
+        // 仅当外键非 0 时校验。
         foreach (['project_id' => 'project', 'party_a_customer_id' => 'customer', 'party_a_supplier_id' => 'supplier', 'party_b_customer_id' => 'customer', 'supplier_id' => 'supplier'] as $fk => $tbl) {
             $fkVal = (int)($data[$fk] ?? 0);
             if ($fkVal <= 0) {
@@ -245,7 +248,7 @@ class ContractController extends BaseController
             if (!$row) {
                 return json_error('关联的' . ($tbl === 'project' ? '项目' : ($tbl === 'customer' ? '客户' : '供应商')) . '不存在或已被删除');
             }
-            // v2.45.0：客户统一访问判定——公海 / 数据范围 / 显式共享(用户级/部门级) / 集团祖先可见
+            // v2.45.0：客户统一访问判定——数据范围 / 显式共享(用户级/部门级) / 集团祖先可见
             // 解决「客户归 A 但 B 也要关联签合同」：共享放行后 B 可关联 A 的客户，不再被迫手输快照
             if ($tbl === 'customer') {
                 if (!\app\common\logic\CustomerLogic::canAccessCustomer($this->userId, $row, (int)($this->user['dept_id'] ?? 0))) {
@@ -253,23 +256,12 @@ class ContractController extends BaseController
                 }
                 continue;
             }
-            // 公海客户/公海供应商（owner_id=0）放行；其余校验数据范围
+            // 未分配（owner_id=0）的项目/供应商放行；其余校验数据范围
             if ((int)($row['owner_id'] ?? 0) !== 0
                 && !\app\common\logic\AuthLogic::canAccessRecord((int)($row['owner_id'] ?? 0), $row['dept_id'] ?? null)) {
                 return json_error('无权关联该' . ($tbl === 'project' ? '项目' : '供应商'), 403);
             }
         }
-        // parent_id：额外校验目标确为框架合同（parent_id=0）且当前用户可访问
-        if (!empty($data['parent_id'])) {
-            $parent = Db::name('contract')->where('id', (int)$data['parent_id'])->where('is_deleted', 0)->find();
-            if (!$parent || (int)($parent['parent_id'] ?? 0) !== 0) {
-                return json_error('关联的框架合同不存在或不是框架合同');
-            }
-            if (!\app\common\logic\AuthLogic::canAccessRecord((int)($parent['owner_id'] ?? 0), $parent['dept_id'] ?? null)) {
-                return json_error('无权关联该框架合同', 403);
-            }
-        }
-
         // P1-C：结构化字段（由模板 fields_schema 驱动，前端收集为 JSON 提交）
         $rawCustom = trim((string)$this->getPost('custom_fields', ''));
         if ($rawCustom === '' || $rawCustom === 'null') {
@@ -409,7 +401,8 @@ class ContractController extends BaseController
             foreach ($lifecycleCustIds as $cid) {
                 CustomerLogic::promoteToActive($cid);
             }
-            return json_success(['id' => $id], '保存成功');
+        $result=['id'=>$id];\app\common\service\IdempotencyService::remember($this->userId,'contract.save',$idemKey,$result);
+        return json_success($result, '保存成功');
         } catch (\Throwable $e) {
             // REV-14：异常信息写入日志，对外仅返回友好提示，避免 SQL/路径等敏感信息泄露
             Log::error('合同保存失败', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -420,10 +413,25 @@ class ContractController extends BaseController
     /** 合同详情 */
     public function detail($id)
     {
-        $this->requirePermission('contract:view');
+        $approvalId = (int)$this->getParam('approval_id', 0);
         $contract = ContractLogic::accessible((int)$id);
+        $approvalAccess = false;
+        // 审批参与人可能没有合同模块权限或不在合同数据范围内，但审批详情已明确授予其知悉该合同的权限。
+        // 「查看完整合同」携带审批实例上下文，仅对同一审批参与人开放，避免借参数绕过合同权限。
+        if (!$contract && $approvalId > 0) {
+            $approval = \app\common\logic\ApprovalQueryService::getDetail($approvalId);
+            if ($approval && (int)($approval['contract_id'] ?? 0) === (int)$id
+                && \app\common\logic\ApprovalQueryService::isParticipant($approvalId, $this->userId)) {
+                $contract = ContractLogic::getById((int)$id);
+                $approvalAccess = (bool)$contract;
+            }
+        }
         if (!$contract) {
+            $this->requirePermission('contract:view');
             throw new \think\exception\HttpException(404, '合同不存在或无权限查看');
+        }
+        if (!$approvalAccess) {
+            $this->requirePermission('contract:view');
         }
 
         // 关联审批记录（CR-09：含已撤回/驳回实例及其节点意见，详情可查看完整历史）
@@ -486,8 +494,11 @@ class ContractController extends BaseController
         View::assign('can_renew', $this->hasPermission('contract:create'));
         // UX 门控：回款登记/确认/撤销/删除按钮按 payment:create 权限渲染（与后端 Payment 守卫、移动端 can_payment 同口径）
         View::assign('can_pay', $this->hasPermission('payment:create'));
+        View::assign('can_collection_follow', $this->hasPermission('customer:edit') && (($contract['direction'] ?? '') === 'sales'));
         // UX 门控：发票开票/红冲/作废/删除按钮按 invoice:create 权限渲染（与后端 Invoice 守卫同口径）
         View::assign('can_issue', $this->hasPermission('invoice:create'));
+        View::assign('execution_cc', Db::name('contract_execution_cc')->where('contract_id', (int)$id)
+            ->where('user_id', $this->userId)->find());
         // H6c：合同详情「申请开票」复用 InvoiceFormConfig 配置化表单（字段/联动/自定义由后台「发票表单」设计器统一维护，
         // 与独立入口 /invoice-apply 单源一致；开票主体默认合同主体，关联合同固定为当前合同）
         $invCompanies = \app\common\logic\CompanyLogic::getListWithDefault();
@@ -552,14 +563,34 @@ class ContractController extends BaseController
         return json_error('删除失败，当前状态不可删除');
     }
 
-    /** AJAX: 合同搜索（scope=framework 时仅返回框架合同，供「关联框架合同」搜索选择器使用） */
+    /** AJAX: 合同搜索（按当前用户数据权限返回可见合同）。 */
     public function search()
     {
         $this->requirePermission('contract:view');
         $keyword = $this->getParam('q', '');
-        $scope   = $this->getParam('scope', '');
-        $list = ContractLogic::search($keyword, $scope);
+        $list = ContractLogic::search($keyword);
         return json_success($list);
+    }
+
+    /** AJAX: 合同开票信息（v2.51.4 申请开票关联合同 → 自动带出乙方抬头/税号；前端仍可改选开票客户覆盖） */
+    public function invoiceInfo()
+    {
+        $this->requirePermission('invoice:apply');
+        $id = (int)$this->getParam('id', 0);
+        if ($id <= 0) {
+            return json_error('缺少合同 ID');
+        }
+        $contract = ContractLogic::accessible($id);
+        if (!$contract) {
+            return json_error('无权限或无此合同');
+        }
+        return json_success([
+            'id'                  => (int)$contract['id'],
+            'contract_no'         => (string)($contract['contract_no'] ?? ''),
+            'title'               => (string)($contract['title'] ?? ''),
+            'party_b_name'        => (string)($contract['party_b_name'] ?? ''),
+            'party_b_credit_code' => (string)($contract['party_b_credit_code'] ?? ''),
+        ]);
     }
 
     /** AJAX: 联合搜索客户+供应商（用于合同创建时选择甲乙方） */
@@ -598,7 +629,7 @@ class ContractController extends BaseController
             return json_error('合同不存在');
         }
         // P3 复审加固：草稿/驳回/审批中态不可手动改状态（须由提交/撤回/审批流推进），
-        // 防止同部门人员绕过审批自批（如 PENDING_APPROVAL→APPROVED、DRAFT→APPROVED）
+        // 防止同部门人员绕过审批直接推进合同状态（如 PENDING_APPROVAL→EXECUTING、DRAFT→EXECUTING）
         if (in_array($contract['status'], [
             ContractLogic::STATUS_DRAFT, ContractLogic::STATUS_REJECTED, ContractLogic::STATUS_PENDING_APPROVAL,
         ], true)) {
@@ -626,6 +657,19 @@ class ContractController extends BaseController
         return json_error('状态变更失败');
     }
 
+    public function acknowledgeExecution()
+    {
+        $id = (int)$this->getPost('id', 0);
+        $affected = Db::name('contract_execution_cc')->where('contract_id', $id)
+            ->where('user_id', $this->userId)->where('needs_ack', 1)->whereNull('acknowledged_at')
+            ->update(['acknowledged_at' => date('Y-m-d H:i:s')]);
+        if ($affected) {
+            \app\common\service\InternalNotify::markContractExecutionRead($this->userId, $id);
+            return json_success(null, '已确认知悉');
+        }
+        return json_error('无需确认或已确认');
+    }
+
     /**
      * 导出合同（CSV）
      * CR-42：原 exportExcel 实际输出 CSV，已重命名为 exportCsv；
@@ -639,8 +683,14 @@ class ContractController extends BaseController
         $status    = $this->getParam('status', '');
         $dateStart = $this->getParam('date_start', '');
         $dateEnd   = $this->getParam('date_end', '');
+        $includeSensitive = $this->getParam('sensitive','') === '1';
+        if ($includeSensitive) $this->requirePermission('export:sensitive');
+        $expectedCount=ContractLogic::countExportRows($status,$dateStart,$dateEnd);
+        if($expectedCount>500 && $this->getParam('confirmed','')!=='1') return json_error('本次将导出 '.$expectedCount.' 条数据，请二次确认',409,['count'=>$expectedCount,'requires_confirmation'=>true]);
 
-        $headers = ["合同编号", "标题", "分类", "状态", "金额", "甲方", "乙方", "生效日期", "到期日期", "创建日期"];
+        $headers = ["合同编号", "标题", "分类", "业务线", "状态", "金额", "甲方", "乙方"];
+        if ($includeSensitive) $headers[] = "乙方税号";
+        array_push($headers, "生效日期", "到期日期", "创建日期");
         $total   = 0;
 
         // REV-45：CSV 写入临时流（内存不足时自动落盘），最终流式吐出，内存峰值恒定
@@ -653,7 +703,7 @@ class ContractController extends BaseController
         $total = ContractLogic::eachExportRow($status, $dateStart, $dateEnd, function ($row) use ($fp) {
             // P2 公式注入中和：fputcsv 前对 = + - @ 开头值前置 '（export_safe_cell，common.php）
             fputcsv($fp, array_map('export_safe_cell', array_values($row)));
-        });
+        }, $includeSensitive);
         fclose($fp);
 
         $filename = $status === ContractLogic::STATUS_ARCHIVED
@@ -666,6 +716,8 @@ class ContractController extends BaseController
             'status'     => $status ?: 'ALL',
             'date_start' => $dateStart,
             'date_end'   => $dateEnd,
+            'data_scope' => $this->user['data_scope'] ?? 'SELF',
+            'sensitive_fields' => $includeSensitive ? ['party_b_credit_code'] : [],
         ]);
 
         return new StreamedFileResponse($tmp, 200, [
@@ -685,15 +737,21 @@ class ContractController extends BaseController
         $status    = $this->getParam('status', '');
         $dateStart = $this->getParam('date_start', '');
         $dateEnd   = $this->getParam('date_end', '');
+        $includeSensitive = $this->getParam('sensitive','') === '1';
+        if ($includeSensitive) $this->requirePermission('export:sensitive');
+        $expectedCount=ContractLogic::countExportRows($status,$dateStart,$dateEnd);
+        if($expectedCount>500 && $this->getParam('confirmed','')!=='1') return json_error('本次将导出 '.$expectedCount.' 条数据，请二次确认',409,['count'=>$expectedCount,'requires_confirmation'=>true]);
 
-        $headers = ["合同编号", "标题", "分类", "状态", "金额", "甲方", "乙方", "生效日期", "到期日期", "创建日期"];
+        $headers = ["合同编号", "标题", "分类", "业务线", "状态", "金额", "甲方", "乙方"];
+        if ($includeSensitive) $headers[] = "乙方税号";
+        array_push($headers, "生效日期", "到期日期", "创建日期");
         // P2-14【M-A4】流式导出：回调式生产者（chunk 边查边喂 sink），替代原「全量收集 $rows 数组」驻留，
         // 与 CSV 导出共用 eachExportRow 的查询/分页逻辑，避免重复实现
         $total = 0;
-        $producer = function (callable $sink) use ($status, $dateStart, $dateEnd, &$total) {
+        $producer = function (callable $sink) use ($status, $dateStart, $dateEnd, $includeSensitive, &$total) {
             $total = ContractLogic::eachExportRow($status, $dateStart, $dateEnd, function ($row) use ($sink) {
                 $sink(array_values($row));
-            });
+            }, $includeSensitive);
         };
 
         $filename = $status === 'ARCHIVED'
@@ -708,6 +766,8 @@ class ContractController extends BaseController
             'status'     => $status ?: 'ALL',
             'date_start' => $dateStart,
             'date_end'   => $dateEnd,
+            'data_scope' => $this->user['data_scope'] ?? 'SELF',
+            'sensitive_fields' => $includeSensitive ? ['party_b_credit_code'] : [],
         ]);
 
         return $resp;
@@ -950,7 +1010,7 @@ class ContractController extends BaseController
     /**
      * v2.38.3 合同续约（M11 重做）：真正生成续约草案
      * - 校验原合同状态（已签/执行中/已归档/已到期）方可续约
-     * - 复制核心字段经 ContractLogic::create 生成 DRAFT 草案（renewed_from=原合同、parent_id=原合同）
+     * - 复制核心字段经 ContractLogic::create 生成 DRAFT 草案，并记录续约来源
      * - 原合同标记 renewed_to 指向新草案，二者建立续约关联
      * - 返回新草案 id 与编辑链接，由前端跳转走正常「编辑→提交审批」流程
      */
@@ -959,7 +1019,7 @@ class ContractController extends BaseController
         $this->requirePermission('contract:create');
         $id = (int)$id;
         $contract = ContractLogic::getDetail($id);
-        if (!$contract || !in_array($contract['status'], [ContractLogic::STATUS_SIGNED, ContractLogic::STATUS_EXECUTING, ContractLogic::STATUS_ARCHIVED, ContractLogic::STATUS_EXPIRED])) {
+        if (!$contract || !in_array($contract['status'], [ContractLogic::STATUS_EXECUTING, ContractLogic::STATUS_ARCHIVED, ContractLogic::STATUS_EXPIRED])) {
             return json_error('当前合同状态不支持续约');
         }
         // 越权防护（全量审查 2026-08-01 发现）：续约会克隆原合同全部字段并覆写原合同 renewed_to，
@@ -1002,7 +1062,7 @@ class ContractController extends BaseController
             'project_id'          => (int)($contract['project_id'] ?? 0),
             'owner_id'            => $this->userId,
             'dept_id'             => $this->user['dept_id'] ?? 0,
-            'parent_id'           => $id,   // 继承原合同层级
+            'parent_id'           => 0,
             'renewed_from'        => $id,   // 续约来源标记
             'creator_id'          => $this->userId,
         ];

@@ -9,7 +9,6 @@ $pageStyle = <<<'CSS'
   .m-header{ background:linear-gradient(135deg,#0b5ed7,#3d8bfd); color:#fff; padding:16px 16px 20px; display:flex; align-items:flex-start; justify-content:space-between; }
   .m-header-left{ flex:1; min-width:0; }
   .m-header-bell{ position:relative; color:#fff; font-size:22px; padding:2px 0 0 8px; flex-shrink:0; text-decoration:none; }
-  .m-header-bell .bell-badge{ position:absolute; top:-4px; right:-10px; background:#ff4d4f; color:#fff; font-size:10px; font-weight:600; min-width:18px; height:18px; line-height:18px; border-radius:9px; text-align:center; padding:0 5px; border:2px solid #0b5ed7; }
   .m-header h1{ font-size:18px; font-weight:600; margin:0; }
   .m-header .sub{ font-size:12px; opacity:.85; margin-top:2px; }
   .m-card-hd{ padding:12px 14px; font-weight:600; font-size:15px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #f0f0f0; }
@@ -17,37 +16,32 @@ $pageStyle = <<<'CSS'
   .amt{ color:var(--m-danger); font-weight:600; }
   .amt.in{ color:var(--m-danger); } /* 应收=红 */
   .amt.out{ color:var(--m-success); } /* 应付=绿 */
-  .stat-row{ display:flex; gap:10px; padding:0 12px; }
-  .stat-box{ flex:1; background:#fff; border-radius:14px; padding:14px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-  .stat-box .n{ font-size:24px; font-weight:700; color:#0b5ed7; }
-  .stat-box .l{ font-size:12px; color:#8a9099; margin-top:2px; }
   .quick-grid{ display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .quick-grid::-webkit-scrollbar{ display:none; }
-  .quick-item{ flex:0 0 calc(25% - 6px); min-width:0; display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; color:#1f2329; text-decoration:none; }
+  .quick-item{ flex:0 0 calc(25% - 6px); min-width:0; display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; color:#1f2329; text-decoration:none; border-radius:10px; }
+  .quick-item:active{ background:#f2f7ff; }
   .quick-item i{ font-size:24px; color:var(--brand); }
   .quick-item span{ font-size:12px; color:#646a73; }
   /* v2.38.26：快捷操作溢出提示——右侧渐隐 + 标题「左右滑动」小字（仅当图标超过一屏时显示） */
-  #quick{ position:relative; }
+  #quick .m-card-bd{ padding-bottom:6px; }
   #quick .quick-tip{ font-size:11px; color:#8a9099; font-weight:400; display:none; align-items:center; gap:3px; }
   #quick.has-more .quick-tip{ display:inline-flex; }
-  #quick.has-more::after{ content:''; position:absolute; top:42px; right:0; bottom:0; width:26px; background:linear-gradient(to left, rgba(255,255,255,.95), rgba(255,255,255,0)); pointer-events:none; }
-  /* v2.40.0 P1-7：快捷操作下方分段式指示器——2 段小横线，第 1 段高亮=当前屏，提示右侧还有图标（一屏 4 个） */
   .quick-scrollbar{ display:none; justify-content:center; align-items:center; gap:4px; margin:4px 12px 10px; }
   #quick.has-more .quick-scrollbar{ display:flex; }
   .quick-scrollbar i{ display:block; width:12px; height:3px; border-radius:2px; background:#dde0e3; transition:background-color .2s; }
   .quick-scrollbar i.cur{ background:var(--brand); opacity:.6; }
   /* v2.40.1：新建 FAB 展开菜单——按钮本体复用 mobile.css .m-fab（与合同列表「新增」同款固定定位），
      仅补充展开遮罩/菜单/菜单项样式；展开态用 body.fab-open 驱动 */
-  .m-fab-mask{ position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; visibility:hidden; transition:opacity .2s; z-index:54; }
+  .m-fab-mask{ position:fixed; inset:0; background:rgba(15,23,42,.52); opacity:0; visibility:hidden; transition:opacity .2s; z-index:70; }
   .m-fab i{ transition:transform .2s; }
   body.fab-open .m-fab i{ transform:rotate(45deg); }
-  .m-fab-menu{ position:fixed; right:16px; bottom:calc(var(--m-tabbar-h) + var(--safe-bottom) + 80px); z-index:56; display:flex; flex-direction:column; gap:10px; align-items:flex-end; opacity:0; visibility:hidden; transform:translateY(8px); transition:opacity .2s, transform .2s; }
-  .m-fab-item{ display:flex; align-items:center; gap:8px; background:#fff; color:#1f2329; border-radius:22px; padding:10px 16px; font-size:14px; font-weight:500; white-space:nowrap; width:max-content; box-shadow:0 2px 10px rgba(0,0,0,.12); }
+  .m-fab-menu{ position:fixed; left:50%; bottom:calc(var(--m-tabbar-h) + var(--safe-bottom) + 12px); z-index:72; display:flex; gap:8px; align-items:center; justify-content:center; width:min(360px,calc(100vw - 32px)); padding:12px 10px; background:#fff; border-radius:18px; box-shadow:0 8px 28px rgba(0,0,0,.2); opacity:0; visibility:hidden; transform:translate(-50%,8px); transition:opacity .2s, transform .2s; }
+  .m-fab-item{ display:flex; flex:1; flex-direction:column; align-items:center; justify-content:center; gap:5px; background:#f7f9fc; color:#1f2329; border-radius:12px; padding:10px 4px; font-size:12px; white-space:nowrap; min-width:0; }
   .m-fab-item span{ white-space:nowrap; flex-shrink:0; }
-  .m-fab-item i{ display:block; flex-shrink:0; font-size:18px; color:var(--brand); }
+  .m-fab-item i{ display:block; flex-shrink:0; font-size:22px; color:var(--brand); }
   .m-fab-item:active{ background:#f2f3f5; }
   body.fab-open .m-fab-mask{ opacity:1; visibility:visible; }
-  body.fab-open .m-fab-menu{ opacity:1; visibility:visible; transform:translateY(0); }
+  body.fab-open .m-fab-menu{ opacity:1; visibility:visible; transform:translate(-50%,0); }
   .sug{ position:absolute; left:0; right:0; top:100%; background:#fff; border:1px solid #eee; border-radius:8px; max-height:210px; overflow:auto; z-index:30; box-shadow:0 4px 12px rgba(0,0,0,.08); display:none; }
   .sug div{ padding:9px 12px; font-size:13px; border-bottom:1px solid #f5f5f5; }
   .sug div:active{ background:#f2f7ff; }
@@ -61,21 +55,14 @@ include __DIR__ . '/_head.php';
     <h1>移动工作台</h1>
     <div class="sub"><?=htmlspecialchars($user['name'] ?? '我')?>，<?=date('n月j日')?> · 合同管理</div>
   </div>
-  <!-- 2026-08-05 去重：站内信并入待办中心 Tab3，铃铛直达 /m/remind?tab=notif -->
+  <!-- 2026-08-05 去重：站内信并入待办中心 Tab3，铃铛直达 /m/remind?tab=notif；
+       v2.51.3 移除铃铛角标：未读审批消息已在「今天要处理」卡片以「消息」徽章逐条展示，角标重复且与列表条数口径不一致 -->
   <a href="/m/remind?tab=notif" class="m-header-bell" title="待办中心">
     <i class="bi bi-bell"></i>
-    <?php if(($notif_unread ?? 0) > 0): ?>
-    <span class="bell-badge"><?=$notif_unread > 99 ? '99+' : $notif_unread?></span>
-    <?php endif; ?>
   </a>
 </div>
 
-<!-- 概览（可点击跳转对应模块，作为导航枢纽；v2.38.15：无审批权限者不显示「待我审批」数字卡） -->
-<div class="stat-row" style="margin-top:-8px; position:relative;">
-  <?php if(!empty($can_approve)): ?><a href="/m/approvals" class="stat-box" style="text-decoration:none;color:inherit"><div class="n"><?=$pending_total?></div><div class="l">待我审批</div></a><?php endif; ?>
-  <a href="/m/remind" class="stat-box" style="text-decoration:none;color:inherit"><div class="n"><?=$todo_total ?? ($total_remind ?? count($alerts))?></div><div class="l">今日提醒</div></a>
-  <a href="/m/contracts" class="stat-box" style="text-decoration:none;color:inherit"><div class="n"><?=$my_contracts_total?></div><div class="l">我的合同</div></a>
-</div>
+<!-- v2.51.3 移除顶部三数字卡（待我审批/今日提醒/我的合同）：入口已由「今天要处理」卡片、底部 Tab 覆盖，数字卡与卡片角标存在口径不一致问题 -->
 
 <!-- v2.40.0：管理层差异化卡片——总经理看全公司部门排名，部门经理看本部门汇总+成员排名
      v2.40.8：渲染条件由「有权限且有数据」放宽为「有权限」——全新部署/暂无生效合同时，
@@ -125,7 +112,7 @@ include __DIR__ . '/_head.php';
     $rk = $i + 1;
     $rkCls = $rk <= 3 ? ' top' . $rk : '';
   ?>
-    <div class="dept-row">
+    <a class="dept-row" href="/m/dept?id=<?=intval($d['dept_id'])?>">
       <div class="rank<?=$rkCls?>"><?=$rk?></div>
       <div style="flex:1;min-width:0">
         <div class="name"><?=htmlspecialchars($d['dept_name'])?></div>
@@ -133,7 +120,7 @@ include __DIR__ . '/_head.php';
       </div>
       <div class="amt"><?=$wan($d['total_amount'])?></div>
       <div class="rate<?=$d['recovery_rate'] < 50 ? ' low' : ''?>"><?=$d['recovery_rate']?>%</div>
-    </div>
+    </a>
   <?php endforeach; endif; ?>
   <?php if(!empty($dept_members)): ?>
     <div class="dept-card-sub">本部门成员排名（按合同额）</div>
@@ -220,15 +207,15 @@ include __DIR__ . '/_head.php';
 </a>
 <?php endif; ?>
 
-<!-- 统一待办中心（v2.38.15 方案A）：待我审批 > 审批消息 > 到期/回款提醒，按优先级排序，最多 5 条 -->
+<!-- 今天要处理：审批/消息待办 + 到期/回款/跟进提醒，统一列表展示（v2.51.3 合并原「今日提醒」卡并移除右上角标） -->
 <?php
   $todoMax = 5;
   $todoShown = array_slice($todo_list ?? [], 0, $todoMax);
-  $todoMore = count($todo_list ?? []) > $todoMax;
-  // 待办项标签样式：approval=红色审批 / notif=蓝色消息 / remind 按 level
+  $alertShown = array_slice($alerts ?? [], 0, 5);
+  // 徽章：审批/消息/提醒（level 映射 逾期/紧急/提醒）
   $todoBadge = function ($t) {
-      if ($t['kind'] === 'approval') return ['badge-soft-danger', '审批'];
-      if ($t['kind'] === 'notif')     return ['badge-soft-info', '消息'];
+      if (($t['kind'] ?? '') === 'approval') return ['badge-soft-danger', '审批'];
+      if (($t['kind'] ?? '') === 'notif')     return ['badge-soft-info', '消息'];
       $lv = $t['level'] ?? 'info';
       $map = ['danger' => 'badge-soft-danger', 'warning' => 'badge-soft-warn', 'info' => 'badge-soft-info'];
       $lab = ['danger' => '逾期', 'warning' => '紧急', 'info' => '提醒'];
@@ -236,10 +223,10 @@ include __DIR__ . '/_head.php';
   };
 ?>
 <div class="m-card" id="alerts">
-  <div class="m-card-hd"><span><i class="bi bi-bell me-1 text-warning"></i>今日提醒</span><span class="badge badge-soft-warn rounded-pill"><?=$todo_total ?? count($todo_list ?? [])?></span></div>
+  <div class="m-card-hd"><span><i class="bi bi-clipboard-check me-1 text-warning"></i>今天要处理</span></div>
   <div class="m-card-bd">
-    <?php if(empty($todo_list)): ?>
-      <div class="empty"><i class="bi bi-emoji-smile"></i> 今日无到期/逾期提醒</div>
+    <?php if(empty($todoShown) && empty($alertShown)): ?>
+      <div class="empty"><i class="bi bi-emoji-smile"></i> 今天没有需要处理的事项</div>
     <?php else: foreach($todoShown as $t):
         [$bdCls, $bdTxt] = $todoBadge($t);
     ?>
@@ -247,15 +234,22 @@ include __DIR__ . '/_head.php';
         <div class="t"><span class="badge <?=$bdCls?> me-1"><?=$bdTxt?></span><?=htmlspecialchars($t['text'] ?? '')?></div>
         <?php if(!empty($t['sub'])): ?><div class="s text-muted" style="font-size:12px"><?=htmlspecialchars($t['sub'])?></div><?php endif; ?>
       </a>
+    <?php endforeach; foreach($alertShown as $a):
+      [$bdCls, $bdTxt] = $todoBadge($a);
+      $alertLink = ($a['type'] ?? '') === 'customer' ? '/m/customer/' . (int)($a['id'] ?? 0) : '/m/contract/' . (int)($a['id'] ?? 0);
+    ?>
+      <a href="<?=$alertLink?>" class="m-item d-block text-decoration-none">
+        <div class="t"><span class="badge <?=$bdCls?> me-1"><?=$bdTxt?></span><?=htmlspecialchars($a['text'] ?? '')?></div>
+      </a>
     <?php endforeach; endif; ?>
-    <?php if($todoMore): ?>
-      <a href="/m/remind" class="m-btn m-btn-ghost w-100 mt-2" style="height:38px;font-size:14px">查看全部（<?=count($todo_list)?> 条）</a>
+    <?php if(!empty($todoShown) || !empty($alertShown)): ?>
+      <a href="/m/remind" class="m-btn m-btn-ghost w-100 mt-2" style="height:38px;font-size:14px">查看全部（<?=count($todo_list ?? []) + count($alerts ?? [])?> 条）</a>
     <?php endif; ?>
   </div>
 </div>
 
 <!-- 快捷操作（动作型入口：审批/登记/资料库等常用功能；新建统一收敛到右下角 FAB，模块浏览交给底部 Tab 与「更多」） -->
-<?php if($can_approve || $can_pay || !empty($can_invoice) || !empty($can_library) || !empty($can_customer_pool) || !empty($can_report) || !empty($can_follow)): ?>
+<?php if($can_approve || $can_pay || !empty($can_invoice) || !empty($can_library) || !empty($can_report) || !empty($can_follow)): ?>
 <div class="m-card" id="quick">
   <div class="m-card-hd"><span><i class="bi bi-grid-3x3-gap me-1 text-primary"></i>快捷操作</span><span class="quick-tip" id="quickTip"><i class="bi bi-arrow-left-right"></i>左右滑动</span></div>
   <div class="m-card-bd">
@@ -265,10 +259,8 @@ include __DIR__ . '/_head.php';
       <?php if(!empty($can_follow)): ?><a href="javascript:;" class="quick-item" onclick="mOpenQuickFollow()"><i class="bi bi-pencil"></i><span>记录跟进</span></a><?php endif; ?>
       <?php if(!empty($can_invoice)): ?><a href="/m/invoice-apply" class="quick-item"><i class="bi bi-receipt-cutoff"></i><span>申请开票</span></a><?php endif; ?>
       <?php if(!empty($can_library)): ?><a href="/m/resource" class="quick-item"><i class="bi bi-folder2-open"></i><span>资料库</span></a><?php endif; ?>
-      <?php if(!empty($can_customer_pool)): ?><a href="/m/customers/pool" class="quick-item"><i class="bi bi-people"></i><span>客户池</span></a><?php endif; ?>
       <?php if(!empty($can_report)): ?><a href="/m/reports" class="quick-item"><i class="bi bi-bar-chart-line"></i><span>报表</span></a><?php endif; ?>
     </div>
-    <!-- v2.40.0 P1-7：分段式指示器（2 段，第 1 段高亮=当前屏，仅图标超一屏时显示） -->
     <div class="quick-scrollbar"><i class="cur"></i><i></i></div>
   </div>
 </div>
@@ -285,7 +277,6 @@ include __DIR__ . '/_head.php';
   <?php if(!empty($can_create_customer)): ?><a href="/m/customer/create" class="m-fab-item"><i class="bi bi-person-plus"></i><span>新建客户</span></a><?php endif; ?>
   <?php if(!empty($can_create_supplier)): ?><a href="/m/supplier/create" class="m-fab-item"><i class="bi bi-building-add"></i><span>新建供应商</span></a><?php endif; ?>
 </div>
-<button type="button" class="m-fab" id="fabBtn" aria-label="新建"><i class="bi bi-plus-lg"></i></button>
 <?php endif; ?>
 
 <!-- 底部全局导航 -->
@@ -301,18 +292,18 @@ include __DIR__ . '/_head.php';
   });
 
   // 新建 FAB：点击展开/收起新建菜单（合同/客户/供应商），点遮罩或选中菜单项后收起（body.fab-open 驱动展开态）
-  var fabBtn = document.getElementById('fabBtn');
-  if (fabBtn) {
-    fabBtn.addEventListener('click', function(){ document.body.classList.toggle('fab-open'); });
-    var fabMask = document.getElementById('fabMask');
-    if (fabMask) fabMask.addEventListener('click', function(){ document.body.classList.remove('fab-open'); });
-    var fabMenu = document.getElementById('fabMenu');
-    if (fabMenu) fabMenu.addEventListener('click', function(e){
-      if (e.target.closest('a')) document.body.classList.remove('fab-open');
-    });
-  }
+  // 新建菜单关闭逻辑独立于触发按钮：底部 Tab 已替代原 FAB，遮罩点击必须始终可关闭。
+  var fabMask = document.getElementById('fabMask');
+  if (fabMask) fabMask.addEventListener('click', function(){ document.body.classList.remove('fab-open'); });
+  var fabMenu = document.getElementById('fabMenu');
+  if (fabMenu) fabMenu.addEventListener('click', function(e){
+    if (e.target.closest('a')) document.body.classList.remove('fab-open');
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') document.body.classList.remove('fab-open');
+  });
 
-  // v2.38.26 + v2.40.0 P1-7：快捷操作图标超过一屏（>4 项）→ 显示「左右滑动」提示 + 右侧渐隐 + 分段式指示器
+  // 快捷操作超过一屏时提示左右滑动，并同步底部分段指示器。
   var quickCard = document.getElementById('quick');
   var quickGrid = quickCard ? quickCard.querySelector('.quick-grid') : null;
   if (quickCard && quickGrid) {
@@ -321,13 +312,8 @@ include __DIR__ . '/_head.php';
       quickCard.classList.toggle('has-more', hasMore);
       var bars = quickCard.querySelectorAll('.quick-scrollbar i');
       var max = quickGrid.scrollWidth - quickGrid.clientWidth;
-      var seg = 0;
-      if (hasMore && max > 0 && bars.length > 0) {
-        seg = Math.round(quickGrid.scrollLeft / max * (bars.length - 1));
-      }
-      bars.forEach(function(b, i){
-        b.classList.toggle('cur', i === seg);
-      });
+      var seg = hasMore && max > 0 ? Math.round(quickGrid.scrollLeft / max * (bars.length - 1)) : 0;
+      bars.forEach(function(b, i){ b.classList.toggle('cur', i === seg); });
     };
     updateQuickBar();
     quickGrid.addEventListener('scroll', updateQuickBar);
@@ -376,22 +362,9 @@ include __DIR__ . '/_head.php';
       <label class="m-act-btn"><input type="radio" name="actType" value="meeting"><span>会</span><em>会议</em></label>
       <label class="m-act-btn"><input type="radio" name="actType" value="wechat"><span>微</span><em>微信</em></label>
     </div>
-    <p>快捷短语</p>
-    <div class="m-phrase-row" id="qActPhraseRow">
-      <span class="m-phrase" data-phrase="已电话沟通">已电话沟通</span>
-      <span class="m-phrase" data-phrase="确认意向">确认意向</span>
-      <span class="m-phrase" data-phrase="已发资料">已发资料</span>
-      <span class="m-phrase" data-phrase="约定下次">约定下次</span>
-    </div>
     <p>跟进内容</p>
     <textarea class="m-input" id="qActContent" rows="3" maxlength="500" placeholder="本次沟通要点、客户意向等" style="resize:vertical;height:auto"></textarea>
     <p>下次跟进（可选）</p>
-    <div class="m-phrase-row" id="qActNextRow">
-      <span class="m-phrase" data-next="1">明天 09:00</span>
-      <span class="m-phrase" data-next="3">3 天后</span>
-      <span class="m-phrase" data-next="7">一周后</span>
-      <span class="m-phrase" data-next="0">自定义</span>
-    </div>
     <input class="m-input" type="datetime-local" id="qActNextFollow" style="margin-top:8px">
     <div class="m-sheet-actions">
       <button class="m-btn m-btn-ghost" id="qActCancel">取消</button>
@@ -518,4 +491,4 @@ include __DIR__ . '/_head.php';
 </script>
 <script src="<?=asset_url('js/search-picker.js')?>"></script>
 <?php endif; ?>
-<?php $tab = 'home'; include __DIR__ . '/_foot.php'; ?>
+<?php $tab = 'home'; $show_add_tab = !empty($can_create_contract) || !empty($can_create_customer) || !empty($can_create_supplier); include __DIR__ . '/_foot.php'; ?>

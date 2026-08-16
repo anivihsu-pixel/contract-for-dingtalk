@@ -2,6 +2,7 @@
 // 移动端共享布局（Phase 1 重构 1.7）：头部与尾部由 _head.php / _foot.php 统一输出
 $title = '供应商';      // 页面标题，自动追加「 · 合同管理」
 $tab = 'customer';     // 导航优化 Phase1：供应商经客户 Tab 内切换进入，高亮"客户"
+$show_add_tab = !empty($can_create_supplier); $render_add_menu_here = false;
 include __DIR__ . '/_head.php';
 ?>
 
@@ -12,11 +13,10 @@ include __DIR__ . '/_head.php';
 </div>
 
 <div class="m-page" id="page">
-  <!-- 主数据切换：客户 / 供应商（与「客户」页保持一致，置于顶部，使搜索框位置统一） -->
-  <div style="display:flex;gap:8px;overflow-x:auto;padding:var(--m-gap) var(--m-gap) 4px;-webkit-overflow-scrolling:touch;">
-    <a href="/m/customers" class="m-chip">客户</a>
-    <a href="/m/suppliers" class="m-chip active">供应商</a>
-    <a href="/m/customers/pool" class="m-chip">公海池</a>
+  <!-- 客户 / 供应商 两栏切换（v2.51.5：与「客户」页同款等宽分段，直角；供应商高亮） -->
+  <div style="display:flex;background:#f2f3f5;padding:3px;margin:var(--m-gap) var(--m-gap) 4px;">
+    <a href="/m/customers" style="flex:1;text-align:center;padding:8px 0;font-size:14px;color:var(--m-text-3)">客户</a>
+    <a href="/m/suppliers" style="flex:1;text-align:center;padding:8px 0;font-size:14px;font-weight:600;background:#fff;color:var(--primary);box-shadow:0 1px 3px rgba(0,0,0,.08)">供应商</a>
   </div>
 
   <!-- 搜索 -->
@@ -28,7 +28,7 @@ include __DIR__ . '/_head.php';
   </div>
 
   <!-- 类型筛选 -->
-  <div style="display:flex;gap:8px;overflow-x:auto;padding:0 var(--m-gap) 4px;-webkit-overflow-scrolling:touch;">
+  <div class="m-hide-scrollbar" style="display:flex;gap:8px;overflow-x:auto;padding:0 var(--m-gap) 4px;-webkit-overflow-scrolling:touch;">
     <a href="javascript:;" class="m-chip <?=$type===''?'active':''?>" data-type="">全部</a>
     <?php foreach($types as $k=>$v): ?>
     <a href="javascript:;" class="m-chip <?=$type===$k?'active':''?>" data-type="<?=htmlspecialchars($k)?>"><?=htmlspecialchars($v)?></a>
@@ -67,10 +67,6 @@ include __DIR__ . '/_head.php';
     <div class="m-loadmore" id="loadmore">加载更多</div>
   <?php endif; ?>
 </div>
-
-<?php if(!empty($can_create_supplier)): ?>
-<a href="/m/supplier/create" class="m-fab" aria-label="新建供应商"><i class="bi bi-plus-lg"></i></a>
-<?php endif; ?>
 
 <div class="m-toast" id="toast"></div>
 <div class="m-loading" id="loading" style="display:none"><div class="m-spinner"></div></div>

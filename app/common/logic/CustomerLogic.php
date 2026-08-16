@@ -10,9 +10,6 @@ use think\facade\Session;
 
 class CustomerLogic
 {
-    /** 每日认领公海上限（质量修复：魔法值 20 收敛为类常量，controller 引用） */
-    public const DAILY_CLAIM_LIMIT = 20;
-
     /**
      * 开票客户下拉选项（发票申请表单 customer 字段数据源）：
      * 返回未删除客户 [{id, name, credit_code}]，供前端联动 fill 动作带出抬头/税号。
@@ -35,7 +32,7 @@ class CustomerLogic
      * 创建前去重检测（v2.38.2）
      * @return array{duplicates:array, exact_credit:bool} 可能的重复客户列表
      */
-    public static function checkDuplicate(string $name, string $creditCode = ''): array
+    public static function checkDuplicate(string $name, string $creditCode = '', string $mobile = ''): array
     {
         $duplicates = [];
         // 1) 信用代码精确匹配（高置信度）
@@ -56,7 +53,17 @@ class CustomerLogic
                 }
             }
         }
-        return ['duplicates' => $duplicates, 'exact_credit' => !empty($duplicates) && !empty($creditCode)];
+        $exactCredit = !empty($duplicates) && trim($creditCode) !== '';
+        $exactPhone = false;
+        $mobile = preg_replace('/\D+/', '', $mobile);
+        if ($mobile !== '') {
+            $phoneRows = Db::name('customer')->where('is_deleted', 0)->where('contact_mobile', trim($mobile))->limit(5)->select()->toArray();
+            foreach ($phoneRows as $row) {
+                $exactPhone = true;
+                if (!in_array($row['id'], array_column($duplicates, 'id'))) $duplicates[] = $row;
+            }
+        }
+        return ['duplicates' => $duplicates, 'exact_credit' => $exactCredit, 'exact_phone' => $exactPhone];
     }
 
     /** 名称归一化：去省/市/区/县/有限公司/股份 等后缀，保留核心名称 */
@@ -107,7 +114,7 @@ class CustomerLogic
 
     /**
      * 客户访问/关联统一判定（v2.45.0，解决「客户归 A 但 B 也要关联签合同」）
-     * 判定链：公海(owner=0) → 数据范围(本人/部门/ALL) → 显式共享(用户级/部门级) → 集团祖先可见。
+     * 判定链：数据范围(本人/部门/ALL) → 显式共享(用户级/部门级) → 集团祖先可见。
      * 共享为白名单放行，仅放行该客户，不改变全局数据范围。
      * @param int $userId 访问者用户ID
      * @param array $customer 客户行（须含 id/owner_id/dept_id/parent_id）
@@ -115,8 +122,6 @@ class CustomerLogic
      */
     public static function canAccessCustomer(int $userId, array $customer, int $userDeptId = 0): bool
     {
-        // 公海客户所有人可访问/关联
-        if ((int)($customer['owner_id'] ?? 0) === 0) return true;
         // 数据范围（本人/部门/ALL，管理员在此放行）
         if (AuthLogic::canAccessRecord((int)($customer['owner_id'] ?? 0), $customer['dept_id'] ?? null)) return true;
         // 显式共享
@@ -132,8 +137,7 @@ class CustomerLogic
             $ancestors = Db::name('customer')->whereIn('id', $ancIds)
                 ->field('id, owner_id, dept_id')->select()->toArray();
             foreach ($ancestors as $a) {
-                if ((int)($a['owner_id'] ?? 0) !== 0
-                    && AuthLogic::canAccessRecord((int)$a['owner_id'], $a['dept_id'] ?? null)) {
+                if (AuthLogic::canAccessRecord((int)$a['owner_id'], $a['dept_id'] ?? null)) {
                     return true;
                 }
                 if (self::isShared($userId, (int)$a['id'], $userDeptId)) return true;
@@ -529,7 +533,7 @@ class CustomerLogic
         if (isset($filter['status']) && $filter['status'] !== '') {
             $query->where('c.status', (int)$filter['status']);
         }
-        // v2.38.9：客户生命周期筛选（客户/成交/公海）
+        // 客户生命周期筛选（客户/成交）
         if (isset($filter['lifecycle_status']) && $filter['lifecycle_status'] !== '') {
             $query->where('c.lifecycle_status', $filter['lifecycle_status']);
         }
@@ -540,99 +544,19 @@ class CustomerLogic
         return ['list' => $list, 'total' => $total];
     }
 
-    /** 公海池列表 (owner_id = 0)，按创建时间正序（越久越靠前，便于优先认领） */
-    public static function getPoolList(int $page, int $pageSize, string $keyword = '', array $sort = ['created_at', 'asc']): array
-    {
-        $query = Db::name('customer')
-            ->where('is_deleted', 0)
-            ->where('owner_id', 0);
-
-        if ($keyword) {
-            $query->where('name|contact_name', 'like', '%' . $keyword . '%');
-        }
-
-        $total = $query->count();
-        $list  = $query->order($sort[0], $sort[1])->page($page, $pageSize)->select()->toArray();
-
-        return ['list' => $list, 'total' => $total];
-    }
-
-    /**
-     * 认领客户（P2-6/M8）
-     * 用「owner_id=0 条件下原子更新」替代先查后改：仅当客户仍在公海(owner_id=0)时更新才生效，
-     * 受影响行数=1 才视为认领成功，杜绝并发认领时两人都读到 owner_id=0 各自写入导致归属错乱。
-     * 认领记录插入与归属更新包裹同一事务，避免「归属已变但无认领记录」的孤儿数据。
-     * @param int $customerId 客户 id
-     * @param int $userId 认领人 id
-     * @param int $deptId 认领人部门 id
-     * @param int $dailyClaimLimit 每日认领上限（0=不限制）
-     * @return string|bool 成功返回 true，失败返回错误原因字符串
-     */
-    public static function claim(int $customerId, int $userId, int $deptId, int $dailyClaimLimit = self::DAILY_CLAIM_LIMIT): string|bool
-    {
-        // 质量修复：上限检查移入事务内并复核——原「事务外先查后判」在并发下多个请求同时通过
-        // count 检查后一起认领，导致突破每日上限。现以「认领成功后复核，超限抛异常触发回滚」保证并发正确。
-        try {
-            return Db::transaction(function () use ($customerId, $userId, $deptId, $dailyClaimLimit) {
-                // 原子认领：where owner_id=0 保证仅公海客户能被认领，并发下只有一个请求 affected=1
-                // 2026-08-03 修复：认领后客户生命周期须从 INACTIVE（公海）升为 ACTIVE（成交）
-                $affected = Db::name('customer')
-                    ->where('id', $customerId)
-                    ->where('owner_id', 0)
-                    ->update([
-                        'owner_id'         => $userId,
-                        'dept_id'          => $deptId,
-                        'lifecycle_status' => 'ACTIVE',
-                        'updated_at'       => date('Y-m-d H:i:s'),
-                    ]);
-                if ($affected !== 1) {
-                    return false; // 客户不存在或已被他人认领（owner_id 已非 0）
-                }
-
-                // v2.38.2：认领频率限制（事务内复核，超限回滚本次认领，防并发突破上限）
-                if ($dailyClaimLimit > 0) {
-                    $today = date('Y-m-d');
-                    $todayCount = Db::name('customer_claim_record')
-                        ->where('user_id', $userId)
-                        ->where('created_at', '>=', $today . ' 00:00:00')
-                        ->count();
-                    if ($todayCount >= $dailyClaimLimit) {
-                        throw new \RuntimeException("今日认领已达上限（{$dailyClaimLimit} 个），请明天再来");
-                    }
-                }
-
-                Db::name('customer_claim_record')->insert([
-                    'customer_id' => $customerId,
-                    'user_id'     => $userId,
-                    'created_at'  => date('Y-m-d H:i:s'),
-                ]);
-                // v2.38.2：自动写入跟进记录
-                self::addActivity($customerId, $userId, 'CLAIM', '从公海认领客户');
-
-                return true;
-            });
-        } catch (\RuntimeException $e) {
-            // 超限异常（事务已回滚，认领未生效），转成业务错误文案返回
-            return $e->getMessage();
-        }
-    }
-
     /**
      * 转移客户（P2-6/M8）
      * 用「owner_id=fromUserId 条件下原子更新」替代先查后改：仅当客户当前确由 fromUserId 持有时更新才生效，
      * 受影响行数=1 才视为转移成功，避免并发转移导致归属被覆盖错乱。
      * 转移记录插入与归属更新包裹同一事务，保证二者原子一致。
-     * 2026-08-03 修复：管理员可直接从公海(owner_id=0)分配客户给指定用户（allowFromPool=true），
-     * 同时更新 lifecycle_status 为 ACTIVE（公海客户原状态为 INACTIVE）。
      * @param int $customerId 客户 id
-     * @param int $fromUserId 当前归属人 id（公海分配时传 0）
+     * @param int $fromUserId 当前归属人 id
      * @param int $toUserId 目标归属人 id
-     * @param bool $allowFromPool 是否允许从公海直接分配（仅管理员），默认 false
      * @return bool 转移成功返回 true
      */
-    public static function transfer(int $customerId, int $fromUserId, int $toUserId, bool $allowFromPool = false): bool
+    public static function transfer(int $customerId, int $fromUserId, int $toUserId): bool
     {
-        // 2026-08-03：目标用户必须存在且启用（选人弹窗保证前端可选，后端兜底防无效 ID 致客户"丢失"）
+        // 目标用户必须存在且启用（选人弹窗保证前端可选，后端兜底防无效 ID 致客户"丢失"）
         if ($toUserId <= 0 || $toUserId === $fromUserId) {
             return false;
         }
@@ -641,98 +565,45 @@ class CustomerLogic
             return false;
         }
 
-        return Db::transaction(function () use ($customerId, $fromUserId, $toUserId, $allowFromPool, $toUser) {
-            $isPool = false;
-            if ($allowFromPool) {
-                // 管理员从公海分配：先查客户当前是否在公海（owner_id=0）
-                $cust = Db::name('customer')->where('id', $customerId)->find();
-                if ($cust && (int)$cust['owner_id'] === 0) {
-                    $isPool = true;
-                }
-            }
-
-            if ($isPool) {
-                // 公海分配：原子匹配 owner_id=0，同时更新 lifecycle_status→ACTIVE 和目标部门
-                $affected = Db::name('customer')
-                    ->where('id', $customerId)
-                    ->where('owner_id', 0)
-                    ->update([
-                        'owner_id'         => $toUserId,
-                        'dept_id'          => (int)($toUser['dept_id'] ?? 0),
-                        'lifecycle_status' => 'ACTIVE',
-                        'updated_at'       => date('Y-m-d H:i:s'),
-                    ]);
-            } else {
-                // 普通转移：原子匹配 owner_id=fromUserId 保证仅当前归属人可转出
-                $affected = Db::name('customer')
-                    ->where('id', $customerId)
-                    ->where('owner_id', $fromUserId)
-                    ->update([
-                        'owner_id'   => $toUserId,
-                        'dept_id'    => (int)($toUser['dept_id'] ?? 0),
-                        'updated_at' => date('Y-m-d H:i:s'),
-                    ]);
-            }
+        return Db::transaction(function () use ($customerId, $fromUserId, $toUserId, $toUser) {
+            // 普通转移：原子匹配 owner_id=fromUserId 保证仅当前归属人可转出
+            $affected = Db::name('customer')
+                ->where('id', $customerId)
+                ->where('owner_id', $fromUserId)
+                ->update([
+                    'owner_id'   => $toUserId,
+                    'dept_id'    => (int)($toUser['dept_id'] ?? 0),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
             if ($affected !== 1) {
-                return false; // 客户不存在或已不属于预期归属（可能已被认领/转移/释放）
+                return false; // 客户不存在或已不属于预期归属
             }
 
-            // 转移记录：公海来源 from_user_id 存 0
-            $recordFromId = $isPool ? 0 : $fromUserId;
+            // 转移记录
             Db::name('customer_transfer_record')->insert([
                 'customer_id'  => $customerId,
-                'from_user_id' => $recordFromId,
+                'from_user_id' => $fromUserId,
                 'to_user_id'   => $toUserId,
                 'created_at'   => date('Y-m-d H:i:s'),
             ]);
 
-            // 跟进记录：按来源区分文案
-            $content = $isPool ? '从公海转入' : '从用户#' . $fromUserId . ' 转入';
-            self::addActivity($customerId, $toUserId, 'TRANSFER', $content);
+            // 跟进记录（v2.51.4：来源显示实际用户名，替代「用户#id」占位）
+            $fromName = Db::name('user')->where('id', $fromUserId)->value('name') ?: ('用户#' . $fromUserId);
+            self::addActivity($customerId, $toUserId, 'TRANSFER', '从 ' . $fromName . ' 转入');
 
             return true;
         });
     }
 
     /**
-     * 释放到公海
-     * @throws \RuntimeException 客户名下存在有效合同（审批中/已批准/已签署/执行中）时拒绝释放，
-     *                          防止「客户生命周期 INACTIVE 但合同仍执行」口径矛盾
-     */
-    public static function releaseToPool(int $customerId, int $userId): bool
-    {
-        // P2-11：释放前校验有效合同（审批中/已批准/已签署/执行中）——草稿/驳回/终态合同不阻塞
-        $activeContracts = (int)Db::name('contract')
-            ->where('party_b_customer_id', $customerId)
-            ->where('is_deleted', 0)
-            ->whereIn('status', [
-                ContractLogic::STATUS_PENDING_APPROVAL, ContractLogic::STATUS_APPROVED,
-                ContractLogic::STATUS_SIGNED, ContractLogic::STATUS_EXECUTING,
-            ])
-            ->count();
-        if ($activeContracts > 0) {
-            throw new \RuntimeException('该客户存在有效合同（' . $activeContracts . ' 份），无法释放到公海，请先处理合同');
-        }
-
-        $affected = Db::name('customer')->where('id', $customerId)
-            ->where('owner_id', $userId)
-            ->update(['owner_id' => 0, 'dept_id' => 0, 'lifecycle_status' => 'INACTIVE', 'updated_at' => date('Y-m-d H:i:s')]);
-        if ($affected > 0) {
-            self::addActivity($customerId, $userId, 'RELEASE', '释放到公海');
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * 客户生命周期漏斗统计（M10，v2.38.3）。
-     * 返回各阶段客户数：POTENTIAL/ACTIVE/INACTIVE，以及总数。
+     * 返回各阶段客户数：POTENTIAL/ACTIVE，以及总数。
      * @param int $companyId 可选，按本公司数据范围过滤（默认不过滤，统计全量非删除客户）
      * @return array
      */
     public static function lifecycleFunnel(int $companyId = 0): array
     {
-        $stages = ['POTENTIAL' => 0, 'ACTIVE' => 0, 'INACTIVE' => 0];
+        $stages = ['POTENTIAL' => 0, 'ACTIVE' => 0];
         $query = Db::name('customer')->where('is_deleted', 0);
         // 本公司主体客户（is_self=1）不计入销售漏斗
         $query->where('is_self', 0);
@@ -749,10 +620,10 @@ class CustomerLogic
         }
 
         // v2.40.0 P1-7：各阶段客户的销售合同金额合计（金额维度）
-        // 口径：customer.party_b 关联销售合同（trade_attr=1, direction=sales, 未删除, P1-3 排除未生效状态 + 框架合同）金额 SUM
-        $amounts = ['POTENTIAL' => 0.0, 'ACTIVE' => 0.0, 'INACTIVE' => 0.0];
+        // 口径：customer.party_b 关联销售合同（trade_attr=1, direction=sales, 未删除、已生效）金额 SUM
+        $amounts = ['POTENTIAL' => 0.0, 'ACTIVE' => 0.0];
         $activeStatuses = [ContractLogic::STATUS_DRAFT, ContractLogic::STATUS_REJECTED, ContractLogic::STATUS_PENDING_APPROVAL];
-        // P1-3：框架合同（被执行的子合同引用的父合同）预算上限不参与客户生命周期金额统计
+        // 兼容旧版本函数调用；轻量合同管理下不会排除任何合同。
         $excludedIds = \exclude_framework_contracts_ids();
         $excludedSql = $excludedIds ? ' AND ct.id NOT IN (' . implode(',', $excludedIds) . ')' : '';
         $amtRows = Db::name('customer')->alias('c')
@@ -774,7 +645,7 @@ class CustomerLogic
 
     /**
      * 合同关联客户 → 生命周期升 ACTIVE（M10，v2.38.3）。
-     * 当一份合同关联某客户（乙方）时，该客户已从客户/公海转为成交。
+     * 当一份合同关联某客户（乙方）时，该客户从客户(POTENTIAL)转为成交(ACTIVE)。
      * @param int $customerId
      * @return void
      */
@@ -816,71 +687,9 @@ class CustomerLogic
     }
 
     /**
-     * 公海自动回落（v2.38.2）：认领后 N 天无跟进记录的客户，自动释放回公海。
-     * 由定时任务（php think customer:pool-release）或手动调用。
-     * @param int $inactiveDays 无活动天数（默认 30）
-     * @return int 释放数量
-     */
-    public static function autoReleaseStale(int $inactiveDays = 30): int
-    {
-        $released = 0;
-        $cutoff   = date('Y-m-d H:i:s', strtotime("-{$inactiveDays} days"));
-
-        // 仅取「每个客户最新一条认领记录」判定：客户经历 认领→释放→他人重新认领 时，
-        // 旧认领记录仍在表内，若直接按全部记录过滤会把刚被重新认领的客户误判为长期未跟进而错误释放
-        $claims = Db::name('customer_claim_record')
-            ->alias('cr')
-            ->join('customer c', 'cr.customer_id = c.id')
-            ->join('(SELECT customer_id, MAX(created_at) AS latest_at FROM customer_claim_record GROUP BY customer_id) lc', 'lc.customer_id = c.id AND lc.latest_at = cr.created_at')
-            ->where('c.owner_id', '>', 0)
-            ->where('c.is_deleted', 0)
-            ->where('cr.created_at', '<', $cutoff)
-            ->field('c.id, c.owner_id')
-            ->select()
-            ->toArray();
-
-        foreach ($claims as $c) {
-            // 与手动释放同口径：存在有效合同（审批中/已批准/已签署/执行中）的客户不自动释放，避免口径矛盾
-            $activeContracts = (int)Db::name('contract')
-                ->where('party_b_customer_id', $c['id'])
-                ->where('is_deleted', 0)
-                ->whereIn('status', [
-                    ContractLogic::STATUS_PENDING_APPROVAL, ContractLogic::STATUS_APPROVED,
-                    ContractLogic::STATUS_SIGNED, ContractLogic::STATUS_EXECUTING,
-                ])
-                ->count();
-            if ($activeContracts > 0) {
-                continue;
-            }
-
-            // 检查认领后是否有跟进活动
-            $hasActivity = Db::name('customer_activity')
-                ->where('customer_id', $c['id'])
-                ->where('user_id', $c['owner_id'])
-                ->where('type', '<>', 'CLAIM')
-                ->where('type', '<>', 'RELEASE')
-                ->where('type', '<>', 'TRANSFER')
-                ->count() > 0;
-
-            if (!$hasActivity) {
-                // owner_id 原子条件：查询与更新之间客户若被转移/重新认领，不覆盖新归属人（affected=0 视为已易主，跳过）
-                $affected = Db::name('customer')->where('id', $c['id'])
-                    ->where('owner_id', $c['owner_id'])
-                    ->update(['owner_id' => 0, 'dept_id' => 0, 'lifecycle_status' => 'INACTIVE', 'updated_at' => date('Y-m-d H:i:s')]);
-                if ($affected > 0) {
-                    self::addActivity($c['id'], (int)$c['owner_id'], 'RELEASE', "认领后 {$inactiveDays} 天无跟进，自动释放");
-                    $released++;
-                }
-            }
-        }
-
-        return $released;
-    }
-
-    /**
      * 客户合并（v2.38.2）：将重复客户 target 的数据迁入 master，target 软删除。
-     * 合并范围：合同引用、跟进记录、认领/转移记录。
-     * 归属：若 master 归属人在公海(owner_id=0)而 target 有归属人，则 master 继承 target 的归属；
+     * 合并范围：合同引用、跟进记录、转移记录。
+     * 归属：若 master 无归属人而 target 有归属人，则 master 继承 target 的归属；
      *       否则保持 master 归属不变。
      */
     public static function merge(int $masterId, int $targetId, int $actorId): array
@@ -923,13 +732,11 @@ class CustomerLogic
                 $merged['contacts'] = count($contacts);
             }
 
-            // 3) 认领/转移记录迁到 master
-            Db::name('customer_claim_record')->where('customer_id', $targetId)
-                ->update(['customer_id' => $masterId]);
+            // 3) 转移记录迁到 master
             Db::name('customer_transfer_record')->where('customer_id', $targetId)
                 ->update(['customer_id' => $masterId]);
 
-            // 4) 归属继承：如果 master 在公海而 target 有归属人，上移至 target 的归属
+            // 4) 归属继承：如果 master 无归属人而 target 有归属人，上移至 target 的归属
             if (empty($master['owner_id']) && !empty($target['owner_id'])) {
                 Db::name('customer')->where('id', $masterId)->update([
                     'owner_id' => $target['owner_id'],
@@ -1031,7 +838,7 @@ class CustomerLogic
 
     /**
      * AJAX 客户搜索（供合同创建页选择甲方）
-     * 公海客户(owner_id=0)所有人可见；其余按可见性谓词(本人 OR 所属部门集合)过滤。
+     * 按可见性谓词(本人 OR 所属部门集合)过滤，并追加共享客户（用户级/部门级白名单）。
      * 支持 DEPT_AND_CHILD / CUSTOM（覆盖旧版 SELF/DEPT 分支，修复新档位退化为全量的问题）。
      */
     public static function search(string $keyword, int $uid, int $deptId): array
@@ -1039,10 +846,9 @@ class CustomerLogic
         $query = Db::name('customer')->where('is_deleted', 0);
         $conds = AuthLogic::scopeOrConditions('owner_id', 'dept_id');
         if (!empty($conds)) {
-            // v2.45.0：追加共享客户（用户级/部门级白名单）
+            // 追加共享客户（用户级/部门级白名单）
             $sharedIds = self::getSharedCustomerIds($uid, $deptId);
             $query->where(function ($qb) use ($conds, $sharedIds) {
-                $qb->where('owner_id', 0); // 公海所有人可见
                 foreach ($conds as $c) {
                     $qb->whereOr($c[0], $c[1], $c[2]);
                 }
@@ -1165,4 +971,5 @@ class CustomerLogic
         }
         return $stats;
     }
+
 }

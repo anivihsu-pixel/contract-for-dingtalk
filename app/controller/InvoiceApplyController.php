@@ -37,4 +37,22 @@ class InvoiceApplyController extends BaseController
         View::assign('invoice_customers', []);
         return View::fetch();
     }
+
+    /** 发票申请详情页（2026-08-15：列表整行点击/内容链接跳转，替代弹窗） */
+    public function detail()
+    {
+        $this->requirePermission('invoice:view');
+        $id = (int)$this->getParam('id', 0);
+        if ($id <= 0) {
+            View::assign('error', '缺少申请 ID');
+            return View::fetch();
+        }
+        $res = \app\controller\InvoiceController::detailData($id, $this->userId, $this->hasPermission('invoice:create'));
+        if (!$res['ok']) {
+            View::assign('error', $res['msg']);
+            return View::fetch();
+        }
+        View::assign('detail', $res['data']);
+        return View::fetch();
+    }
 }

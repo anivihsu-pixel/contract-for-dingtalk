@@ -141,6 +141,16 @@ class AdminController extends BaseController
             $data['is_leader'] = (int)$this->getPost('is_leader', 0);
         }
 
+        // 用户名唯一性校验（新建/改名共用）：在职与禁用用户均占用用户名，
+        // 提前拦截避免直插触发唯一约束异常返回 500，改为友好提示
+        $username = trim((string)$data['username']);
+        if ($username !== '') {
+            $exists = \think\facade\Db::name('user')->where('username', $username)->find();
+            if ($exists && (int)$exists['id'] !== $id) {
+                return json_error('用户名已存在，请更换后重试');
+            }
+        }
+
         $isUpdate = ($id > 0);
         if ($id) {
             if ($this->getPost('password', '') !== '') {
@@ -364,18 +374,38 @@ class AdminController extends BaseController
         $data = [
             'name'         => $this->getPost('name', ''),
             'code'         => $code,
-            'category'     => $this->getPost('category', ''),       // 遗留单值字段，保留兼容
-            'category_list'=> $this->getPost('category_list', '[]'), // v2.31.0：适用分类多选(JSON)
+            'business_type_list' => $this->getPost('business_type_list', '[]'),
+            'direction'    => $this->getPost('direction', 'ALL'),
+            'trade_attr_condition' => $this->getPost('trade_attr_condition', 'ALL'),
             'use_amount'   => (int)$this->getPost('use_amount', 1),  // v2.31.0：金额条件开关
             'min_amount'   => (float)$this->getPost('min_amount', 0),
             'max_amount'   => (float)$this->getPost('max_amount', 99999999.99),
             'nodes'        => $this->getPost('nodes', '[]'),
             'cc_list'      => $this->getPost('cc_list', '[]'), // v2.38.0：流程级抄送（JSON 字符串）
             'status'       => (int)$this->getPost('status', 1),
+            'biz_type'     => $this->getPost('biz_type', 'contract'),
         ];
+        if (!in_array($data['biz_type'], ['contract'], true)) {
+            return json_error('审批流程类型不正确');
+        }
 
         if (is_array($data['nodes'])) {
             $data['nodes'] = json_encode($data['nodes'], JSON_UNESCAPED_UNICODE);
+        }
+        // 指定用户节点统一落库为 approvers；兼容恢复备份中的历史字段，避免编辑保存后丢失审批人。
+        $nodes = json_decode((string)$data['nodes'], true);
+        if (is_array($nodes)) {
+            foreach ($nodes as $idx => $node) {
+                if (($node['type'] ?? '') === 'SPECIFIC_USER') {
+                    $ids = \app\common\logic\ApproverResolver::specificUserIds($node);
+                    if (empty($ids)) {
+                        return json_error('节点「' . (($node['name'] ?? '') ?: ($idx + 1)) . '」未指定审批用户');
+                    }
+                    $nodes[$idx]['approvers'] = $ids;
+                    unset($nodes[$idx]['approver_ids'], $nodes[$idx]['user_ids'], $nodes[$idx]['user_id']);
+                }
+            }
+            $data['nodes'] = json_encode($nodes, JSON_UNESCAPED_UNICODE);
         }
         // 质量修复：nodes 与 cc_list 对称校验——非法 nodes JSON 拒绝保存（此前非法 nodes 入库
         // → matchFlow 解析为空 → 合同免审批直接通过，属高危配置错误路径）
@@ -403,7 +433,7 @@ class AdminController extends BaseController
 
     /**
      * AJAX: 全量保存合同审批流程（v2.38.22 画布式编辑器：分支卡片并列，一次提交全部流程）
-     * 请求：flows=[{id,name,code,category_list,use_amount,min_amount,max_amount,status,nodes,cc_list}]
+     * 请求：flows=[{id,name,code,business_type_list,direction,trade_attr_condition,use_amount,min_amount,max_amount,status,nodes,cc_list}]
      * 语义：全量重存——本次提交的流程更新/新增；原库中本次未提交的流程停用（status=0，保留历史实例关联）。
      */
     public function saveAllFlows()

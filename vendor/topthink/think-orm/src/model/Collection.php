@@ -3,7 +3,7 @@
 // +----------------------------------------------------------------------
 // | ThinkPHP [ WE CAN DO IT JUST THINK ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2006~2023 http://thinkphp.cn All rights reserved.
+// | Copyright (c) 2006~2025 http://thinkphp.cn All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
 // +----------------------------------------------------------------------
@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace think\model;
 
 use think\Collection as BaseCollection;
-use think\Model;
+use think\model\contract\Modelable as Model;
 use think\Paginator;
 
 /**
@@ -32,17 +32,32 @@ class Collection extends BaseCollection
      *
      * @param array $relation 关联
      * @param mixed $cache    关联缓存
+     * @param bol   $withJoin 是否JOIN
      *
      * @return $this
      */
-    public function load(array $relation, $cache = false)
+    public function load(array $relation, $cache = false, bool $withJoin = false)
     {
         if (!$this->isEmpty()) {
             $item = current($this->items);
-            $item->eagerlyResultSet($this->items, $relation, [], false, $cache);
+            $item->eagerlyResultSet($this->items, $relation, [], $withJoin, $cache);
         }
 
         return $this;
+    }
+
+    /**
+     * 转换为视图模型
+     *
+     * @param string $view 视图类名
+     *
+     * @return $this
+     */
+    public function toView(string $view)
+    {
+        return $this->map(function (Model $model) use($view) {
+            return $model->toView($view);
+        });
     }
 
     /**
@@ -158,22 +173,6 @@ class Collection extends BaseCollection
     {
         $this->each(function (Model $model) use ($scene) {
             $model->scene($scene);
-        });
-
-        return $this;
-    }
-
-    /**
-     * 设置父模型.
-     *
-     * @param Model $parent 父模型
-     *
-     * @return $this
-     */
-    public function setParent(Model $parent)
-    {
-        $this->each(function (Model $model) use ($parent) {
-            $model->setParent($parent);
         });
 
         return $this;

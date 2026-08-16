@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 - 合同管理系统</title>
-<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.43.2.min.css')?>">
+<link rel="stylesheet" href="<?=asset_url('vendor/bootstrap-icons/bootstrap-icons.v2.48.0.min.css')?>">
 <link rel="stylesheet" href="<?=asset_url('css/mobile.css')?>">
 <style>
   body{background:linear-gradient(135deg,#0b5ed7 0%,#6ea8fe 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}

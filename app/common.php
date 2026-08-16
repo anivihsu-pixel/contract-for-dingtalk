@@ -304,9 +304,7 @@ function contract_status_badge(): array
     $classByStatus = [
         'DRAFT'            => 'm-tag-warn',   // v2.44.4：草稿徽标改琥珀（方案 A：与浅琥珀卡片底区分一致）
         'PENDING_APPROVAL' => 'm-tag-warn',
-        'APPROVED'         => 'm-tag-ok',
         'REJECTED'         => 'm-tag-danger',
-        'SIGNED'           => 'm-tag-info',
         'EXECUTING'        => 'm-tag-ok',
         'COMPLETED'        => 'm-tag-ok',
         'TERMINATED'       => 'm-tag-muted',
@@ -333,9 +331,7 @@ function contract_status_label(string $status): string
     $classMap = [
         'DRAFT'            => 'pc-tag-warn',   // v2.44.4：草稿徽标统一琥珀（方案 A，与列表/移动端一致）
         'PENDING_APPROVAL' => 'pc-tag-warn',
-        'APPROVED'         => 'pc-tag-info',
         'REJECTED'         => 'pc-tag-danger',
-        'SIGNED'           => 'pc-tag-info',
         'EXECUTING'        => 'pc-tag-ok',
         'COMPLETED'        => 'pc-tag-ok',
         'TERMINATED'       => 'pc-tag-muted',
@@ -554,10 +550,6 @@ function resolve_library_attachment_ext(string $realMime, string $origExt = ''):
  * 返回档位后缀，双端拼类名：移动端 `m-tag-credit-<档>`（标签）、PC 端 `credit-<档>`（文本色）。
  * 单一事实来源，避免各视图重复维护分档映射。
  */
-function credit_grade(int $score): string
-{
-    return $score >= 90 ? 'a' : ($score >= 80 ? 'b' : ($score >= 60 ? 'c' : ($score >= 40 ? 'd' : 'e')));
-}
 
 /** 审批动作标签 */
 function approval_action_label(string $action): string
@@ -597,11 +589,21 @@ function audit_action_labels(): array
         'approve_recall'     => '撤回审批',
         'archive'            => '归档',
         'unarchive'          => '取消归档',
-        'sign'               => '签署',
         'auto_expire'        => '系统自动到期',
         'invoice_void'       => '发票作废',
         'invoice_red'        => '发票红冲',
         'login'              => '登录',
+        'save_user'          => '保存用户',
+        'disable_user'       => '禁用用户',
+        'handover'           => '离职交接',
+        'recycle_restore'    => '回收站恢复',
+        'recycle_purge'      => '回收站删除',
+        'terminate'          => '终止',
+        'restore'            => '恢复',
+        'accept'             => '接受',
+        'customer_share'     => '客户共享',
+        'customer_join_group'=> '客户分组',
+        'invoice_issue'      => '开票',
     ];
 }
 
@@ -625,7 +627,6 @@ function audit_type_labels(): array
         'approval'         => '审批',
         'invoice'          => '发票',
         'payment'          => '回款',
-        'sign'             => '签署',
         'archive'          => '归档',
         'project'          => '项目',
         'report_monthly'   => '月度报表',
@@ -641,25 +642,15 @@ function audit_type_label(string $type): string
 }
 
 /**
- * P1-3：经营聚合统一排除「框架合同」——即被其他合同以 parent_id 引用的父合同（parent_id=0，金额为预算上限）。
- * 用户决策口径：经营额只统计执行订单（parent_id>0）与独立合同（parent_id=0 且无子合同），
- * 避免「框架预算上限 + 各执行订单实际成交额」同一业务两次数钱。
- * 被引用父合同集合极小（一次静态缓存查询），对各经营聚合调用点统一追加 whereNotIn。
+ * 兼容旧版本调用：框架合同层级已下线，所有未删除合同均参与统计。
  */
 function exclude_framework_contracts_ids(): array
 {
-    static $excludedIds = null;
-    if ($excludedIds === null) {
-        $excludedIds = Db::name('contract')->where('is_deleted', 0)
-            ->where('parent_id', '>', 0)
-            ->column('parent_id');
-        $excludedIds = array_values(array_unique(array_map('intval', $excludedIds)));
-    }
-    return $excludedIds;
+    return [];
 }
 
 /**
- * P1-3：经营聚合查询追加「排除框架合同」过滤（链式构造器场景）。
+ * 兼容旧版本调用：不追加任何过滤。
  * @param mixed  $query ThinkPHP Query 对象（引用）
  * @param string $alias 表别名（如 'c'），带别名查询用；空串用 'id'
  */
@@ -700,7 +691,7 @@ function format_money(float $amount): string
  *  P1：Tab3 按角色动态替换——部门经理→审批，财务→财务，其他→客户（默认）
  *  @param string $active home|contract|customer|approval|finance|more
  */
-function mobile_tabbar(string $active = ''): string
+function mobile_tabbar(string $active = '', bool $showAdd = false, string $addUrl = ''): string
 {
     // 底部导航（固定 4 Tab，产品决策）：工作台/合同/客户/更多
     // 审批/财务/资料库/报表等高频动作从工作台快捷宫格进入（审批页 $tab='' 不高亮，注释已声明从底部移除）；
@@ -714,7 +705,11 @@ function mobile_tabbar(string $active = ''): string
         ['more',     '/m/more',      'bi-grid-3x3',          '更多'],
     ];
     $html = '<div class="m-tabbar">';
-    foreach ($tabs as $t) {
+    foreach ($tabs as $i => $t) {
+        // 新建入口在工作台与「更多」均保持稳定位置，避免切换 Tab 后操作入口消失。
+        if ($i === 2 && $showAdd) {
+            $html .= '<button type="button" class="m-tabbar-add" aria-label="新增" onclick="document.body.classList.toggle(\'fab-open\')"><i class="bi bi-plus-lg"></i></button>';
+        }
         $cls = $t[0] === $active ? ' active' : '';
         $html .= '<a href="' . $t[1] . '" class="' . trim($cls) . '"><i class="bi ' . $t[2] . '"></i>' . $t[3] . '</a>';
     }

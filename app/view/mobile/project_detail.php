@@ -8,12 +8,9 @@ $statusDict = $statusDict ?? [];
 $contractStatusMap = [
     'DRAFT' => ['t' => '草稿', 'c' => 'muted'],
     'PENDING_APPROVAL' => ['t' => '待审批', 'c' => 'warn'],
-    'APPROVED' => ['t' => '已通过', 'c' => 'info'],
     'REJECTED' => ['t' => '已驳回', 'c' => 'danger'],
-    'SIGNED' => ['t' => '历史已签', 'c' => 'info'],  // v2.38.10: 签署功能已移除，SIGNED 仅历史存量
     'EXECUTING' => ['t' => '执行中', 'c' => 'ok'],
     'COMPLETED' => ['t' => '已完成', 'c' => 'muted'],
-    'TERMINATED' => ['t' => '已终止', 'c' => 'danger'],
     'EXPIRED' => ['t' => '已到期', 'c' => 'muted'],
     'ARCHIVED' => ['t' => '已归档', 'c' => 'muted'],
 ];
@@ -21,12 +18,7 @@ $contractStatusMap = [
 // 项目状态标签
 $projStatus = $project['status'] ?? 'ACTIVE';
 $projStatusText = $statusDict[$projStatus] ?? $projStatus;
-$projStatusCls = ['ACTIVE' => 'm-tag-info', 'COMPLETED' => 'm-tag-ok', 'ARCHIVED' => 'm-tag-muted', 'TERMINATED' => 'm-tag-danger'][$projStatus] ?? 'm-tag-muted';
-// v2.40.0 P1-6：执行阶段
-$stageDict = ['PLANNING' => '筹备', 'EXECUTING' => '执行中', 'ACCEPTANCE' => '验收中', 'COMPLETED' => '已完结'];
-$projStage = $project['stage'] ?? 'PLANNING';
-$projStageText = $stageDict[$projStage] ?? $projStage;
-$projProgress = max(0, min(100, (int)($project['progress'] ?? 0)));
+$projStatusCls = ['ACTIVE' => 'm-tag-info', 'DONE' => 'm-tag-ok', 'ARCHIVED' => 'm-tag-muted'][$projStatus] ?? 'm-tag-muted';
 ?>
 <?php
 $title = '项目详情';
@@ -67,7 +59,6 @@ include __DIR__ . '/_head.php';
     <div class="no"><?=htmlspecialchars($project['code'] ?? '')?></div>
     <div class="tags">
       <span class="m-tag <?=$projStatusCls?>"><?=$projStatusText?></span>
-      <span class="m-tag m-tag-info"><?=htmlspecialchars($projStageText)?></span>
       <?php if (!empty($project['owner_name'])): ?><span class="m-tag m-tag-muted"><?=htmlspecialchars($project['owner_name'])?></span><?php endif; ?>
     </div>
   </div>
@@ -80,17 +71,6 @@ include __DIR__ . '/_head.php';
       <?php if (!empty($project['end_date'])): ?><div class="m-kv"><div class="k">结束日期</div><div class="v"><?=htmlspecialchars($project['end_date'])?></div></div><?php endif; ?>
       <?php if (!empty($project['remark'])): ?><div class="m-kv" style="display:block"><div class="k" style="margin-bottom:6px">备注</div><div class="v" style="white-space:pre-wrap"><?=htmlspecialchars($project['remark'])?></div></div><?php endif; ?>
       <div class="m-kv"><div class="k">创建时间</div><div class="v"><?=htmlspecialchars($project['created_at'] ?? '-')?></div></div>
-      <?php if (!empty($project['end_date']) || $projStage !== 'PLANNING' || $projProgress > 0): ?>
-      <div class="m-kv" style="display:block">
-        <div class="k" style="margin-bottom:6px">执行进度</div>
-        <div class="v">
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--m-text-2);margin-bottom:4px">
-            <span><?=htmlspecialchars($projStageText)?></span><span><b><?=$projProgress?>%</b></span>
-          </div>
-          <div class="pay-progress"><span style="width:<?=$projProgress?>%"></span></div>
-        </div>
-      </div>
-      <?php endif; ?>
     </div>
   </div>
 
@@ -114,10 +94,6 @@ include __DIR__ . '/_head.php';
         <div class="stat-item">
           <div class="label">采购总额</div>
           <div class="value amt-out"><span class="unit">¥</span><?=number_format($aggregate['purchase_amount'] ?? 0, 0)?></div>
-        </div>
-        <div class="stat-item">
-          <div class="label">项目毛利（毛利率）</div>
-          <div class="value">¥<?=number_format($aggregate['gross_margin'] ?? 0, 0)?>（<?=number_format($aggregate['gross_margin_rate'] ?? 0, 1)?>%）</div>
         </div>
       </div>
       <?php if (($aggregate['receivable'] ?? 0) > 0): ?>

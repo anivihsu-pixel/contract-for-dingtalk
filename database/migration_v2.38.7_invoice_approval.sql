@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS `form_field_linkage` (
 
 -- 9) 公司开票流程优化（H1）：审批流按开票公司分支 + 客户复用 + 表单文案贴合公司流程
 -- 9.1 审批流程表：表单条件列（非空=仅该表单字段值命中时匹配；空=默认兜底流程）
-ALTER TABLE `approval_flow` ADD COLUMN `form_condition` TEXT NOT NULL DEFAULT '' COMMENT '表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)' AFTER `biz_type`;  -- 表单条件(JSON：字段值命中时匹配；空=默认兜底流程)
+ALTER TABLE `approval_flow` ADD COLUMN `form_condition` TEXT COMMENT '表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)' AFTER `biz_type`;  -- 表单条件(JSON：字段值命中时匹配；空=默认兜底流程)
 -- 9.2 发票表：开票客户ID（customer 表，复用客户开票信息：抬头=客户名、税号=信用代码）
 ALTER TABLE `contract_invoice` ADD COLUMN `customer_id` BIGINT NOT NULL DEFAULT 0 COMMENT '开票客户ID（customer表，复用客户开票信息）' AFTER `content_desc`;  -- 开票客户ID(customer表，复用客户开票信息)
 -- 9.3 字段种子文案同步（幂等 UPDATE：开票类型两选项、含税金额）

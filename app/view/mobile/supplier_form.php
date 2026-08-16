@@ -40,26 +40,27 @@ include __DIR__ . '/_head.php';
     </div>
 
     <div class="m-field">
-      <label for="fContactEmail">联系邮箱</label>
-      <input class="m-input" name="contact_email" type="email" id="fContactEmail" placeholder="联系人邮箱" value="<?=htmlspecialchars($supplier['contact_email'] ?? '')?>">
-    </div>
-
-    <div class="m-field">
       <label for="fAddress">地址</label>
       <textarea class="m-textarea" name="address" id="fAddress" placeholder="供应商联系地址"><?=htmlspecialchars($supplier['address'] ?? '')?></textarea>
     </div>
-  </form>
-</div>
 
-<div class="m-submitbar">
-  <button class="m-btn m-btn-brand" id="submitBtn"><i class="bi bi-check-lg"></i> <?=!empty($is_edit)?'保存修改':'创建供应商'?></button>
+    <!-- v2.51.3：原「联系邮箱」改为「备注」置底（供应商不维护邮箱，语义统一为客户口径） -->
+    <div class="m-field">
+      <label for="fRemark">备注</label>
+      <textarea class="m-textarea" name="remark" id="fRemark" rows="2" placeholder="简短备注（如结算要求、资质说明等）"><?=htmlspecialchars($supplier['remark'] ?? '')?></textarea>
+    </div>
+    <!-- v2.51.4：提交按钮由固定悬浮栏改为放在页面内容末尾（随内容滚动，不悬浮遮挡）；居中自适应宽度 -->
+    <div style="padding: 6px var(--m-pad) calc(18px + var(--safe-bottom)); display:flex; justify-content:center;">
+      <button type="button" class="m-btn m-btn-brand" id="submitBtn" style="flex:none; min-width:160px; padding:0 32px;"><?=!empty($is_edit)?'保存修改':'创建供应商'?></button>
+    </div>
+  </form>
 </div>
 
 <div class="m-toast" id="toast"></div>
 
 <script>
 (function(){
-  
+  var draft=mobileFormDraft(document.getElementById('form'),'supplier:<?=intval($supplier['id']??0)?>');
   
 
   document.getElementById('submitBtn').addEventListener('click', function(){
@@ -67,11 +68,12 @@ include __DIR__ . '/_head.php';
     if(!name){ toast('请输入供应商名称'); return; }
     var form = document.getElementById('form');
     var params = new URLSearchParams(new FormData(form));
+    params.set('idempotency_key',mobileIdempotencyKey('supplier-save'));
     var btn = this; btn.disabled = true; btn.innerHTML = '提交中…';
     // N-m1：改用 mobile-common.js 的 apiPost 统一兜底（自动带 CSRF；返回码≠0 / 网络异常统一走 onError）
     apiPost('/ajax/supplier/save', params.toString(),
-      function(){ toast('保存成功'); setTimeout(function(){ location.href = '/m/suppliers'; }, 700); },
-      function(err){ btn.disabled=false; btn.innerHTML='<i class="bi bi-check-lg"></i> <?=!empty($is_edit)?'保存修改':'创建供应商'?>'; toast(err || '保存失败'); }
+      function(){ draft.clear(); toast('保存成功'); setTimeout(function(){ location.href = '/m/suppliers'; }, 700); },
+      function(err){ btn.disabled=false; btn.innerHTML='<?=!empty($is_edit)?'保存修改':'创建供应商'?>'; toast(err || '保存失败'); }
     );
   });
 })();

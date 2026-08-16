@@ -6,10 +6,14 @@
 // === 审批流编辑器 ===
 let nodeCounter = 0;  // 仅审批流 tab 使用（allUsers/allRoles/flowCats 已上提到公共脚本块）
 
-function newFlow(){
+function newFlow(bizType){
     document.getElementById('flowForm').reset();
     document.getElementById('flowId').value='';
+    document.getElementById('flowBizType').value='contract';
+    document.getElementById('flowName').value='';
     document.getElementById('flowCatsVal').value='[]';
+    document.getElementById('flowDirection').value='ALL';
+    document.getElementById('flowTradeAttr').value='ALL';
     renderFlowCats();
     document.getElementById('flowUseAmount').value='1';
     toggleAmountFields();
@@ -42,19 +46,26 @@ function renderFlowCanvasFrame(){
         +     '<input type="hidden" id="ccUsers" value="[]">'
         +     '<button type="button" class="btn btn-sm btn-outline-primary" onclick="openCcPicker()"><i class="bi bi-person-plus"></i> 选择用户</button></div>'
         +   '</div>'
+        +   '<div class="row g-2 mt-2"><div class="col-md-7"><label class="form-label small" for="ccDeptSel">抄送部门（可多选）</label><select class="form-select form-select-sm" id="ccDeptSel" multiple size="3"></select></div>'
+        +   '<div class="col-md-5 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="ccRequireAck"><label class="form-check-label small" for="ccRequireAck">抄送人需要确认知悉</label></div></div></div>'
         + '</div>'
         + '<div class="flow-cv-conn"></div>'
         + '<div class="flow-cv-end"><i class="bi bi-check2-circle"></i> 结束</div>';
     fillCcRoleOptions();
+    let deptSel = document.getElementById('ccDeptSel');
+    if(deptSel){ deptSel.innerHTML=(allDepts||[]).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join(''); }
 }
 
 function editFlow(f){
     document.getElementById('flowId').value=f.id;
     document.getElementById('flowName').value=f.name;
     document.getElementById('flowCode').value=f.code;
+    document.getElementById('flowBizType').value='contract';
     let cats = [];
-    try{ cats = f.category_list ? JSON.parse(f.category_list) : []; }catch(e){ cats = f.category ? [f.category] : []; }
+    try{ cats = f.business_type_list ? JSON.parse(f.business_type_list) : []; }catch(e){ cats = []; }
     document.getElementById('flowCatsVal').value = JSON.stringify(cats);
+    document.getElementById('flowDirection').value = f.direction || 'ALL';
+    document.getElementById('flowTradeAttr').value = f.trade_attr_condition == null ? 'ALL' : String(f.trade_attr_condition);
     renderFlowCats();
     document.getElementById('flowUseAmount').value = (f.use_amount!=null && f.use_amount!=='') ? f.use_amount : 1;
     toggleAmountFields();
@@ -74,6 +85,8 @@ function editFlow(f){
     fillCcRoleOptions();
     document.getElementById('ccUsers').value = JSON.stringify(ccUsers);
     document.getElementById('ccUsersView').innerHTML = ccUsers.length ? ccUsers.map(function(id){return '<span class="badge bg-info me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') : '<span class="text-muted small">未选择</span>';
+    Array.from(document.getElementById('ccDeptSel').options).forEach(function(o){o.selected=(cc.dept_ids||[]).map(Number).includes(parseInt(o.value));});
+    document.getElementById('ccRequireAck').checked=!!cc.require_ack;
     new bootstrap.Modal('#flowModal').show();
 }
 
@@ -114,7 +127,8 @@ function nodeApproverArea(type, data, i){
     data = data || {};
     if(type === 'SPECIFIC_USER'){
         // 指定用户改为弹出选人窗口（部门树+搜索），不再用平铺下拉
-        let sel = data.approvers||[];
+        // 兼容恢复备份/旧版本字段，编辑后统一由 getNodesData 写回 approvers
+        let sel = data.approvers || data.approver_ids || data.user_ids || (data.user_id ? [data.user_id] : []);
         let nameHtml = sel.map(function(id){return '<span class="badge bg-primary me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') || '<span class="text-muted small">未选择</span>';
         let mode = '<select class="form-select form-select-sm mt-2" id="mode_'+i+'"><option value="OR" '+(data.mode!=='AND'?'selected':'')+'>或签（任一通过）</option><option value="AND" '+(data.mode==='AND'?'selected':'')+'>会签（全部通过）</option></select>';
         return '<div class="mb-2" id="approversView_'+i+'">'+nameHtml+'</div>'
@@ -302,7 +316,8 @@ function getCcListData(){
     try{ ccRoles = JSON.parse(document.getElementById('ccRoles').value||'[]'); }catch(e){ ccRoles = []; }
     let ccUsers = [];
     try{ ccUsers = JSON.parse(document.getElementById('ccUsers').value||'[]'); }catch(e){ ccUsers = []; }
-    return {role_codes: ccRoles, cc_user_ids: ccUsers.map(function(x){ return parseInt(x); })};
+    let deptIds=Array.from(document.getElementById('ccDeptSel').selectedOptions).map(function(o){return parseInt(o.value);});
+    return {role_codes: ccRoles, cc_user_ids: ccUsers.map(function(x){ return parseInt(x); }), dept_ids:deptIds, require_ack:document.getElementById('ccRequireAck').checked?1:0};
 }
 function openCcPicker(){
     let cur = [];

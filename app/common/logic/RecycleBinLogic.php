@@ -153,8 +153,6 @@ class RecycleBinLogic
                     Db::name('approval_cc_log')->whereIn('instance_id', $instanceIds)->delete();
                     Db::name('approval_instance')->whereIn('id', $instanceIds)->delete();
                 }
-                // P2-7：合同变更日志（contract_revision）随合同物理删除级联清理，避免孤儿变更记录
-                Db::name('contract_revision')->where('contract_id', $id)->delete();
             }
             Db::name($table)->where('id', $id)->where('is_deleted', 1)->delete();
             Db::commit();

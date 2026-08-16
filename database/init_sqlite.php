@@ -123,6 +123,7 @@ $tables = [
         action TEXT DEFAULT '',  -- 操作动作
         target_type TEXT DEFAULT '',  -- 目标类型(contract/customer/project等)
         target_id INTEGER DEFAULT 0,  -- 目标ID
+        target_title TEXT DEFAULT '',  -- 目标标题快照(对象删除后仍可追溯定位)
         content TEXT DEFAULT '',  -- 内容
         ip_address TEXT DEFAULT '',  -- 操作IP
         user_agent TEXT DEFAULT '',  -- 浏览器UA
@@ -142,6 +143,7 @@ $tables = [
         contact_mobile TEXT DEFAULT '',  -- 联系人手机
         contact_email TEXT DEFAULT '',  -- 联系人邮箱
         address TEXT DEFAULT '',  -- 地址
+        remark TEXT DEFAULT '',  -- 客户备注（应用层限制255字）
         level INTEGER DEFAULT 0,  -- 客户等级(已废弃，所有客户一视同仁)
         source TEXT DEFAULT 'MANUAL',  -- 来源(MANUAL/IMPORT)
         status INTEGER DEFAULT 1,  -- 状态
@@ -149,7 +151,7 @@ $tables = [
         credit_score INTEGER DEFAULT 100,  -- 信用评分(满分100)(v2.38.3)
         high_risk INTEGER DEFAULT 0,  -- 高风险标记(1=高风险)(v2.38.3)
         credit_manual INTEGER NOT NULL DEFAULT 0,  -- 信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)
-        lifecycle_status TEXT DEFAULT 'ACTIVE',  -- 生命周期(POTENTIAL/ACTIVE/INACTIVE)(v2.38.3)
+        lifecycle_status TEXT DEFAULT 'ACTIVE',  -- 生命周期(POTENTIAL/ACTIVE)(v2.38.3)
         industry TEXT DEFAULT '',  -- 行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)
         owner_id INTEGER DEFAULT 0,  -- 归属人ID
         dept_id INTEGER DEFAULT 0,  -- 部门ID
@@ -160,16 +162,6 @@ $tables = [
     )",
     "CREATE INDEX idx_customer_owner ON customer(owner_id)",
     "CREATE INDEX idx_customer_parent ON customer(parent_id)",  // 集团层级查询索引(v2.45.0)
-
-    // customer_claim_record
-    "CREATE TABLE customer_claim_record (
-        -- 表注释：客户认领记录——公海客户认领流水
-        id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
-        customer_id INTEGER NOT NULL DEFAULT 0,  -- 客户ID
-        user_id INTEGER NOT NULL DEFAULT 0,  -- 用户ID
-        created_at TEXT DEFAULT (datetime('now','localtime'))  -- 创建时间
-    )",
-    "CREATE INDEX idx_claim_user_created ON customer_claim_record(user_id, created_at)",  // P2-5：认领每日限额查询
 
     // customer_share — 客户共享记录（v2.45.0：客户协作共享——白名单共享给用户/部门）
     "CREATE TABLE customer_share (
@@ -195,28 +187,28 @@ $tables = [
         created_at TEXT DEFAULT (datetime('now','localtime'))  -- 创建时间
     )",
 
-    // customer_activity — 客户跟进记录（v2.38.2：支撑公海自动回落规则）
+    // customer_activity — 客户跟进记录（v2.38.2）
     "CREATE TABLE customer_activity (
-        -- 表注释：客户跟进记录——跟进类型/时间/备注，支撑公海回落
+        -- 表注释：客户跟进记录——跟进类型/时间/备注
         id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
         customer_id INTEGER NOT NULL DEFAULT 0,  -- 客户ID
         user_id INTEGER NOT NULL DEFAULT 0,  -- 跟进人ID
-        type TEXT NOT NULL DEFAULT 'NOTE',  -- 类型(CALL/MEETING/VISIT/EMAIL/NOTE/CLAIM/RELEASE/TRANSFER)
+        type TEXT NOT NULL DEFAULT 'NOTE',  -- 类型(CALL/MEETING/VISIT/EMAIL/NOTE/TRANSFER)
         content TEXT,  -- 跟进内容
         next_follow_at TEXT DEFAULT NULL,  -- 下次跟进时间(v2.40.0 手动跟进录入)
         created_at TEXT DEFAULT (datetime('now','localtime'))  -- 创建时间
     )",
     "CREATE INDEX idx_activity_customer ON customer_activity(customer_id)",  // P2-5：客户详情跟进记录查询
+    "CREATE INDEX idx_activity_follow ON customer_activity(next_follow_at, customer_id)",  // v2.48.0：到期跟进提醒扫描
 
     // customer_contact — 客户联系人（v2.38.3）
     "CREATE TABLE customer_contact (
-        -- 表注释：客户联系人——独立联系人表，支持多角色
+        -- 表注释：客户联系人——独立联系人表
         id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
         customer_id INTEGER NOT NULL DEFAULT 0,  -- 客户ID
         name TEXT NOT NULL DEFAULT '',  -- 姓名
         phone TEXT DEFAULT '',  -- 电话
         email TEXT DEFAULT '',  -- 邮箱
-        role TEXT DEFAULT '商务负责人',  -- 角色(商务负责人/技术对接人/法务对接人/财务对接人)
         is_primary INTEGER DEFAULT 0,  -- 是否主联系人
         remark TEXT DEFAULT '',  -- 备注/更多信息(微信号等)
         created_at TEXT DEFAULT (datetime('now','localtime'))  -- 创建时间
@@ -231,6 +223,7 @@ $tables = [
         customer_id INTEGER DEFAULT 0,  -- 客户ID
         owner_id INTEGER DEFAULT 0,  -- 归属人ID
         dept_id INTEGER DEFAULT 0,  -- 部门ID
+        business_type TEXT DEFAULT 'OTHER',  -- 业务类型
         status TEXT DEFAULT 'ACTIVE',  -- 状态
         budget REAL DEFAULT 0,  -- 预算金额
         start_date TEXT DEFAULT NULL,  -- 开始日期
@@ -250,7 +243,7 @@ $tables = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
         contract_no TEXT NOT NULL DEFAULT '',  -- 合同编号
         title TEXT NOT NULL DEFAULT '',  -- 标题
-        category TEXT DEFAULT 'SERVICE',  -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等)
+        business_type TEXT DEFAULT 'OTHER',  -- 业务类型
         status TEXT DEFAULT 'DRAFT',  -- 状态
         amount REAL DEFAULT 0.00,  -- 金额
         party_a_name TEXT DEFAULT '',  -- 甲方名称
@@ -301,22 +294,23 @@ $tables = [
     "CREATE INDEX idx_contract_party_a_supplier ON contract(party_a_supplier_id)",
     "CREATE INDEX idx_contract_supplier ON contract(supplier_id)",
     "CREATE INDEX idx_contract_parent ON contract(parent_id)",
-    "CREATE INDEX idx_contract_category ON contract(category)",
+    "CREATE INDEX idx_contract_business_type ON contract(business_type)",
     "CREATE INDEX idx_contract_ourco ON contract(our_company_id)",
     "CREATE INDEX idx_contract_trade_dir_status ON contract(trade_attr, direction, status)",
 
-    // contract_revision
-    "CREATE TABLE contract_revision (
-        -- 表注释：合同变更历史——版本留痕
+    // contract_execution_cc
+    "CREATE TABLE contract_execution_cc (
+        -- 表注释：合同执行抄送知悉轨迹——合同进入执行后通知与知悉记录
         id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
         contract_id INTEGER NOT NULL DEFAULT 0,  -- 合同ID
-        field_name TEXT DEFAULT '',  -- 变更字段名
-        old_value TEXT DEFAULT '',  -- 旧值
-        new_value TEXT DEFAULT '',  -- 新值
-        operator_id INTEGER NOT NULL DEFAULT 0,  -- 操作人ID
-        created_at TEXT DEFAULT (datetime('now','localtime'))  -- 创建时间
+        user_id INTEGER NOT NULL DEFAULT 0,  -- 被抄送用户ID
+        needs_ack INTEGER NOT NULL DEFAULT 0,  -- 是否需要确认知悉(1=是)
+        acknowledged_at TEXT DEFAULT NULL,  -- 确认知悉时间
+        created_by INTEGER NOT NULL DEFAULT 0,  -- 触发执行的操作人ID
+        created_at TEXT DEFAULT (datetime('now','localtime')),  -- 抄送时间
+        UNIQUE(contract_id, user_id)
     )",
-    "CREATE INDEX idx_contract_rev ON contract_revision(contract_id)",
+    "CREATE INDEX idx_execution_cc_user ON contract_execution_cc(user_id, needs_ack)",
 
     // approval_flow
     "CREATE TABLE approval_flow (
@@ -324,8 +318,9 @@ $tables = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
         name TEXT NOT NULL DEFAULT '',  -- 名称
         code TEXT NOT NULL DEFAULT '',  -- 编码
-        category TEXT DEFAULT '',  -- 合同分类(SERVICE/PURCHASE/LEASE/NDA等，遗留单值字段)
-        category_list TEXT DEFAULT '[]',  -- 适用分类列表(JSON数组，空=适用全部分类)
+        business_type_list TEXT DEFAULT '[]', -- 适用业务类型列表(JSON数组，空=全部)
+        direction TEXT NOT NULL DEFAULT 'ALL', -- 收付款方向(sales/purchase/ALL)
+        trade_attr_condition TEXT NOT NULL DEFAULT 'ALL', -- 交易属性(1/0/ALL)
         min_amount REAL DEFAULT 0.00,  -- 最低金额
         max_amount REAL DEFAULT 99999999.99,  -- 最高金额
         use_amount INTEGER DEFAULT 1,  -- 是否启用金额条件(1=启用按金额区间匹配/0=不启用不限金额)
@@ -370,6 +365,7 @@ $tables = [
     "CREATE INDEX idx_apv_contract ON approval_instance(contract_id)",
     "CREATE INDEX idx_apv_submitter ON approval_instance(submitted_by)",
     "CREATE INDEX idx_apv_status ON approval_instance(status)",  // P0-4：提交扫描按 status 过滤，补单列索引避免全表扫描
+    "CREATE INDEX idx_apv_biz_target_status ON approval_instance(biz_type, target_id, status)",  // v2.48.0：业务对象待审批实例防重/查询
 
     // approval_record
     "CREATE TABLE approval_record (
@@ -396,7 +392,7 @@ $tables = [
         type TEXT DEFAULT 'MEDIA',  -- 供应商类型(MEDIA/MATERIAL等)
         contact_name TEXT DEFAULT '',  -- 联系人姓名
         contact_mobile TEXT DEFAULT '',  -- 联系人手机
-        contact_email TEXT DEFAULT '',  -- 联系人邮箱
+        remark TEXT DEFAULT '',  -- 备注（v2.51.3：原 contact_email 改备注，供应商不维护邮箱）
         address TEXT DEFAULT '',  -- 地址
         status INTEGER DEFAULT 1,  -- 状态
         owner_id INTEGER DEFAULT 0,  -- 归属人ID
@@ -430,6 +426,24 @@ $tables = [
     "CREATE INDEX idx_payment_contract ON payment_record(contract_id)",
     "CREATE INDEX idx_payment_status_plan ON payment_record(status, planned_date)",
     "CREATE INDEX idx_pr_type_status ON payment_record(payment_type, status)",  // P2-14：payment_record 无 trade_attr 列(该列在 contract 表)，按回款类型+状态过滤分组，覆盖驾驶舱/项目聚合
+
+    // payment_collection_follow
+    "CREATE TABLE payment_collection_follow (
+        -- 表注释：回款催收跟进
+        id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 主键ID
+        payment_id INTEGER NOT NULL,  -- 应收计划ID
+        contract_id INTEGER NOT NULL,  -- 合同ID
+        user_id INTEGER NOT NULL,  -- 跟进人ID
+        content TEXT NOT NULL,  -- 催收内容
+        customer_promise TEXT DEFAULT '',  -- 客户承诺
+        reason TEXT DEFAULT '',  -- 未付款原因
+        promise_date TEXT,  -- 承诺付款日
+        next_follow_at TEXT,  -- 下次跟进时间
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,  -- 创建时间
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP  -- 更新时间
+    )",
+    "CREATE INDEX idx_collection_payment ON payment_collection_follow(payment_id, created_at)",
+    "CREATE INDEX idx_collection_contract_next ON payment_collection_follow(contract_id, next_follow_at)",
 
     // contract_invoice
     "CREATE TABLE contract_invoice (
@@ -630,7 +644,7 @@ $perms = [
     [25, '开具发票', 'invoice:create', '发票管理'],
     // F1（v2.38.7）：申请开票——普通用户可提交申请，审批通过后由财务(invoice:create)开票
     [39, '申请开票', 'invoice:apply', '发票管理'],
-    // 签署管理
+    // 合同执行管理
     // 提醒管理
     [28, '查看提醒', 'remind:view', '提醒管理'],
     [29, '提醒管理', 'remind:manage', '提醒管理'],
@@ -655,13 +669,14 @@ $perms = [
     [41, '全公司经营', 'dashboard:company', '经营看板'],
     [42, '我的业绩', 'dashboard:stats', '经营看板'],
     [43, '部门经营', 'dashboard:dept', '经营看板'],
+    [49, '导出财务敏感字段', 'export:sensitive', '数据导出'],
 ];
 foreach ($perms as $p) {
     Db::execute("INSERT INTO permission (id, name, code, group_name) VALUES (?, ?, ?, ?)", $p);
 }
 
 // Admin role gets all permissions（显式列表与 init.sql 一致：1-25, 28-43 共 41 项；26/27 为历史空洞不存在）
-foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,40,41,42,43] as $pid) {
+foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,40,41,42,43,49] as $pid) {
     Db::execute("INSERT INTO role_permission (role_id, perm_id) VALUES (1, ?)", [$pid]);
 }
 // Manager: contract+customer+approval+template + 供应商/回款/发票/签署/提醒 全量 + 审计 + 资料库管理 + 项目全量 + 相对方
@@ -673,7 +688,7 @@ foreach ([1,7,9,18,22,24,28,32,38,39,42] as $pid) {
     Db::execute("INSERT INTO role_permission (role_id, perm_id) VALUES (3, ?)", [$pid]);
 }
 // Finance: view contract + approval + 回款/发票录入 + 只读供应商/签署 + 提醒管理 + 资料库查看 + 相对方
-foreach ([1,7,9,18,22,23,24,25,28,29,32,38,39,41,42] as $pid) {
+foreach ([1,7,9,18,22,23,24,25,28,29,32,38,39,41,42,49] as $pid) {
     Db::execute("INSERT INTO role_permission (role_id, perm_id) VALUES (4, ?)", [$pid]);
 }
 // User: basic contract + customer + submit approval + 只读供应商/回款/发票/签署/提醒 + 资料库查看 + 项目查看/创建/编辑 + 相对方
@@ -681,12 +696,12 @@ foreach ([1,2,3,7,8,10,11,12,18,22,24,28,32,34,35,36,38,39,42] as $pid) {
     Db::execute("INSERT INTO role_permission (role_id, perm_id) VALUES (5, ?)", [$pid]);
 }
 // v2.40.2：总经理（gm）——管理层业务全量权限（不含系统管理：system:user/role/config、dingtalk:sync、system:handover），data_scope=ALL 看全公司数据
-foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,41,42,43] as $pid) {
+foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23,24,25,28,29,30,31,32,44,45,46,34,35,36,37,38,39,41,42,43,49] as $pid) {
     Db::execute("INSERT INTO role_permission (role_id, perm_id) VALUES (12, ?)", [$pid]);
 }
 
-// Admin user: admin/随机口令（force_reset=1 首登强制改密）
-$initPwdAdmin = bin2hex(random_bytes(6));  // 随机 12 位十六进制口令
+// Admin user: admin/预览固定口令（force_reset=1 首登强制改密；生产环境请改用随机强口令）
+$initPwdAdmin = '85151818';
 Db::execute("INSERT INTO user (id, username, password, name, is_admin, status, force_reset) VALUES (1, 'admin', ?, '系统管理员', 1, 1, 1)", [
     password_hash($initPwdAdmin, PASSWORD_BCRYPT)
 ]);
@@ -702,7 +717,7 @@ Db::execute("INSERT INTO user_role (user_id, role_id) VALUES ((SELECT id FROM us
 Db::execute("INSERT INTO user_role (user_id, role_id) VALUES ((SELECT id FROM user WHERE username='employee01'), 5)");  // 普通用户(SELF)
 Db::execute("INSERT INTO user_role (user_id, role_id) VALUES ((SELECT id FROM user WHERE username='finance01'), 4)");   // 财务(ALL)
 
-// Sample contracts
+/* 示例合同已移除：全新部署不预置业务数据，避免旧法律类别口径进入新库。
 Db::execute("INSERT INTO contract (id, contract_no, title, category, status, amount, party_a_name, party_b_name, effective_date, expiry_date, content, file_url, keywords, creator_id, created_at, updated_at) VALUES (1, 'HT-20260709-0001', '软件技术服务合同', 'SERVICE', 'DRAFT', 150000, '我方公司', '上海科技有限公司', '2026-07-01', '2027-07-01', '双方签署软件技术服务协议。\n\n合同金额：15万元（含税）\n付款方式：签约后付30%，验收后付60%，质保期满付10%\n服务期限：1年，含3个月免费运维\n知识产权：项目源码及文档归甲方所有', '[{\"url\":\"/uploads/demo/service-contract.pdf\",\"name\":\"软件技术服务协议.pdf\",\"size\":245760}]', '软件,技术服务,含税', 1, datetime('now','localtime'), datetime('now','localtime'))");
 Db::execute("INSERT INTO contract (id, contract_no, title, category, status, amount, party_a_name, party_b_name, effective_date, expiry_date, content, file_url, keywords, creator_id, created_at, updated_at) VALUES (2, 'HT-20260709-0002', '设备采购合同', 'PURCHASE', 'PENDING_APPROVAL', 88000, '我方公司', '深圳智能制造有限公司', '2026-08-01', '2027-08-01', '采购智能制造设备一批。\n\n合同金额：8.8万元（含13%增值税）\n付款方式：预付30%，发货前付50%，验收后付20%\n交货期：合同生效后45日内\n质保期：2年', '[{\"url\":\"/uploads/demo/equipment-order.pdf\",\"name\":\"设备采购订单.pdf\",\"size\":358400}]', '设备,采购,制造', 1, datetime('now','localtime'), datetime('now','localtime'))");
 Db::execute("INSERT INTO contract (id, contract_no, title, category, status, amount, direction, trade_attr, party_a_name, party_b_name, effective_date, expiry_date, content, file_url, keywords, creator_id, created_at, updated_at) VALUES (3, 'HT-20260709-0003', 'NDA保密协议', 'NDA', 'ARCHIVED', 0, '', 0, '我方公司', '北京创新信息技术有限公司', '2026-07-01', '2029-07-01', '双方就业务合作涉及的商业秘密签署保密协议。\n\n保密范围：技术资料、客户信息、财务数据、商业计划\n保密期限：协议终止后3年\n违约责任：赔偿全部损失并支付违约金', '[{\"url\":\"/uploads/demo/nda-agreement.pdf\",\"name\":\"保密协议盖章版.pdf\",\"size\":122880}]', '保密,NDA,协议', 1, datetime('now','localtime'), datetime('now','localtime'))");
@@ -713,6 +728,7 @@ Db::execute("INSERT INTO contract (contract_no, title, category, status, amount,
 Db::execute("INSERT INTO contract (contract_no, title, category, status, amount, party_a_name, party_b_name, owner_id, dept_id, creator_id, content, file_url, keywords, created_at, updated_at) VALUES ('HT-DEMO-0002', '财务-服务合同', 'SERVICE', 'DRAFT', 30000, '我方公司', '演示供应商B', (SELECT id FROM user WHERE username='finance01'), 1, (SELECT id FROM user WHERE username='finance01'), '财务提交的對外服务合同演示数据。', '[]', '演示,服务', datetime('now','localtime'), datetime('now','localtime'))");
 Db::execute("INSERT INTO contract (contract_no, title, category, status, amount, party_a_name, party_b_name, owner_id, dept_id, creator_id, content, file_url, keywords, created_at, updated_at) VALUES ('HT-DEMO-0003', '经理-框架协议', 'SERVICE', 'DRAFT', 50000, '我方公司', '演示供应商C', (SELECT id FROM user WHERE username='manager01'), 1, (SELECT id FROM user WHERE username='manager01'), '部门经理提交的框架协议演示数据。', '[]', '演示,框架', datetime('now','localtime'), datetime('now','localtime'))");
 
+*/
 // 本公司主体（company_profile）—— 默认主体用于新建合同自动带出
 Db::execute("INSERT INTO company_profile (id, name, short_name, unified_social_credit_code, invoice_tax_rate, is_default, created_at, updated_at) VALUES (1, '义乌十八腔网络科技有限公司', '十八腔', '91330782MADEMO0001', 0.06, 1, datetime('now','localtime'), datetime('now','localtime'))");
 Db::execute("INSERT INTO company_profile (id, name, short_name, unified_social_credit_code, invoice_tax_rate, is_default, created_at, updated_at) VALUES (2, '义乌十八腔文化传媒有限公司', '十八腔传媒', '91330782MADEMO0002', 0.13, 0, datetime('now','localtime'), datetime('now','localtime'))");
@@ -726,15 +742,13 @@ Db::execute("INSERT INTO resource_library (id, category, title, file_url, file_n
 Db::execute("INSERT INTO resource_library (id, category, title, file_url, file_name, file_size, description, company_id, owner_id, created_at, updated_at) VALUES (3, 'CLAUSE', '保密与竞业限制标准条款', '/uploads/library/demo/clause-nda.docx', '保密与竞业限制标准条款.docx', 61440, '通用保密、知识产权与竞业限制条款范本，可摘抄到合同概要。', 0, 1, datetime('now','localtime'), datetime('now','localtime'))");
 
 // Approval flows
-Db::execute("INSERT INTO approval_flow (id, name, code, min_amount, max_amount, nodes, cc_list, status, creator_id) VALUES (1, '标准审批', 'STANDARD', 0, 100000, '[{\"name\":\"法务审批\",\"type\":\"ROLE\",\"role_code\":\"legal\",\"mode\":\"OR\"},{\"name\":\"部门经理审批\",\"type\":\"ROLE\",\"role_code\":\"manager\",\"mode\":\"OR\"}]', '', 1, 1)");
-Db::execute("INSERT INTO approval_flow (id, name, code, min_amount, max_amount, nodes, cc_list, status, creator_id) VALUES (2, '大额审批', 'LARGE', 100000.01, 99999999.99, '[{\"name\":\"部门经理审批\",\"type\":\"ROLE\",\"role_code\":\"manager\",\"mode\":\"OR\"},{\"name\":\"财务会签\",\"type\":\"ROLE\",\"role_code\":\"finance\",\"mode\":\"AND\"}]', '{\"role_codes\":[\"finance\"],\"cc_user_ids\":[]}', 1, 1)");
-Db::execute("INSERT INTO approval_flow (id, name, code, min_amount, max_amount, nodes, cc_list, status, creator_id) VALUES (3, '简易审批', 'QUICK', 0, 10000, '[{\"name\":\"部门经理审批\",\"type\":\"ROLE\",\"role_code\":\"manager\",\"mode\":\"OR\"}]', '', 1, 1)");
+// 审批流不预置，管理员在后台配置后才允许提交审批。
 
 // F1/F2：发票申请表单预置字段池（系统字段禁止删除、仅可停用/排序；后台可新增自定义字段）
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (1, 'our_company_id', '开票主体', 'company', '[]', 1, 1, 10, 1)");
-Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (2, 'content_desc', '开票内容', 'select', '[{\"value\":\"软件开发服务费\",\"label\":\"软件开发服务费\"},{\"value\":\"咨询服务费\",\"label\":\"咨询服务费\"},{\"value\":\"运维服务费\",\"label\":\"运维服务费\"},{\"value\":\"硬件销售费\",\"label\":\"硬件销售费\"},{\"value\":\"其他\",\"label\":\"其他\"}]', 1, 1, 80, 1)");
+Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (2, 'content_desc', '开票内容', 'select', '[{\"value\":\"软件开发服务费\",\"label\":\"软件开发服务费\"},{\"value\":\"咨询服务费\",\"label\":\"咨询服务费\"},{\"value\":\"运维服务费\",\"label\":\"运维服务费\"},{\"value\":\"硬件销售费\",\"label\":\"硬件销售费\"},{\"value\":\"其他\",\"label\":\"其他\"}]', 1, 1, 35, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (3, 'invoice_type', '开票类型', 'select', '[{\"value\":\"VAT_SPECIAL\",\"label\":\"我要开增值税专用发票\"},{\"value\":\"VAT_NORMAL\",\"label\":\"我要开普通发票\"}]', 1, 1, 30, 1)");
-Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (4, 'amount', '含税金额（元）', 'number', '[]', 1, 1, 40, 1)");
+Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (4, 'amount', '含税金额（元）', 'number', '[]', 1, 1, 72, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (5, 'tax_rate', '税率', 'select', '[{\"value\":\"0.01\",\"label\":\"1%\"},{\"value\":\"0.03\",\"label\":\"3%\"},{\"value\":\"0.05\",\"label\":\"5%\"},{\"value\":\"0.06\",\"label\":\"6%\"},{\"value\":\"0.09\",\"label\":\"9%\"},{\"value\":\"0.13\",\"label\":\"13%\"}]', 0, 0, 50, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (6, 'invoice_title', '发票抬头', 'text', '[]', 0, 1, 60, 1)");
 Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_type, field_options, required, enabled, sort_order, is_system) VALUES (7, 'tax_no', '税号', 'text', '[]', 0, 1, 70, 1)");
@@ -744,28 +758,27 @@ Db::execute("INSERT INTO invoice_form_field (id, field_key, field_label, field_t
 // System config
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('contract_categories', '{\"SALES\":\"销售合同\",\"PURCHASE\":\"采购合同\",\"LABOR\":\"劳动合同\",\"LEASE\":\"租赁合同\",\"NDA\":\"保密协议\",\"SERVICE\":\"服务合同\",\"OTHER\":\"其他\"}', 'contract')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('site_name', '合同管理系统', 'system')");
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('site_version', '1.0.0', 'system')");
 // 页脚版权信息（v2.34.0：系统设置「系统配置」页可维护；缺失时 BaseController 回退默认文案）
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('copyright', '© 2026 合同管理系统 版权所有', 'system')");
 // 业务规则（2026-08-01：系统设置「系统配置」页可维护；定时任务读取，缺省用下方默认值）
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_pool_release_days', '30', 'rule')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_expire_remind_days', '30,15,7,3,1', 'rule')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_payment_remind_days', '7,3,1', 'rule')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('weekly_report_dd_enabled', '1', 'rule')");
 
 // Dict 字典配置
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_contract_category', '{\"SALES\":\"销售合同\",\"PURCHASE\":\"采购合同\",\"LABOR\":\"劳动合同\",\"LEASE\":\"租赁合同\",\"NDA\":\"保密协议\",\"SERVICE\":\"服务合同\",\"OTHER\":\"其他\"}', 'dict')");
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"APPROVED\":\"已通过\",\"REJECTED\":\"已驳回\",\"SIGNED\":\"历史已签\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"REJECTED\":\"已驳回\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_supplier_type', '{\"MEDIA\":\"媒体渠道\",\"PRODUCTION\":\"制作方\",\"FREELANCER\":\"自由职业者\",\"MATERIAL\":\"物料供应商\",\"SERVICE\":\"服务商\",\"OTHER\":\"其他\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_invoice_type', '{\"VAT_SPECIAL\":\"我要开增值税专用发票\",\"VAT_NORMAL\":\"我要开普通发票\",\"E_INVOICE\":\"电子发票\",\"OTHER\":\"其他\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_invoice_status', '{\"APPLIED\":\"已申请\",\"ISSUED\":\"已开票\",\"REJECTED\":\"已退回\",\"CANCELLED\":\"已作废\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_tax_rate', '{\"0.13\":\"13% 货物销售\",\"0.09\":\"9% 交通/建筑\",\"0.06\":\"6% 现代服务\",\"0.03\":\"3% 小规模\",\"0\":\"0% 免税\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_payment_method', '{\"BANK\":\"银行转账\",\"CASH\":\"现金\",\"CHECK\":\"支票\",\"ALIPAY\":\"支付宝\",\"WECHAT\":\"微信支付\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_payment_status', '{\"PENDING\":\"待收\",\"PAID\":\"已收\",\"OVERDUE\":\"逾期\"}', 'dict')");
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_customer_lifecycle', '{\"POTENTIAL\":\"客户\",\"ACTIVE\":\"成交\",\"INACTIVE\":\"公海\"}', 'dict')");
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_customer_lifecycle', '{\"POTENTIAL\":\"客户\",\"ACTIVE\":\"成交\"}', 'dict')");
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_customer_industry', '{\"GOV\":\"政府单位\",\"REAL_ESTATE\":\"房地产\",\"FOOD_TOURISM\":\"餐饮旅游\",\"OTHER\":\"其他\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_customer_source', '{\"MANUAL\":\"手动录入\",\"IMPORT\":\"批量导入\",\"DINGTALK\":\"钉钉同步\",\"RECOMMEND\":\"客户推荐\",\"AD\":\"广告获客\",\"OTHER\":\"其他\"}', 'dict')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_data_scope', '{\"ALL\":\"全部数据\",\"DEPT\":\"本部门\",\"DEPT_AND_CHILD\":\"本部门及子部门\",\"CUSTOM\":\"自定义部门\",\"SELF\":\"仅自己\"}', 'dict')");
-Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_project_status', '{\"ACTIVE\":\"进行中\",\"DONE\":\"已完成\",\"ARCHIVED\":\"已归档\",\"TERMINATED\":\"已终止\"}', 'dict')");
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_project_status', '{\"ACTIVE\":\"进行中\",\"DONE\":\"已完成\",\"ARCHIVED\":\"已归档\"}', 'dict')");
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_business_type', '{\"EVENT\":\"活动服务\",\"AD_CONTENT\":\"广告与内容服务\",\"GOODS\":\"商品销售\",\"OTHER\":\"其他\"}', 'dict')");
 // 回款里程碑（P1-5）：支付记录 milestone 字段选项，须带 group_name='dict' 才能出现在系统设置字典 tab
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_payment_milestone', '{\"DOWN_PAYMENT\":\"预付款\",\"MID_TERM\":\"中期款\",\"FINAL_PAYMENT\":\"尾款\",\"RETENTION\":\"质保金\"}', 'dict')");
 

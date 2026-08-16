@@ -13,6 +13,7 @@
 
 # ===== 运行时产物 =====
 /runtime/
+/.mysql-dev/
 /public/uploads/*
 !/public/uploads/.gitkeep
 
@@ -40,8 +41,7 @@
 /合同类型/
 /e2e_*.py
 /e2e_*.js
-/tests/
-/phpunit.xml.dist
+# tests/ 与 phpunit.xml.dist 是发布门禁源码，必须纳入版本控制；发布包仍由 release.sh 排除。
 /phpunit.phar
 .phpunit.cache
 /watchdog.ps1
@@ -52,6 +52,9 @@
 /UPGRADE_*.md
 /PM审查报告_*.md
 /续接开发checklist.md
+/转交摘要.md
+/开发接续基线与实施路线图.md
+/开发接续说明.md
 /AGENTS.md
 /CHANGELOG.md
 /VERSION.md

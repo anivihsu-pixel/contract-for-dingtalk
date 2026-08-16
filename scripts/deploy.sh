@@ -20,7 +20,7 @@
 #   bash scripts/deploy.sh clean [--keep=N]     # 清理旧版本（默认保留最近 5 个）
 #
 # 完整使用说明（首次部署 / 后续更新 / 回滚 / 迁移自动化 / 故障排查）见
-#   DEPLOY_ZERO_DOWNTIME.md（随发布包提供，位于发布包解压后根目录）
+#   零停机部署说明.md（随发布包提供，位于发布包解压后根目录）
 #
 # 前置条件（仅需执行一次）：
 #   - Web 服务器 DocumentRoot 指向 DEPLOY_ROOT/current/public/
@@ -140,6 +140,10 @@ cmd_deploy() {
   # 5. 运行数据库迁移（如果存在）
   _run_migrations "$target"
 
+  # 迁移后、切换流量前执行生产自检；失败立即终止，旧版本继续服务。
+  echo "生产环境自检…"
+  (cd "$target" && php think system:check) || die "生产环境自检失败，已取消版本切换"
+
   # 6. 原子替换 current 符号链接（零停机关键步骤）
   echo "切换符号链接…"
   ln -sfn "$target" "$CURRENT_LINK"
@@ -219,7 +223,7 @@ _run_migrations() {
   if [ -d "$migration_dir" ]; then
     while IFS= read -r f; do
       migrations+=("$f")
-    done < <(find "$migration_dir" -maxdepth 1 -name "migration_*.sql" | sort)
+    done < <(find "$migration_dir" -maxdepth 1 -name "migration_*.sql" | sort -V)
   fi
 
   if [ ${#migrations[@]} -eq 0 ]; then
@@ -227,37 +231,64 @@ _run_migrations() {
     return
   fi
 
-  echo "数据库迁移  : ${#migrations[@]} 个脚本"
+  local db_type="${DB_TYPE:-mysql}"
+  [ "$db_type" = "mysql" ] || die "生产部署仅支持 MySQL；SQLite 仅用于本地验收"
+  [ -f "$SHARED_DIR/.env" ] || die "shared/.env 不存在，数据库迁移无法执行"
+
+  local db_host="$(grep -oP 'DB_HOST\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '127.0.0.1')"
+  local db_port="$(grep -oP 'DB_PORT\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '3306')"
+  local db_name="$(grep -oP 'DB_NAME\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
+  local db_user="$(grep -oP 'DB_USER\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
+  local db_pass="$(grep -oP 'DB_PASS\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
+  [ -n "$db_name" ] && [ -n "$db_user" ] || die "无法从 .env 解析 MySQL 连接信息"
+
+  local mysql_args=(-h "$db_host" -P "${db_port:-3306}" -u "$db_user" "$db_name")
+  local ledger_existed
+  ledger_existed="$(MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='schema_migration'" 2>/dev/null)" \
+    || die "无法连接 MySQL，迁移未执行"
+  MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" -e "CREATE TABLE IF NOT EXISTS schema_migration (name VARCHAR(255) NOT NULL COMMENT '迁移脚本文件名', checksum CHAR(64) NOT NULL COMMENT '脚本SHA256', executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间', PRIMARY KEY(name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" \
+    || die "无法创建迁移台账"
+
+  # 首次启用台账时，以当前线上版本建立历史基线；只会执行比线上版本更新的迁移。
+  # 无既有 current 的首次部署应先初始化当前版本数据库，或显式设置 MIGRATION_BASELINE_VERSION。
+  local target_version="$(php -r 'echo include $argv[1];' "$target/config/version.php" 2>/dev/null || echo '?')"
+  local baseline_version="${MIGRATION_BASELINE_VERSION:-$(current_version)}"
+  # 首次部署且数据库按本发布包 init_mysql.php 新建时，没有 current 可读，按目标版本建立基线。
+  # 若接管的是没有 current 链接的旧库，必须显式设置 MIGRATION_BASELINE_VERSION=旧版本号。
+  if [ "$baseline_version" = "?" ] || [ "$baseline_version" = "(未部署)" ]; then
+    baseline_version="$target_version"
+  fi
+  if [ "$ledger_existed" = "0" ] && [[ "$baseline_version" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+    for m in "${migrations[@]}"; do
+      local name="$(basename "$m")"
+      local migration_version
+      migration_version="$(echo "$name" | grep -oE 'v[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
+      if [ -n "$migration_version" ] && php -r 'exit(version_compare(ltrim($argv[1], "v"), ltrim($argv[2], "v"), "<=") ? 0 : 1);' "$migration_version" "$baseline_version"; then
+        local checksum="$(sha256sum "$m" | awk '{print $1}')"
+        MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" -e "INSERT IGNORE INTO schema_migration(name,checksum) VALUES ('$name','$checksum')" \
+          || die "迁移基线写入失败：$name"
+      fi
+    done
+    echo "迁移基线    : 已记录 $baseline_version 及以前脚本"
+  fi
+
+  echo "数据库迁移  : 检查 ${#migrations[@]} 个脚本"
   for m in "${migrations[@]}"; do
     local name="$(basename "$m")"
-    echo -n "  执行 $name … "
-
-    # 确认目标数据库类型
-    local db_type="${DB_TYPE:-mysql}"
-
-    if [ "$db_type" = "sqlite" ]; then
-      local db_path="$SHARED_DIR/runtime/data/contract.db"
-      if [ -f "$db_path" ]; then
-        sqlite3 "$db_path" < "$m" 2>&1 && echo "✓" || { echo "✗（已跳过或失败）"; }
-      else
-        echo "⚠（SQLite 数据库不存在）"
-      fi
-    else
-      # MySQL：从 shared/.env 读取连接信息
-      if [ -f "$SHARED_DIR/.env" ]; then
-        local db_host="$(grep -oP 'DB_HOST\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '127.0.0.1')"
-        local db_name="$(grep -oP 'DB_NAME\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
-        local db_user="$(grep -oP 'DB_USER\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
-        local db_pass="$(grep -oP 'DB_PASS\s*=\s*\K.*' "$SHARED_DIR/.env" | tr -d '"' | tr -d "'" || echo '')"
-        if [ -n "$db_name" ] && [ -n "$db_user" ]; then
-          MYSQL_PWD="$db_pass" mysql -h "$db_host" -u "$db_user" "$db_name" < "$m" 2>&1 && echo "✓" || echo "✗（已跳过或失败）"
-        else
-          echo "⚠（无法从 .env 解析 MySQL 连接信息，请手动执行：mysql < $m）"
-        fi
-      else
-        yellow "  ⚠ shared/.env 不存在，跳过 MySQL 迁移（请手动执行）"
-      fi
+    local checksum="$(sha256sum "$m" | awk '{print $1}')"
+    local recorded
+    recorded="$(MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" -Nse "SELECT checksum FROM schema_migration WHERE name='$name' LIMIT 1")" \
+      || die "读取迁移台账失败：$name"
+    if [ -n "$recorded" ]; then
+      [ "$recorded" = "$checksum" ] || die "已执行迁移内容发生变化：$name（禁止修改历史迁移）"
+      echo "  跳过 $name（已执行）"
+      continue
     fi
+    echo -n "  执行 $name … "
+    MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" < "$m" 2>&1 || die "迁移失败：$name"
+    MYSQL_PWD="$db_pass" mysql "${mysql_args[@]}" -e "INSERT INTO schema_migration(name,checksum) VALUES ('$name','$checksum')" \
+      || die "迁移已执行但台账写入失败：$name，请人工核验后再部署"
+    echo "✓"
   done
 }
 

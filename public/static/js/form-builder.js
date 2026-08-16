@@ -552,7 +552,9 @@
                     condition: g.condition ? { field: g.condition.field || '', value: String(g.condition.value == null ? '' : g.condition.value) } : null,
                     amount: g.amount || { use: g.use_amount != null ? g.use_amount : 1, min: g.min_amount != null ? g.min_amount : '', max: g.max_amount != null ? g.max_amount : '' },
                     nodes: (g.nodes || []).map(function (n) {
-                        var nd = { name: n.name || '', type: n.type || 'ROLE', role_code: n.role_code || '', approvers: n.approvers || [], mode: n.mode || 'OR' };
+                        // 兼容恢复备份/旧版本指定用户字段；保存时统一使用 approvers。
+                        var legacyApprovers = n.approvers || n.approver_ids || n.user_ids || (n.user_id ? [n.user_id] : []);
+                        var nd = { name: n.name || '', type: n.type || 'ROLE', role_code: n.role_code || '', approvers: legacyApprovers, mode: n.mode || 'OR' };
                         // v2.38.22：节点级金额条件回填（v2.38.25：激活条件已移除，不再回填）
                         if (n.amount_min !== undefined && n.amount_min !== '') nd.amount_min = n.amount_min;
                         if (n.amount_max !== undefined && n.amount_max !== '') nd.amount_max = n.amount_max;

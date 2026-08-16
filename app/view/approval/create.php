@@ -11,9 +11,9 @@
 }
 </style>
 <h4 class="mb-3"><i class="bi bi-send"></i> 提交审批</h4>
-<div class="card stat-card mb-3"><div class="card-header bg-white"><h5 class="mb-0">合同摘要</h5></div><div class="card-body"><p><strong><?=htmlspecialchars($contract['contract_no'])?></strong> — <?=htmlspecialchars($contract['title'])?></p><p>分类: <?=htmlspecialchars(contract_category_name($contract['category'] ?? ''))?> | 金额: ¥<?=format_money($contract['amount'])?></p></div></div>
+<div class="card stat-card mb-3"><div class="card-header bg-white"><h5 class="mb-0">合同摘要</h5></div><div class="card-body"><p><strong><?=htmlspecialchars($contract['contract_no'])?></strong> — <?=htmlspecialchars($contract['title'])?></p><p>业务类型: <?=htmlspecialchars(dict_enabled('business_type')[$contract['business_type'] ?? ''] ?? ($contract['business_type'] ?? ''))?> | 金额: ¥<?=format_money($contract['amount'])?></p></div></div>
 <div class="card stat-card"><div class="card-header bg-white"><h5 class="mb-0">审批节点</h5></div><div class="card-body">
-<form id="submitForm"><input type="hidden" name="contract_id" value="<?=$contract['id']?>"><input type="hidden" name="flow_id" value="<?=intval($contract['flow_id'] ?? 0)?>">
+<form id="submitForm"><input type="hidden" name="contract_id" value="<?=$contract['id']?>">
 <?php if($matched_flow): ?>
   <ol class="mb-3 ps-3">
   <?php foreach($flow_nodes as $n): ?>
@@ -22,7 +22,7 @@
       <?php if(!empty($n['resolved_names'])): ?>
         <span class="text-muted">（<?=htmlspecialchars(implode('、', $n['resolved_names']))?>）</span>
       <?php else: ?>
-        <span class="text-danger">（未指定具体人员）</span>
+        <span class="text-danger">（<?=htmlspecialchars($n['resolve_warning'] ?? '未指定具体人员')?>）</span>
       <?php endif; ?>
     </li>
   <?php endforeach; ?>
@@ -65,4 +65,3 @@ document.getElementById('submitForm').addEventListener('submit',function(e){
     });
 });</script>
 <?php include __DIR__.'/../layout/footer.php'; ?>
-

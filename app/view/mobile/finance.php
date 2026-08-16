@@ -587,12 +587,11 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
       var ci = w.querySelector('.cs-input'); if(ci) ci.value = '';
       var hid = w.querySelector('.cs-id'); if(hid) hid.value = '0';
     });
-    var co = f.querySelector('select[name="our_company_id"]');
-    if(co && co.options.length > 1) co.selectedIndex = 1;
+    // 开票主体选择器重置：默认主体带出（initInvPickers 已处理默认选中，此处无需操作）
     var amt = f.querySelector('input[name="amount"]'); if(amt) amt.value = '';
     var calc = document.getElementById('mInvTaxCalc'); if(calc) calc.style.display = 'none';
     document.getElementById('invApplyMask').classList.add('show');
-    // H2：含税金额价税实时展示绑定（金额输入即时刷新；税率随主体带出由 refreshMInvRate 维护）
+    // H2：含税金额价税实时展示绑定（金额输入即时刷新；税率随主体带出由 mInvCompanyPicked 维护）
     var af = document.getElementById('mInvFields');
     if(af){
       var amtEl = af.querySelector('input[name="amount"]');
@@ -603,27 +602,18 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
       }
     }
     // 2026-08-02：初始按默认主体带出税率并展示价税
-    refreshMInvRate();
-  };
-  /** 2026-08-02：移动端开票税率随主体带出——选择开票主体后从 option data-rate 读取并写入隐藏税率字段 */
-  function refreshMInvRate(){
-    var f = document.getElementById('mInvFields');
-    if(!f) return;
-    var co = f.querySelector('select[name="our_company_id"]');
-    var rate = f.querySelector('input[name="tax_rate"]');
-    if(!co || !rate) return;
-    var opt = co.options[co.selectedIndex];
-    var r = opt ? (opt.getAttribute('data-rate') || '') : '';
-    if(r !== '') rate.value = r;
     mCalcInvTax();
-  }
-  // 绑定：切换开票主体即时带出税率
-  (function(){
+  };
+  /** 2026-08-02：开票主体选中回调——带出该主体税率并刷新价税拆分（initInvPickers 触发） */
+  window.mInvCompanyPicked = function(rate){
     var f = document.getElementById('mInvFields');
     if(!f) return;
-    var co = f.querySelector('select[name="our_company_id"]');
-    if(co) co.addEventListener('change', refreshMInvRate);
-  })();
+    var r = f.querySelector('input[name="tax_rate"]');
+    if(r && rate !== '' && rate !== null && rate !== undefined){ r.value = rate; }
+    mCalcInvTax();
+  };
+  // 初始化开票主体/下拉选择器（复用新建合同「我方主体」底部弹层交互）
+  if(typeof window.initInvPickers === 'function') window.initInvPickers(document.getElementById('mInvFields'));
   /** 移动端含税金额价税拆分展示 */
   function mCalcInvTax(){
     var f = document.getElementById('mInvFields'), box = document.getElementById('mInvTaxCalc');
@@ -648,12 +638,17 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
       if(!el.value.trim()){ var lb = el.closest('.m-field').querySelector('label'); miss.push(lb ? lb.textContent.replace('*','').trim() : el.name); }
     });
     if(miss.length){ err.textContent = '请填写：' + miss.join('、'); return; }
-    err.textContent = '提交中…';
-    $ajax('/ajax/invoice/add', {method:'POST', body:fd, loading:false}).then(function(res){
-      err.textContent = '';
-      toast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
-      if(res.code === 0){ hideMInvApply(); switchInvTab('mine'); }
-    }).catch(function(){ err.textContent = '网络异常，请重试'; });
+    err.textContent = '';
+    // 2026-08-15：二次确认，与合同审批提交对齐
+    var amt = parseFloat(fd.get('amount')) || 0;
+    mConfirm('确认提交开票申请？金额 ¥' + amt.toLocaleString() + '，提交后将进入审批流程。', function(){
+      err.textContent = '提交中…';
+      $ajax('/ajax/invoice/add', {method:'POST', body:fd, loading:false}).then(function(res){
+        err.textContent = '';
+        toast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
+        if(res.code === 0){ hideMInvApply(); switchInvTab('mine'); }
+      }).catch(function(){ err.textContent = '网络异常，请重试'; });
+    });
   };
 
   // 开票弹层（财务）
@@ -701,7 +696,15 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
             el.addEventListener('mousedown', function(e){
               e.preventDefault();
               var c = mSuggest._list[parseInt(this.dataset.idx, 10)];
-              if(c){ mInvContractId = c.id; mSearch.value = c.title; mSuggest.style.display = 'none'; }
+              if(c){
+                mInvContractId = c.id;
+                var hid0 = document.getElementById('mInvContractId'); if(hid0) hid0.value = c.id; // 同步隐藏字段供提交读取
+                mSearch.value = c.title; mSuggest.style.display = 'none';
+                // v2.51.4：关联合同 → 自动带出乙方抬头/税号（可再改选开票客户覆盖）
+                $ajax('/ajax/contract/invoice-info?id=' + c.id, {loading:false}).then(function(res){
+                  if(res && res.code === 0 && typeof window.mInvFillByContract === 'function') window.mInvFillByContract(res.data);
+                }).catch(function(){});
+              }
             });
           });
         }).catch(function(){});

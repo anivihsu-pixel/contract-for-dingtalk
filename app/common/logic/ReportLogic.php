@@ -77,12 +77,12 @@ class ReportLogic
         AuthLogic::appendDataScope($snapBase, 'owner_id', 'dept_id');
         $statusCounts    = self::statusCountMap($snapBase);
         $pendingApproval = $statusCounts['PENDING_APPROVAL'] ?? 0;
-        // v2.38.10: 签署功能已移除，'生效合同'= 历史已签(SIGNED) + 执行中(EXECUTING)
-        $signedContracts = ($statusCounts['SIGNED'] ?? 0) + ($statusCounts['EXECUTING'] ?? 0);
+        // 生效合同口径：审批通过后进入执行的合同。
+        $signedContracts = $statusCounts['EXECUTING'] ?? 0;
 
-        // 30 天内即将到期（SIGNED/EXECUTING，时点快照累计口径）
+        // 30 天内即将到期（EXECUTING，时点快照累计口径）
         $expiringSoon = (clone $snapBase)
-            ->where('status', 'in', ['SIGNED', 'EXECUTING'])
+            ->where('status', 'EXECUTING')
             ->where('expiry_date', '<=', date('Y-m-d', strtotime('+30 days')))
             ->where('expiry_date', '>=', date('Y-m-d'))
             ->count();
@@ -157,11 +157,10 @@ class ReportLogic
             $dir[$key]['cnt']   += (int)$r['cnt'];
         }
 
-        // 客户 / 供应商（数据权限作用域；公海 owner_id=0 为共享待认领资源，对所有用户可见，不套个人范围）
+        // 客户 / 供应商（数据权限作用域）
         $custQuery = Db::name('customer')->where('is_deleted', 0);
         AuthLogic::appendDataScope($custQuery, 'owner_id', 'dept_id');
         $totalCustomers = $custQuery->count();
-        $poolCount      = Db::name('customer')->where('is_deleted', 0)->where('owner_id', 0)->count();
         $suppQuery = Db::name('supplier')->where('is_deleted', 0);
         AuthLogic::appendDataScope($suppQuery, 'owner_id', 'dept_id');
         $totalSuppliers = $suppQuery->count();
@@ -245,7 +244,6 @@ class ReportLogic
             'dir'              => $dir,
             'trend'            => $trend,
             'total_customers'  => $totalCustomers,
-            'pool_count'       => $poolCount,
             'total_suppliers'  => $totalSuppliers,
             'pending_count'    => $pendingCount,
             'upcoming_payments' => $upcomingPayments,
@@ -260,7 +258,7 @@ class ReportLogic
      */
     public static function statusCountMap($baseQuery): array
     {
-        $all = ['DRAFT','PENDING_APPROVAL','APPROVED','REJECTED','SIGNED',
+        $all = ['DRAFT','PENDING_APPROVAL','REJECTED',
                 'EXECUTING','COMPLETED','TERMINATED','EXPIRED','ARCHIVED'];
         $map = array_fill_keys($all, 0);
         $rows = (clone $baseQuery)
@@ -313,9 +311,9 @@ class ReportLogic
         AuthLogic::appendDataScope($supQuery, 'owner_id', 'dept_id');
         $totalSuppliers = $supQuery->count();
 
-        // 30 天内即将到期（SIGNED/EXECUTING）
+        // 30 天内即将到期（EXECUTING）
         $expiringSoon = (clone $baseQuery)
-            ->where('status', 'in', ['SIGNED', 'EXECUTING'])
+            ->where('status', 'EXECUTING')
             ->where('expiry_date', '<=', date('Y-m-d', strtotime('+30 days')))
             ->where('expiry_date', '>=', date('Y-m-d'))
             ->count();
@@ -325,8 +323,8 @@ class ReportLogic
             'total_amount'     => $totalAmount,
             'status_counts'    => $statusCounts,
             'pending_approval' => $statusCounts['PENDING_APPROVAL'] ?? 0,
-            // v2.38.10: 签署已移除 → 生效合同 = SIGNED + EXECUTING
-            'signed_contracts' => ($statusCounts['SIGNED'] ?? 0) + ($statusCounts['EXECUTING'] ?? 0),
+            // 生效合同即执行中合同。
+            'signed_contracts' => $statusCounts['EXECUTING'] ?? 0,
             'total_receivable' => $dash['total_receivable'],
             'received_amount'  => $dash['received_amount'],
             'pending_amount'   => $dash['pending_amount'],

@@ -93,17 +93,31 @@ class DbBackup extends Command
             $output->writeln('<error>未配置 MySQL 数据库连接</error>');
             return false;
         }
-        $cmd = 'MYSQL_PWD=' . escapeshellarg((string)$cfg['password'])
-            . ' mysqldump --single-transaction --routines --events --no-tablespaces'
-            . ' -h' . escapeshellarg((string)$cfg['hostname'])
-            . ' -P' . escapeshellarg((string)($cfg['port'] ?? '3306'))
-            . ' -u' . escapeshellarg((string)$cfg['username'])
-            . ' ' . escapeshellarg((string)$cfg['database'])
-            . ' > ' . escapeshellarg($target) . ' 2>/dev/null';
-        $rc = null;
-        @system($cmd, $rc);
+        // 使用参数数组 + 进程环境传密码，兼容 Windows/Linux，且不把密码暴露在命令行。
+        $cmd = [env('MYSQLDUMP_BIN', 'mysqldump'), '--single-transaction', '--routines', '--events', '--no-tablespaces',
+            '-h', (string)$cfg['hostname'], '-P', (string)($cfg['hostport'] ?? '3306'),
+            '-u', (string)$cfg['username'], (string)$cfg['database']];
+        $stderr = '';
+        $rc = 1;
+        $out = @fopen($target, 'wb');
+        if ($out !== false) {
+            $pipes = [];
+            $envVars = getenv();
+            if (!is_array($envVars)) $envVars = [];
+            $envVars['MYSQL_PWD'] = (string)$cfg['password'];
+            $process = @proc_open($cmd, [0 => ['pipe', 'r'], 1 => $out, 2 => ['pipe', 'w']], $pipes, root_path(), $envVars);
+            if (is_resource($process)) {
+                fclose($pipes[0]);
+                $stderr = stream_get_contents($pipes[2]) ?: '';
+                fclose($pipes[2]);
+                $rc = proc_close($process);
+            }
+            fclose($out);
+        }
         if ($rc !== 0 || !is_file($target) || filesize($target) === 0) {
-            $output->writeln('<error>MySQL 备份失败（请确认 mysqldump 已安装且凭据正确）</error>');
+            @unlink($target);
+            $hint = trim($stderr) !== '' ? '：' . mb_substr(trim($stderr), 0, 300) : '';
+            $output->writeln('<error>MySQL 备份失败（请确认 mysqldump 已安装且凭据正确）' . $hint . '</error>');
             return false;
         }
         return true;

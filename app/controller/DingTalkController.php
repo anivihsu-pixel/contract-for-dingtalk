@@ -55,6 +55,19 @@ class DingTalkController extends BaseController
         if (empty($url)) {
             $url = request()->server('HTTP_REFERER', '');
         }
+        // 匿名接口只允许为当前系统配置域名签名，防止第三方站点借用企业应用的 JSAPI ticket。
+        // 生产以 DINGTALK_APP_URL 为信任根；未配置时仅开发环境回退当前请求域名。
+        $appUrl = (string)config('dingtalk.app_url');
+        if ($appUrl === '' && !empty(config('app.debug'))) {
+            $appUrl = (string)(request()->domain() ?? '');
+        }
+        if (!self::isAllowedJsapiUrl((string)$url, $appUrl)) {
+            Log::warning('拒绝为非本系统来源签发钉钉 JSAPI 配置', [
+                'url' => (string)$url,
+                'ip'  => request()->ip(),
+            ]);
+            return json_error('签名网址不属于当前系统', 403);
+        }
         // P2-10【M-A4】包裹 try/catch：钉钉接口抖动时降级返回，避免直 500（前端对 res.data 缺失已做容错）
         try {
             $config = DingTalkLogic::getJsApiConfig($url);
@@ -63,6 +76,24 @@ class DingTalkController extends BaseController
             Log::error('钉钉 JSAPI 配置获取失败', ['url' => $url, 'error' => $e->getMessage()]);
             return json_error('钉钉配置获取失败，请刷新重试');
         }
+    }
+
+    /** URL 与配置应用地址必须具有完全相同的 scheme/host/port，且不得携带用户凭据。 */
+    public static function isAllowedJsapiUrl(string $url, string $appUrl): bool
+    {
+        $target = parse_url($url);
+        $allowed = parse_url($appUrl);
+        if (!is_array($target) || !is_array($allowed)) return false;
+        if (!empty($target['user']) || !empty($target['pass'])) return false;
+        foreach (['scheme', 'host'] as $key) {
+            if (empty($target[$key]) || empty($allowed[$key])) return false;
+            if (strtolower((string)$target[$key]) !== strtolower((string)$allowed[$key])) return false;
+        }
+        $port = static function (array $parts): int {
+            if (isset($parts['port'])) return (int)$parts['port'];
+            return strtolower((string)($parts['scheme'] ?? '')) === 'https' ? 443 : 80;
+        };
+        return $port($target) === $port($allowed);
     }
 
     /**

@@ -8,7 +8,7 @@
     <a class="btn btn-outline-secondary btn-sm" href="/report/weekly?week=<?=$next?>">下周 <i class="bi bi-chevron-right"></i></a>
   </div>
 </div>
-<p class="text-muted small">按部门汇总上周经营，供周一例会参考。口径与驾驶舱/月报一致：仅交易合同、排除草稿/驳回/审批中与框架合同；逾期/待审批为当前时点。</p>
+<p class="text-muted small">按部门汇总上周经营，供周一例会参考。口径与驾驶舱/月报一致：仅交易合同，排除草稿/驳回/审批中；逾期/待审批为当前时点。</p>
 
 <!-- 全公司概览 -->
 <div class="row g-3 mb-3 row-cols-2 row-cols-md-4">
@@ -62,7 +62,7 @@
           <td>¥<?=number_format((float)$c['amount'],0)?></td>
           <td><?=htmlspecialchars($c['dept_name'])?></td>
           <td><?=htmlspecialchars((string)($c['effective_date']??''))?></td>
-          <td><span class="pc-tag pc-tag-<?=in_array($c['status'],['EXECUTING','SIGNED'],true)?'ok':'muted'?>"><?=htmlspecialchars($contractStatusDict[$c['status']]??$c['status'])?></span></td>
+          <td><span class="pc-tag pc-tag-<?=$c['status']==='EXECUTING'?'ok':'muted'?>"><?=htmlspecialchars($contractStatusDict[$c['status']]??$c['status'])?></span></td>
         </tr>
       <?php endforeach; endif; ?>
       </tbody>

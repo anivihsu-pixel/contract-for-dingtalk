@@ -79,6 +79,29 @@ class PaymentLogic
         return $rows;
     }
 
+    /** 商务催收跟进；不改变到账状态，财务确认职责保持独立。 */
+    public static function addCollectionFollow(int $paymentId, int $userId, array $data): int
+    {
+        $payment = self::getById($paymentId);
+        if (!$payment || ($payment['payment_type'] ?? '') !== 'RECEIVABLE') throw new \RuntimeException('应收计划不存在');
+        if (!in_array($payment['status'] ?? '', ['PENDING', 'OVERDUE'], true)) throw new \RuntimeException('仅待收或逾期计划可以记录催收');
+        $content = trim((string)($data['content'] ?? ''));
+        if ($content === '') throw new \RuntimeException('请填写催收内容');
+        $now = date('Y-m-d H:i:s');
+        return Db::name('payment_collection_follow')->insertGetId([
+            'payment_id'=>$paymentId, 'contract_id'=>(int)$payment['contract_id'], 'user_id'=>$userId,
+            'content'=>mb_substr($content,0,1000), 'customer_promise'=>mb_substr(trim((string)($data['customer_promise']??'')),0,500),
+            'reason'=>mb_substr(trim((string)($data['reason']??'')),0,500), 'promise_date'=>!empty($data['promise_date'])?$data['promise_date']:null,
+            'next_follow_at'=>!empty($data['next_follow_at'])?$data['next_follow_at']:null, 'created_at'=>$now, 'updated_at'=>$now,
+        ]);
+    }
+
+    public static function getCollectionFollows(int $paymentId): array
+    {
+        return Db::name('payment_collection_follow')->alias('f')->leftJoin('user u','u.id=f.user_id')
+            ->field('f.*,u.name user_name')->where('f.payment_id',$paymentId)->order('f.id','desc')->limit(100)->select()->toArray();
+    }
+
     /** 上期回款计划（「复制自上期」用）：按计划日期倒序、id 倒序取最近一条 */
     public static function getPrevByContract(int $contractId): ?array
     {
@@ -117,6 +140,70 @@ class PaymentLogic
             'milestone'      => $milestone,
             'created_at'     => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    /**
+     * 在合同额度锁内新增单期计划，防止并发请求同时通过“已登记金额”校验后造成超额。
+     * @throws \RuntimeException 合同不可登记或额度不足
+     */
+    public static function createWithinLimit(int $contractId, string $paymentType, float $amount, ?string $plannedDate, string $description, int $operatorId, string $paymentMethod = '', string $milestone = ''): int
+    {
+        if ($amount <= 0) throw new \RuntimeException('回款金额必须大于 0');
+        return Db::transaction(function () use ($contractId, $paymentType, $amount, $plannedDate, $description, $operatorId, $paymentMethod, $milestone) {
+            $contract = self::lockContractForFinancialWrite($contractId);
+            self::assertFinancialWriteAllowed($contract);
+            $committed = self::sumCommitted($contractId);
+            if ($committed + $amount > (float)$contract['amount'] + 0.001) {
+                throw new \RuntimeException('回款总额已超过合同金额（合同 ¥' . number_format((float)$contract['amount'], 0)
+                    . '，已登记 ¥' . number_format($committed, 0) . '）');
+            }
+            return self::create($contractId, $paymentType, $amount, $plannedDate, $description, $operatorId, $paymentMethod, $milestone);
+        });
+    }
+
+    /** 在同一合同额度锁内批量新增计划，保证整批全成或全败。 */
+    public static function createBatchWithinLimit(int $contractId, string $paymentType, array $items, int $operatorId): int
+    {
+        if (empty($items) || count($items) > 10) throw new \RuntimeException('单次计划数量不正确');
+        return Db::transaction(function () use ($contractId, $paymentType, $items, $operatorId) {
+            $contract = self::lockContractForFinancialWrite($contractId);
+            self::assertFinancialWriteAllowed($contract);
+            $total = 0.0;
+            foreach ($items as $item) {
+                $amount = (float)($item['amount'] ?? 0);
+                if ($amount <= 0) throw new \RuntimeException('存在无效的金额，请检查各期计划');
+                $total += $amount;
+            }
+            $committed = self::sumCommitted($contractId);
+            if ($committed + $total > (float)$contract['amount'] + 0.001) {
+                throw new \RuntimeException('各期合计超过合同余额（合同 ¥' . number_format((float)$contract['amount'], 0)
+                    . '，已登记 ¥' . number_format($committed, 0) . '）');
+            }
+            foreach ($items as $item) {
+                self::create($contractId, $paymentType, (float)$item['amount'],
+                    !empty($item['planned_date']) ? trim((string)$item['planned_date']) : null,
+                    trim((string)($item['description'] ?? '')), $operatorId,
+                    trim((string)($item['payment_method'] ?? '')), trim((string)($item['milestone'] ?? '')));
+            }
+            return count($items);
+        });
+    }
+
+    /** MySQL 使用合同行锁串行化同一合同的财务写入；SQLite 由写事务串行化。 */
+    private static function lockContractForFinancialWrite(int $contractId): ?array
+    {
+        $q = Db::name('contract')->where('id', $contractId)->where('is_deleted', 0);
+        if (config('database.default') === 'mysql') $q->lock(true);
+        return $q->find() ?: null;
+    }
+
+    private static function assertFinancialWriteAllowed(?array $contract): void
+    {
+        if (!$contract) throw new \RuntimeException('合同不存在或已删除');
+        if ((int)($contract['trade_attr'] ?? 0) === 0) throw new \RuntimeException('该合同为非交易合同，不计入收支');
+        if (!in_array($contract['status'] ?? '', [
+            ContractLogic::STATUS_EXECUTING,
+        ], true)) throw new \RuntimeException('该合同当前状态不可登记回款');
     }
 
     /**
@@ -184,10 +271,6 @@ class PaymentLogic
             }
             $contractId = (int)$record['contract_id'];
         });
-        // M8 修复：确认收款后重算乙方客户信用评级（逾期减少 → 评分/风险标记恢复）
-        if ($contractId) {
-            self::recalcCustomerCredit($contractId);
-        }
     }
 
     /**
@@ -230,8 +313,6 @@ class PaymentLogic
                 'updated_at'     => date('Y-m-d H:i:s'),
             ]);
         });
-        // M8 修复：撤销确认后重算乙方客户信用评级（应收回退 → 若存在逾期将重新计入）
-        self::recalcCustomerCredit((int)$record['contract_id']);
     }
 
     /**
@@ -250,14 +331,11 @@ class PaymentLogic
     {
         $record = Db::name('payment_record')->where('id', $id)->find();
         if (!$record) return;
-        // M8 修复：状态更新 + 信用重算同事务，避免状态已改但重算失败导致评级不一致
         Db::transaction(function () use ($record) {
             Db::name('payment_record')->where('id', (int)$record['id'])->update([
                 'status'     => 'OVERDUE',
                 'updated_at' => date('Y-m-d H:i:s'),
             ]);
-            // v2.38.3：标记逾期后联动重算乙方客户信用评级（高风险/降级）
-            self::recalcCustomerCredit((int)$record['contract_id']);
         });
     }
 
@@ -301,19 +379,7 @@ class PaymentLogic
         Db::name('payment_record')->where('id', $id)->delete();
         // M8 修复：删除回款后重算乙方客户信用评级（删除逾期/待收 → 评分随之变化）
         if ($record) {
-            self::recalcCustomerCredit((int)$record['contract_id']);
         }
     }
 
-    /**
-     * M8 修复：按合同查乙方客户并重算信用评级（确认/撤销/删除回款后的恢复路径）
-     */
-    private static function recalcCustomerCredit(int $contractId): void
-    {
-        if ($contractId <= 0) return;
-        $cid = Db::name('contract')->where('id', $contractId)->value('party_b_customer_id');
-        if ($cid) {
-            \app\common\logic\CustomerLogic::recalcCreditScore((int)$cid);
-        }
-    }
 }

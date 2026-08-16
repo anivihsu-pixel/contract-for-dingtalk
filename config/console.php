@@ -16,5 +16,7 @@ return [
         'payment:mark-overdue' => \app\command\PaymentMarkOverdue::class,
         // v2.47.0：经营周报推送（每周一 cron：0 8 * * 1 php think report:weekly）
         'report:weekly' => \app\command\WeeklyReport::class,
+        'system:check' => \app\command\SystemCheck::class,
+        'ops:alert' => \app\command\OpsAlert::class,
     ],
 ];

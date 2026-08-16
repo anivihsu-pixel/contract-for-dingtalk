@@ -78,6 +78,8 @@ def parse_inserts(fn):
     """返回 {表名: [[列, ...], ...]}：每个 INSERT 语句的列清单（已去反引号/引号）。"""
     inserts = {}
     text = open(fn, encoding='utf-8').read()
+    # 初始化脚本允许用 /* ... */ 注释屏蔽不再适用的历史演示数据；注释内 SQL 不参与种子校验。
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
     for m in INSERT_RE.finditer(text):
         tbl = m.group(1)
         cols = [c.strip().strip('`"') for c in m.group(2).split(',') if c.strip()]

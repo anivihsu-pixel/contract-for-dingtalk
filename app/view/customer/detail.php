@@ -10,22 +10,16 @@
 .share-user-item:last-child{border-bottom:0}
 .share-user-item:hover{background:#f2f3f5;color:#1f2329}
 .share-user-item.active{background:#e8f3ff;color:#3370ff}
+/* v2.51.4：集团成员层级树（清晰层级 + 归属关系） */
+.g-tree{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.g-node{display:flex;align-items:center;gap:8px;padding:9px 12px 9px calc(12px + var(--lv,0)*24px);border-bottom:1px solid var(--line);font-size:14px;position:relative}
+.g-node:last-child{border-bottom:0}
+.g-node .g-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-node.is-cur{background:var(--brand-light);box-shadow:inset 3px 0 0 var(--primary)}
+.g-crumb{font-size:13px;color:var(--text-2);padding:8px 12px;background:#f8f9fb;border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
 </style>
 <div class="d-flex justify-content-between align-items-center mb-3"><h4><?=htmlspecialchars($customer['name']??'')?></h4>
-<div>
-  <!-- 2026-08-03：PC 端客户操作（与移动端 REV-31 对齐）。公海客户可认领；本人客户可释放/转移 -->
-  <?php if(!empty($can_edit) && !empty($is_public_pool)): ?>
-  <button type="button" class="btn btn-primary btn-sm" onclick="custClaim(<?=$customer['id']?>,this)"><i class="bi bi-person-check"></i> 认领</button>
-  <?php elseif(!empty($can_edit) && !empty($is_owner)): ?>
-  <button type="button" class="btn btn-outline-danger btn-sm" onclick="custRelease(<?=$customer['id']?>,this)"><i class="bi bi-box-arrow-up"></i> 释放到公海</button>
-  <button type="button" class="btn btn-outline-primary btn-sm" onclick="openTransferModal(<?=$customer['id']?>)"><i class="bi bi-arrow-left-right"></i> 转移</button>
-  <?php endif; ?>
-  <a href="/customer/<?=$customer['id']?>/edit" class="btn btn-primary btn-sm"><i class="bi bi-pencil"></i> 编辑</a>
-  <!-- v2.47.8：共享/集团设置显眼入口（直达对应 Tab；集团 Tab 懒加载由 shown.bs.tab 触发） -->
-  <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-share')"><i class="bi bi-people"></i> 共享设置</button>
-  <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-group')"><i class="bi bi-diagram-3"></i> 集团</button>
-  <a href="/customer" class="btn btn-outline-secondary btn-sm">返回</a>
-</div></div>
+<div><a href="/customer" class="btn btn-outline-secondary btn-sm">返回</a></div></div>
 
 <ul class="nav nav-tabs mb-3" id="custTabs" role="tablist">
   <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-info">基本信息</button></li>
@@ -44,18 +38,78 @@
   <div class="tab-pane fade show active" id="t-info">
     <div class="card stat-card"><div class="card-body"><table class="table table-sm"><tbody>
       <tr><td class="text-muted" width="100">名称</td><td><strong><?=htmlspecialchars($customer['name']??'')?></strong></td><td class="text-muted" width="100">风险</td><td><?=!empty($customer['high_risk'])?' <span class="pc-tag pc-tag-danger">高风险</span>':'<span class="text-muted">正常</span>'?></td></tr>
-      <!-- v2.38.9：生命周期展示（与漏斗同色） -->
-      <?php $lc = $customer['lifecycle_status'] ?? 'ACTIVE'; $lcCls = ['POTENTIAL'=>'pc-tag-info','ACTIVE'=>'pc-tag-ok','INACTIVE'=>'pc-tag-warn'][$lc] ?? 'pc-tag-muted'; ?>
+      <!-- 生命周期展示（与漏斗同色） -->
+      <?php $lc = $customer['lifecycle_status'] ?? 'ACTIVE'; $lcCls = ['POTENTIAL'=>'pc-tag-info','ACTIVE'=>'pc-tag-ok'][$lc] ?? 'pc-tag-muted'; ?>
       <tr><td class="text-muted">生命周期</td><td><span class="pc-tag <?=$lcCls?>"><?=htmlspecialchars($lifecycle_dict[$lc] ?? $lc)?></span></td>
       <!-- v2.40.0 P1-7：客户行业展示 -->
       <td class="text-muted">行业</td><td><?php $ind=$customer['industry']??''; echo $ind?htmlspecialchars($industry_dict[$ind]??$ind):'<span class="text-muted">—</span>'; ?></td></tr>
       <tr><td class="text-muted">信用代码</td><td><?=htmlspecialchars($customer['credit_code']??'-')?></td><td class="text-muted">法人</td><td><?=htmlspecialchars($customer['legal_person']??'-')?></td></tr>
       <?php $cScore=(int)($customer['credit_score']??100); $cCls=$cScore>=90?'credit-a':($cScore>=80?'credit-b':($cScore>=60?'credit-c':($cScore>=40?'credit-d':'credit-e'))); ?>
       <tr><td class="text-muted">信用评分</td><td colspan="3"><strong class="<?=!empty($customer['high_risk'])?'text-danger':$cCls?>"><?=$cScore?></strong> / 100</td></tr>
-      <tr><td class="text-muted">联系人</td><td><?=htmlspecialchars($customer['contact_name']??'-')?></td><td class="text-muted">手机</td><td><?=phone_link($customer['contact_mobile']??'')?></td></tr>
       <tr><td class="text-muted">邮箱</td><td><?=htmlspecialchars($customer['contact_email']??'-')?></td><td class="text-muted">地址</td><td><?=htmlspecialchars($customer['address']??'-')?></td></tr>
-      <tr><td class="text-muted">归属人</td><td><?=htmlspecialchars($owner_name?:'公海')?></td><td class="text-muted">状态</td><td><?=(($customer['status']??1)==1)?'正常':'禁用'?></td></tr>
+      <tr><td class="text-muted">归属人</td><td><?=htmlspecialchars($owner_name ?: '未分配')?></td><td class="text-muted">状态</td><td><?=(($customer['status']??1)==1)?'正常':'禁用'?></td></tr>
+      <!-- v2.51.4：基本信息集团归属标注（成员显示所属集团；根节点显示子公司数） -->
+      <tr><td class="text-muted">集团归属</td><td colspan="3">
+        <?php if(!empty($customer['parent_id']) && !empty($group_parent_name)): ?>
+          <span class="pc-tag pc-tag-info">集团成员</span> 所属集团：<strong><?=htmlspecialchars($group_parent_name)?></strong>
+        <?php elseif(!empty($group_child_count)): ?>
+          <span class="pc-tag pc-tag-info">集团</span> 根节点 · 含 <?=$group_child_count?> 家子公司
+        <?php else: ?>
+          <span class="text-muted">—</span>
+        <?php endif; ?>
+      </td></tr>
     </tbody></table></div></div>
+
+    <!-- v2.51.4：基本信息联系人卡片（原表格「联系人/手机」行拆分于此；与 t-contacts 同数据源） -->
+    <div class="card stat-card mt-2"><div class="card-header py-2 d-flex justify-content-between align-items-center">
+      <span class="small fw-semibold"><i class="bi bi-person-lines-fill me-1 text-primary"></i>联系人 <span class="badge bg-primary" style="font-size:10px"><?=count($contacts)?></span></span>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="openContactModal(0)"><i class="bi bi-person-plus"></i> 添加联系人</button>
+    </div><div class="card-body py-1">
+      <?php if(empty($contacts)): ?>
+        <div class="text-muted text-center py-3">暂无联系人</div>
+      <?php else: foreach($contacts as $c): ?>
+        <div class="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom" style="border-color:var(--line)!important">
+          <span class="fw-semibold" style="min-width:110px"><?=htmlspecialchars($c['name'])?><?=!empty($c['is_primary'])?' <span class="pc-tag pc-tag-ok" style="font-size:10px">主联系人</span>':''?></span>
+          <span class="text-muted small"><?=phone_link($c['phone']??'')?></span>
+          <span class="text-muted small"><?=htmlspecialchars($c['email']??'')?:'-'?></span>
+          <span class="text-muted small flex-grow-1 text-truncate" style="min-width:0"><?=htmlspecialchars($c['remark']??'')?:''?></span>
+          <?php if(!empty($c['from_primary'])): ?>
+            <span class="small text-muted">主联系人（随客户资料维护）</span>
+          <?php else: ?>
+            <a href="javascript:;" class="small text-primary me-2" onclick="openContactModal(<?=$c['id']?>)">编辑</a>
+            <a href="javascript:;" class="small text-danger" onclick="deleteContact(<?=$c['id']?>)">删除</a>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; endif; ?>
+    </div></div>
+
+    <!-- v2.51.3：基本信息页直接展示往来全景统计卡（360 交易合同口径，与「统计」Tab 同源） -->
+    <?php $gS = $g360['stats'] ?? null; if($gS): ?>
+    <div class="card stat-card mt-2"><div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3 col-6"><div class="text-center"><div class="h4 mb-0 text-primary">¥<?=number_format((float)$gS['total_amount'],0)?></div><div class="text-muted small">往来总额</div></div></div>
+        <div class="col-md-3 col-6"><div class="text-center"><div class="h4 mb-0 text-success">¥<?=number_format((float)$gS['received_paid'],0)?></div><div class="text-muted small">已收</div></div></div>
+        <div class="col-md-3 col-6"><div class="text-center"><div class="h4 mb-0 <?=(($gS['balance']??0)>0)?'text-warning':''?>">¥<?=number_format((float)$gS['balance'],0)?></div><div class="text-muted small">待收余额</div></div></div>
+        <div class="col-md-3 col-6"><div class="text-center"><div class="h4 mb-0 text-danger">¥<?=number_format((float)($stats['overdue_amount']??0),0)?></div><div class="text-muted small">逾期金额</div></div></div>
+      </div>
+    </div></div>
+    <?php endif; ?>
+
+    <!-- v2.51.3：客户操作区移至基本信息下方（转移/编辑/共享/集团 + 记录跟进/添加联系人） -->
+    <div class="card stat-card mt-2"><div class="card-body d-flex gap-2 flex-wrap align-items-center">
+      <span class="text-muted small me-2">操作：</span>
+      <?php if(!empty($can_edit) && !empty($is_owner)): ?>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="openTransferModal(<?=$customer['id']?>)"><i class="bi bi-arrow-left-right"></i> 转移</button>
+      <?php endif; ?>
+      <a href="/customer/<?=$customer['id']?>/edit" class="btn btn-primary btn-sm"><i class="bi bi-pencil"></i> 编辑</a>
+      <!-- v2.47.8：共享/集团设置显眼入口（直达对应 Tab；集团 Tab 懒加载由 shown.bs.tab 触发） -->
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-share')"><i class="bi bi-people"></i> 共享设置</button>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-group')"><i class="bi bi-diagram-3"></i> 集团</button>
+      <?php if(!empty($can_edit) && !empty($is_owner)): ?>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="openActivityModal()"><i class="bi bi-plus-lg"></i> 记录跟进</button>
+      <?php endif; ?>
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="openContactModal(0)"><i class="bi bi-person-plus"></i> 添加联系人</button>
+    </div></div>
   </div>
 
   <!-- 关联合同 -->
@@ -63,7 +117,7 @@
     <div class="card"><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>合同编号</th><th>标题</th><th>金额</th><th>状态</th></tr></thead><tbody>
       <?php if(empty($contracts)): ?><tr><td colspan="4" class="text-center text-muted py-3">暂无关联合同</td></tr>
       <?php else: foreach($contracts as $ct):
-        $stMap = ['DRAFT'=>'草稿','PENDING'=>'审批中','APPROVED'=>'已通过','EXECUTING'=>'执行中','DONE'=>'已完成','REJECTED'=>'已驳回','EXPIRED'=>'已到期','ARCHIVED'=>'已归档'];
+        $stMap = ['DRAFT'=>'草稿','PENDING_APPROVAL'=>'审批中','EXECUTING'=>'执行中','COMPLETED'=>'已完成','REJECTED'=>'已驳回','TERMINATED'=>'已终止','EXPIRED'=>'已到期','ARCHIVED'=>'已归档'];
         $stTxt = $stMap[$ct['status']] ?? $ct['status'];
       ?>
       <tr><td><?=htmlspecialchars($ct['contract_no']??'')?></td><td><a href="/contract/<?=$ct['id']?>"><?=htmlspecialchars($ct['title'])?></a></td><td class="text-end">¥<?=number_format((float)($ct['amount']??0),0)?></td><td><?=htmlspecialchars($stTxt)?></td></tr>
@@ -98,10 +152,10 @@
       <?php if(empty($activities)): ?><div class="text-muted text-center py-3">暂无跟进记录</div>
       <?php else: foreach($activities as $a): ?>
         <div class="d-flex mb-2"><div class="me-2"><span class="pc-tag pc-tag-muted border"><?=htmlspecialchars(activity_type_label($a['type']??''))?></span></div>
-          <div><div><?=htmlspecialchars($a['content']??'')?></div>
+          <div style="min-width:0;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word"><?=htmlspecialchars($a['content']??'')?></div>
             <div class="small text-muted"><?=htmlspecialchars($a['user_name']??'')?> · <?=htmlspecialchars(substr($a['created_at']??'',0,16))?>
             <?php if(!empty($a['next_follow_at'])): ?> · <span class="text-warning">下次跟进：<?=htmlspecialchars(substr($a['next_follow_at'],0,16))?></span><?php endif; ?>
-            </div></div></div>
+            </div></div>
       <?php endforeach; endif; ?>
     </div></div>
   </div>
@@ -143,15 +197,14 @@
   <div class="tab-pane fade" id="t-contacts">
     <div class="card"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="text-muted small">客户的多角色联系人，可标记主联系人</div>
+        <div class="text-muted small">客户联系人，可标记主联系人</div>
         <button type="button" class="btn btn-primary btn-sm" onclick="openContactModal(0)"><i class="bi bi-plus-lg"></i> 添加联系人</button>
       </div>
-      <table class="table table-sm mb-0"><thead><tr><th>姓名</th><th>角色</th><th>电话</th><th>邮箱</th><th>备注</th><th>主联系人</th><th>操作</th></tr></thead><tbody>
-        <?php if(empty($contacts)): ?><tr><td colspan="7" class="text-center text-muted py-3">暂无联系人</td></tr>
+      <table class="table table-sm mb-0"><thead><tr><th>姓名</th><th>电话</th><th>邮箱</th><th>备注</th><th>主联系人</th><th>操作</th></tr></thead><tbody>
+        <?php if(empty($contacts)): ?><tr><td colspan="6" class="text-center text-muted py-3">暂无联系人</td></tr>
         <?php else: foreach($contacts as $c): ?>
         <tr>
           <td><strong><?=htmlspecialchars($c['name'])?></strong></td>
-          <td><?=htmlspecialchars($c['role'])?></td>
           <td><?=phone_link($c['phone']??'')?></td>
           <td><?=htmlspecialchars($c['email']?:'-')?></td>
           <td class="text-muted small"><?=htmlspecialchars($c['remark']??'')?:'-'?></td>
@@ -223,9 +276,6 @@
     <input type="hidden" id="custContactCustId" value="<?=$customer['id']?>">
     <div class="row g-2">
       <div class="col-6"><label class="form-label small" for="custContactName">姓名 <span class="text-danger">*</span></label><input type="text" id="custContactName" class="form-control form-control-sm"></div>
-      <div class="col-6"><label class="form-label small" for="custContactRole">角色</label><select id="custContactRole" class="form-select form-select-sm">
-        <?php foreach($contact_roles as $r): ?><option value="<?=htmlspecialchars($r)?>"><?=htmlspecialchars($r)?></option><?php endforeach; ?>
-      </select></div>
       <div class="col-6"><label class="form-label small" for="custContactPhone">电话</label><input type="text" id="custContactPhone" class="form-control form-control-sm"></div>
       <div class="col-6"><label class="form-label small" for="custContactEmail">邮箱</label><input type="text" id="custContactEmail" class="form-control form-control-sm"></div>
       <div class="col-12"><label class="form-label small" for="custContactRemark">更多信息（微信号等）</label><textarea id="custContactRemark" class="form-control form-control-sm" rows="2" placeholder="如微信号、钉钉号等补充联系方式"></textarea></div>
@@ -312,7 +362,6 @@ function openContactModal(id){
       document.getElementById('custContactName').value = item?item.name:'';
       document.getElementById('custContactPhone').value = item?item.phone:'';
       document.getElementById('custContactEmail').value = item?item.email:'';
-      document.getElementById('custContactRole').value = item?item.role:'商务负责人';
       document.getElementById('custContactPrimary').checked = item?(item.is_primary==1):false;
       document.getElementById('custContactRemark').value = item?item.remark:'';
       modal.show();
@@ -322,7 +371,6 @@ function openContactModal(id){
     document.getElementById('custContactName').value = '';
     document.getElementById('custContactPhone').value = '';
     document.getElementById('custContactEmail').value = '';
-    document.getElementById('custContactRole').value = '商务负责人';
     document.getElementById('custContactPrimary').checked = false;
     document.getElementById('custContactRemark').value = '';
     modal.show();
@@ -335,7 +383,6 @@ function saveContact(){
   fd.append('name', document.getElementById('custContactName').value.trim());
   fd.append('phone', document.getElementById('custContactPhone').value.trim());
   fd.append('email', document.getElementById('custContactEmail').value.trim());
-  fd.append('role', document.getElementById('custContactRole').value);
   fd.append('is_primary', document.getElementById('custContactPrimary').checked?1:0);
   fd.append('remark', document.getElementById('custContactRemark').value.trim());
   $ajax('/ajax/customer/contact/save',{method:'POST',body:fd}).then(function(res){
@@ -361,25 +408,7 @@ function setPrimaryContact(id, customerId){
   }).catch(function(){ showToast('操作失败','error'); });
   });
 }
-/* ===== 2026-08-03：PC 端客户操作（认领 / 释放到公海 / 转移，与移动端 REV-31 对齐）===== */
-function custClaim(id, btn){
-  pcConfirm({message:'确认认领此客户？', okText:'认领'}).then(function(ok){ if(!ok) return;
-    var fd = new FormData();
-    $ajax('/ajax/customer/'+id+'/claim',{method:'POST',body:fd}).then(function(res){
-      if(res.code===0){ showToast('认领成功','success'); setTimeout(function(){location.reload();},600); }
-      else showToast(res.msg||'认领失败','error');
-    }).catch(function(){ showToast('认领失败','error'); });
-  });
-}
-function custRelease(id, btn){
-  pcConfirm({message:'确认将此客户释放到公海？客户将进入公海池。', danger:true, okText:'释放'}).then(function(ok){ if(!ok) return;
-    var fd = new FormData();
-    $ajax('/ajax/customer/'+id+'/release',{method:'POST',body:fd}).then(function(res){
-      if(res.code===0){ showToast('已释放到公海','success'); setTimeout(function(){location.reload();},600); }
-      else showToast(res.msg||'释放失败','error');
-    }).catch(function(){ showToast('释放失败','error'); });
-  });
-}
+/* ===== PC 端客户操作（转移）===== */
 /* 转移选人弹窗：搜索 + 分页（单选） */
 var _transferCustId = 0, _tPage = 1, _tKeyword = '', _tTimer = null, _tLoading = false;
 var _tInitialHTML = document.getElementById('transferUserList').innerHTML;  // 缓存服务端渲染的初始列表
@@ -618,15 +647,39 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
   function money(v){ return '¥'+Number(v||0).toLocaleString('zh-CN', {maximumFractionDigits: 0}); }
 
   function renderGroup(d){
-    // 后端 tree 为根的子孙节点；此处包一层根节点展示完整层级
-    var rootNode = { name: d.root_name || '集团', children: d.tree || [] };
-    var tree = buildTreeHtml([rootNode], d.root_id, true);
+    // v2.51.4：归属路径面包屑（根→…→本客户），一眼看清集团归属链
+    var path = [];
+    if (d.is_root) {
+      path = [{id: d.root_id, name: d.root_name || '集团'}];
+    } else {
+      var sub = buildPath(d.tree || [], custId, []);
+      path = [{id: d.root_id, name: d.root_name || '集团'}].concat(sub || []);
+    }
+    var crumbHtml = '<div class="g-crumb">归属路径：';
+    path.forEach(function(p, i){
+      if (i>0) crumbHtml += ' <i class="bi bi-chevron-right small text-muted"></i> ';
+      crumbHtml += (i===path.length-1) ? '<strong class="text-primary">'+esc(p.name)+'</strong>' : '<span>'+esc(p.name)+'</span>';
+    });
+    crumbHtml += '</div>';
+    // 树：根节点行 + 子孙递归（图标/缩进区分层级，本客户高亮）
+    var treeHtml = '';
+    if (d.tree && d.tree.length) {
+      var rootIsCur = (d.root_id === custId);
+      treeHtml += '<div class="g-node'+(rootIsCur?' is-cur':'')+'" style="--lv:0">'
+        + '<i class="bi '+(rootIsCur?'bi-buildings text-primary':'bi-diagram-3 text-primary')+'"></i>'
+        + '<span class="g-name'+(rootIsCur?' fw-bold text-primary':'')+'">'+esc(d.root_name||'集团')+'</span>'
+        + ' <span class="pc-tag pc-tag-info">集团</span>';
+      if (rootIsCur) treeHtml += ' <span class="pc-tag pc-tag-ok">本客户</span>';
+      if (d.tree.length) treeHtml += ' <span class="pc-tag pc-tag-muted">'+d.tree.length+' 家下级</span>';
+      treeHtml += '</div>';
+      treeHtml += buildTreeHtml(d.tree, custId, 1);
+    } else {
+      treeHtml = '<div class="text-center text-muted py-3">暂无集团成员</div>';
+    }
     var s = d.summary || {};
-    var rootName = '';
-    if (d.tree && d.tree.length) rootName = d.tree[0].name || '';
     var h = '<div class="row g-3"><div class="col-md-6">';
-    h += '<div class="text-muted small mb-2">集团成员层级'+(d.is_root?'':'（所属集团根：'+esc(rootName)+'）')+'</div>';
-    h += tree;
+    h += '<div class="text-muted small mb-2">集团成员层级</div>';
+    h += '<div class="g-tree">' + crumbHtml + treeHtml + '</div>';
     h += '</div><div class="col-md-6">';
     h += '<div class="text-muted small mb-2">集团合同汇总（含全部子孙客户）</div>';
     h += '<div class="d-flex gap-2 mb-2">';
@@ -684,18 +737,34 @@ document.getElementById('transferConfirmBtn').addEventListener('click', function
     });
   };
 
-  function buildTreeHtml(nodes, curId, isRoot){
-    var h = '<ul class="list-unstyled mb-0" style="padding-left:'+(isRoot?0:20)+'px">';
+  function buildTreeHtml(nodes, curId, level){
+    level = level || 0;
+    var h = '';
     (nodes||[]).forEach(function(n){
       var isCur = n.id === curId;
-      h += '<li class="py-1">';
-      h += '<span class="'+(isCur?'fw-bold text-primary':'')+'">'+(n.children&&n.children.length?'▾ ':'')+esc(n.name)+'</span>';
-      if (isCur) h += ' <span class="pc-tag pc-tag-info">本客户</span>';
-      if (n.children && n.children.length) h += buildTreeHtml(n.children, curId, false);
-      h += '</li>';
+      var kids = n.children || [];
+      var hasKids = kids.length > 0;
+      h += '<div class="g-node'+(isCur?' is-cur':'')+'" style="--lv:'+level+'">';
+      h += '<i class="bi '+(isCur?'bi-buildings text-primary':(hasKids?'bi-folder2-open text-warning':'bi-building text-muted'))+'"></i>';
+      h += '<span class="g-name'+(isCur?' fw-bold text-primary':'')+'">'+esc(n.name)+'</span>';
+      if (isCur) h += ' <span class="pc-tag pc-tag-ok">本客户</span>';
+      if (hasKids) h += ' <span class="pc-tag pc-tag-muted">'+kids.length+' 家下级</span>';
+      h += '</div>';
+      if (hasKids) h += buildTreeHtml(kids, curId, level+1);
     });
-    h += '</ul>';
     return h;
+  }
+  // v2.51.4：定位本客户在树中的祖先链（根→…→本客户）
+  function buildPath(nodes, curId, trail){
+    trail = trail || [];
+    var found = null;
+    (nodes||[]).forEach(function(n){
+      if (found) return;
+      var t = trail.concat([n]);
+      if (n.id === curId) { found = t; return; }
+      if (n.children && n.children.length) { var r = buildPath(n.children, curId, t); if (r) found = r; }
+    });
+    return found;
   }
 })();
 </script>

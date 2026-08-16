@@ -2,14 +2,14 @@
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"><h4><i class="bi bi-people"></i> 客户管理</h4><div class="d-flex gap-2"><?php if(!empty($user['is_admin'])): ?><button class="btn btn-outline-warning btn-sm" onclick="showDuplicates()"><i class="bi bi-exclamation-triangle"></i> 查重</button><?php endif; ?><?php if(!empty($can_create_customer)): ?><a href="/customer/create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新增客户</a><?php endif; ?></div></div>
 <!-- M10 客户生命周期漏斗看板（v2.38.11：移动到客户列表上方——漏斗是全局概览，先看分布再看明细） -->
 <?php
-$funnelStages = ['POTENTIAL','ACTIVE','INACTIVE'];
-$funnelData = $funnel['stages'] ?? ['POTENTIAL'=>0,'ACTIVE'=>0,'INACTIVE'=>0];
-$funnelAmts = $funnel['amounts'] ?? ['POTENTIAL'=>0,'ACTIVE'=>0,'INACTIVE'=>0];
+$funnelStages = ['POTENTIAL','ACTIVE'];
+$funnelData = $funnel['stages'] ?? ['POTENTIAL'=>0,'ACTIVE'=>0];
+$funnelAmts = $funnel['amounts'] ?? ['POTENTIAL'=>0,'ACTIVE'=>0];
 $funnelMax = max(1, max(array_values($funnelData)));
-$stageColors = ['POTENTIAL'=>'#0b5ed7','ACTIVE'=>'#07c160','INACTIVE'=>'#ff9f43'];
+$stageColors = ['POTENTIAL'=>'#0b5ed7','ACTIVE'=>'#07c160'];
 ?>
 <div class="card mb-3" id="lifecycleFunnel">
-  <!-- v2.38.11：去除漏斗标题/统计说明——三阶段卡片自带阶段标签与数字（客户/成交/公海），标题冗余（与移动端一致） -->
+  <!-- 漏斗卡片自带阶段标签与数字（客户/成交） -->
   <div class="card-body">
     <div class="d-flex flex-wrap gap-3">
       <?php foreach($funnelStages as $st):
@@ -109,9 +109,9 @@ function showDuplicates(){
     pairs.forEach(function(p, i){
       h += '<div class="border rounded p-3 mb-2"><div class="d-flex justify-content-between align-items-start mb-2">'
         + '<div><span class="pc-tag pc-tag-warn me-2">' + escHtml(p.reason) + '</span></div></div>'
-        + '<div class="row g-2 align-items-center"><div class="col-5"><strong>' + escHtml(p.a.name) + '</strong><br><small class="text-muted">#' + p.a.id + ' | ' + (escHtml(p.a.contact_name)||'-') + ' | 归属用户' + (escHtml(p.a.owner_id)||'公海') + '</small></div>'
+        + '<div class="row g-2 align-items-center"><div class="col-5"><strong>' + escHtml(p.a.name) + '</strong><br><small class="text-muted">#' + p.a.id + ' | ' + (escHtml(p.a.contact_name)||'-') + ' | 归属用户' + (escHtml(p.a.owner_id)||'-') + '</small></div>'
         + '<div class="col-2 text-center"><i class="bi bi-arrow-left-right"></i><br><span class="pc-tag pc-tag-muted">合并</span></div>'
-        + '<div class="col-5"><strong>' + escHtml(p.b.name) + '</strong><br><small class="text-muted">#' + p.b.id + ' | ' + (escHtml(p.b.contact_name)||'-') + ' | 归属用户' + (escHtml(p.b.owner_id)||'公海') + '</small></div></div>'
+        + '<div class="col-5"><strong>' + escHtml(p.b.name) + '</strong><br><small class="text-muted">#' + p.b.id + ' | ' + (escHtml(p.b.contact_name)||'-') + ' | 归属用户' + (escHtml(p.b.owner_id)||'-') + '</small></div></div>'
         + '<div class="mt-2"><button type="button" class="btn btn-sm btn-outline-danger" data-mid="' + p.a.id + '" data-tid="' + p.b.id + '" data-ma="' + escHtml(p.a.name) + '" data-tb="' + escHtml(p.b.name) + '" onclick="doMerge(this)">合并：' + escHtml(p.b.name) + ' → ' + escHtml(p.a.name) + '</button></div></div>';
     });
     body.innerHTML = h;

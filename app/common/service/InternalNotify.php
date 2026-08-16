@@ -21,6 +21,7 @@ class InternalNotify
     const TYPE_APPROVAL_TRANSFERRED = 'APPROVAL_TRANSFERRED';  // 审批转交（通知转交目标）
     const TYPE_APPROVAL_CC          = 'APPROVAL_CC';           // 审批抄送知会（通知抄送人）
     const TYPE_APPROVAL_OVERDUE     = 'APPROVAL_OVERDUE';      // 审批超时催办（通知待审批人）
+    const TYPE_CONTRACT_EXECUTION_CC = 'CONTRACT_EXECUTION_CC'; // 合同进入执行后的抄送确认
 
     /**
      * 发送站内信（批量，本地 DB 写，无网络 I/O，可在事务内直接调用）
@@ -67,6 +68,39 @@ class InternalNotify
         return (int) Db::name('notification')->where('user_id', $userId)->where('is_read', 0)->count();
     }
 
+    /**
+     * 当前用户未读消息中，已同时存在待审批记录的数量。
+     * 工作台将待审批和消息合并展示时，这部分不能重复计数。
+     */
+    public static function unreadPendingApprovalCount(int $userId): int
+    {
+        if ($userId <= 0) return 0;
+
+        $rows = Db::name('notification')
+            ->where('user_id', $userId)
+            ->where('is_read', 0)
+            // 钉钉深链可能把 /approval/{id} 编码为 %2Fapproval%2F{id}，取出后再统一解码匹配。
+            ->whereLike('url', '%approval%')
+            ->field('url')
+            ->select()->toArray();
+        $instanceIds = [];
+        foreach ($rows as $row) {
+            $url = urldecode((string)($row['url'] ?? ''));
+            if (preg_match('#(?:^|/)approval/(\d+)(?:$|[^0-9])#', $url, $m)) {
+                $instanceIds[] = (int)$m[1];
+            }
+        }
+        $instanceIds = array_values(array_unique(array_filter($instanceIds)));
+        if (!$instanceIds) return 0;
+
+        $pendingIds = Db::name('approval_record')
+            ->where('approver_id', $userId)
+            ->where('action', 'PENDING')
+            ->whereIn('instance_id', $instanceIds)
+            ->column('instance_id');
+        return count(array_unique(array_map('intval', $pendingIds)));
+    }
+
     /** 未读列表（工作台待办卡 / 提醒页 Tab 复用，按时间倒序） */
     public static function unreadList(int $userId, int $limit = 5): array
     {
@@ -111,6 +145,48 @@ class InternalNotify
     public static function markAllRead(int $userId): void
     {
         Db::name('notification')->where('user_id', $userId)->where('is_read', 0)
+            ->update(['is_read' => 1]);
+    }
+
+    /**
+     * 审批人处理审批后，自动读掉指向该审批实例的站内消息。
+     * 链接可能是普通 /approval/{id}，也可能是钉钉深链中编码后的 /approval/{id}。
+     */
+    public static function markApprovalRead(int $userId, int $instanceId): void
+    {
+        if ($userId <= 0 || $instanceId <= 0) {
+            return;
+        }
+
+        $rows = Db::name('notification')
+            ->where('user_id', $userId)
+            ->where('is_read', 0)
+            ->select()->toArray();
+        $matchedIds = [];
+        foreach ($rows as $row) {
+            $url = urldecode((string)($row['url'] ?? ''));
+            if (preg_match('#(?:^|/)approval/' . $instanceId . '(?:$|[^0-9])#', $url)) {
+                $matchedIds[] = (int)$row['id'];
+            }
+        }
+        if ($matchedIds) {
+            Db::name('notification')->where('user_id', $userId)
+                ->whereIn('id', $matchedIds)->update(['is_read' => 1]);
+        }
+    }
+
+    /** 执行抄送人确认知悉后，同步读掉该合同对应的执行通知。 */
+    public static function markContractExecutionRead(int $userId, int $contractId): void
+    {
+        if ($userId <= 0 || $contractId <= 0) {
+            return;
+        }
+
+        Db::name('notification')
+            ->where('user_id', $userId)
+            ->where('type', self::TYPE_CONTRACT_EXECUTION_CC)
+            ->where('url', '/contract/' . $contractId)
+            ->where('is_read', 0)
             ->update(['is_read' => 1]);
     }
 }

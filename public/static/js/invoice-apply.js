@@ -27,6 +27,21 @@
         return m[s] || escHtml(s);
     }
 
+    // ===== 申请详情页跳转（2026-08-15：整行点击打开独立详情页，替代弹窗） =====
+    function bindRowDetail() {
+        ['mineTb', 'pendingTb', 'issueTb'].forEach(function (id) {
+            var tb = document.getElementById(id);
+            if (!tb) return;
+            tb.addEventListener('click', function (e) {
+                var t = e.target;
+                if (t.closest('button,a,input,select,textarea')) return;
+                var tr = t.closest('tr');
+                if (!tr || !tr.dataset.id) return;
+                location.href = '/invoice-apply/detail?id=' + tr.dataset.id;
+            });
+        });
+    }
+
     // ===== Tab 切换 =====
     window.switchTab = function (tab) {
         document.getElementById('panelMine').style.display = tab === 'mine' ? '' : 'none';
@@ -64,9 +79,9 @@
                     act = '<button class="btn btn-sm btn-outline-danger" aria-label="删除" onclick="delInv(' + v.id + ')"><i class="bi bi-trash"></i></button>';
                 }
                 tb.insertAdjacentHTML('beforeend',
-                    '<tr><td>' + escHtml(v.content_desc || '—') + '<div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
+                    '<tr data-id="' + v.id + '" style="cursor:pointer"><td><a href="/invoice-apply/detail?id=' + v.id + '" class="text-primary fw-medium">' + escHtml(v.content_desc || '—') + '</a><div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
                     + '<td>' + escHtml(v.our_company_name || '—') + '</td><td>' + money(v.amount) + '</td>'
-                    + '<td>' + escHtml(v.invoice_type || '') + '</td><td>' + badge(v.status) + '</td>'
+                    + '<td>' + escHtml((window.__invTypeLabels && window.__invTypeLabels[v.invoice_type]) || v.invoice_type || '—') + '</td><td>' + badge(v.status) + '</td>'
                     + '<td class="small text-muted">' + escHtml(v.created_at || '') + '</td><td>' + act + '</td></tr>');
             });
             document.getElementById('mineEmpty').style.display = (tb.innerHTML === '') ? '' : 'none';
@@ -98,7 +113,7 @@
                 var act = '<button class="btn btn-sm btn-outline-success" onclick="approveInv(' + v.inst_id + ',1)">通过</button> '
                     + '<button class="btn btn-sm btn-outline-danger" onclick="approveInv(' + v.inst_id + ',0)">驳回</button>';
                 tb.insertAdjacentHTML('beforeend',
-                    '<tr><td>' + escHtml(v.content_desc || '—') + '<div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
+                    '<tr data-id="' + v.id + '" style="cursor:pointer"><td><a href="/invoice-apply/detail?id=' + v.id + '" class="text-primary fw-medium">' + escHtml(v.content_desc || '—') + '</a><div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
                     + '<td>' + escHtml(v.applicant_name || '—') + '</td><td>' + escHtml(v.our_company_name || '—') + '</td>'
                     + '<td>' + money(v.amount) + '</td><td>' + escHtml(v.node_name || '') + '</td>'
                     + '<td class="small text-muted">' + escHtml(v.submitted_at || '') + '</td><td>' + act + '</td></tr>');
@@ -131,9 +146,9 @@
             list.forEach(function (v) {
                 var act = '<button class="btn btn-sm btn-outline-success" onclick="openIssue(' + v.id + ')"><i class="bi bi-check2-circle"></i> 开票</button>';
                 tb.insertAdjacentHTML('beforeend',
-                    '<tr><td>' + escHtml(v.content_desc || '—') + '<div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
+                    '<tr data-id="' + v.id + '" style="cursor:pointer"><td><a href="/invoice-apply/detail?id=' + v.id + '" class="text-primary fw-medium">' + escHtml(v.content_desc || '—') + '</a><div class="small text-muted">' + escHtml(v.invoice_title || '') + '</div></td>'
                     + '<td>' + escHtml(v.applicant_name || '—') + '</td><td>' + escHtml(v.our_company_name || '—') + '</td>'
-                    + '<td>' + money(v.amount) + '</td><td>' + escHtml(v.invoice_type || '') + '</td><td>' + badge(v.status) + '</td>'
+                    + '<td>' + money(v.amount) + '</td><td>' + escHtml((window.__invTypeLabels && window.__invTypeLabels[v.invoice_type]) || v.invoice_type || '—') + '</td><td>' + badge(v.status) + '</td>'
                     + '<td>' + act + '</td></tr>');
             });
             document.getElementById('issueEmpty').style.display = (tb.innerHTML === '') ? '' : 'none';
@@ -232,19 +247,26 @@
         contractInput.addEventListener('input', function () {
             var q = this.value.trim();
             clearTimeout(searchTimer);
-            if (q.length < 2) { hideSug(); return; }
+            // 用户重新输入时解除旧合同关联，避免提交时仍带上已失效的合同 ID。
+            document.getElementById('contractId').value = 0;
+            if (q.length < 1) { hideSug(); return; }
+            renderContractState('搜索中…', false);
             searchTimer = setTimeout(function () {
-                $ajax('/ajax/contract/search?keyword=' + encodeURIComponent(q), { silent: true }).then(function (res) {
+                // ContractController::search 接收 q（与合同新建页一致），不能使用 keyword。
+                $ajax('/ajax/contract/search?q=' + encodeURIComponent(q), { silent: true }).then(function (res) {
                     var list = (res && res.data) || [];
-                    renderSug(list);
-                }).catch(function () {});
+                    if (res && res.code === 0 && list.length) renderSug(list);
+                    else renderContractState('未找到匹配的合同；如客户尚未建档，请先新建客户', true);
+                }).catch(function () {
+                    renderContractState('搜索失败，请稍后重试', true);
+                });
             }, 250);
         });
-        contractInput.addEventListener('focus', function () { if (this.value.trim().length >= 2) { this.dispatchEvent(new Event('input')); } });
+        contractInput.addEventListener('focus', function () { if (this.value.trim().length >= 1) { this.dispatchEvent(new Event('input')); } });
     }
     function renderSug(list) {
         var box = document.getElementById('contractSuggestions');
-        if (!list.length) { box.style.display = 'none'; return; }
+        if (!box) return;
         var h = '';
         list.forEach(function (c) {
             h += '<div class="party-item" data-id="' + c.id + '"><span class="flex-grow-1">' + escHtml(c.title || c.contract_no) + '</span><small class="text-muted ms-2">' + escHtml(c.contract_no || '') + '</small></div>';
@@ -258,6 +280,23 @@
                 contractInput.value = el.querySelector('.flex-grow-1').textContent;
                 hideSug();
             });
+        });
+    }
+    function renderContractState(message, empty) {
+        var box = document.getElementById('contractSuggestions');
+        if (!box) return;
+        box.innerHTML = '<div class="party-empty text-muted small px-3 py-2">' + escHtml(message) + '</div>'
+            + (empty ? '<div class="px-3 pb-2"><button type="button" class="btn btn-sm btn-outline-primary" id="quickCreateInvoiceCustomer">新建客户</button></div>' : '');
+        box.style.display = 'block';
+        var quickBtn = document.getElementById('quickCreateInvoiceCustomer');
+        if (quickBtn) quickBtn.addEventListener('click', function () {
+            var customerWrap = document.querySelector('#applyFields .cs-wrap[data-quick="customer"]');
+            if (customerWrap && typeof window.openQuickCreateFor === 'function') {
+                hideSug();
+                window.openQuickCreateFor(customerWrap);
+            } else {
+                renderContractState('请先打开客户字段后再新建客户', true);
+            }
         });
     }
     function hideSug() { var b = document.getElementById('contractSuggestions'); if (b) { b.style.display = 'none'; b.innerHTML = ''; } }
@@ -338,21 +377,27 @@
             __invActing = false;
             return;
         }
-        err.textContent = '提交中…';
-        $ajax('/ajax/invoice/add', { method: 'POST', body: fd, loading: false }).then(function (res) {
-            __invActing = false;
-            err.textContent = '';
-            showToast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
-            if (res.code === 0) {
-                bootstrap.Modal.getInstance('#applyModal').hide();
-                loadMine(true);
-            }
-        }).catch(function () { __invActing = false; err.textContent = '网络异常，请重试'; });
+        // 2026-08-15：二次确认（与合同审批提交对齐），确认后提交
+        var amt = parseFloat(fd.get('amount')) || 0;
+        pcConfirm({ message: '确认提交开票申请？金额 ¥' + amt.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '，提交后将进入审批流程。' }).then(function (ok) {
+            if (!ok) { __invActing = false; return; }
+            err.textContent = '提交中…';
+            $ajax('/ajax/invoice/add', { method: 'POST', body: fd, loading: false }).then(function (res) {
+                __invActing = false;
+                err.textContent = '';
+                showToast(res.msg || '提交成功', res.code === 0 ? 'success' : 'error');
+                if (res.code === 0) {
+                    bootstrap.Modal.getInstance('#applyModal').hide();
+                    loadMine(true);
+                }
+            }).catch(function () { __invActing = false; err.textContent = '网络异常，请重试'; });
+        });
     };
 
     // ===== 初始加载 =====
     function init() {
         loadMine(true);
+        bindRowDetail(); // 整行点击打开详情
         var more = document.querySelector('#panelMine #mineMore button');
         if (more) more.addEventListener('click', function () { loadMine(false); });
         var pmore = document.querySelector('#panelPending #pendingMore button');

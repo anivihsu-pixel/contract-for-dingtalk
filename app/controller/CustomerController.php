@@ -8,6 +8,7 @@ namespace app\controller;
 use think\facade\View;
 use think\facade\Log;
 use think\facade\Db;
+use think\facade\Cache;
 use app\BaseController;
 use app\common\logic\CustomerLogic;
 use app\common\logic\CustomerContactLogic;
@@ -42,7 +43,7 @@ class CustomerController extends BaseController
 
         View::assign('customers', $result['list']);
         View::assign('filter', $filter);
-        // M10 客户生命周期漏斗看板：各阶段客户数（POTENTIAL/ACTIVE/INACTIVE）
+        // M10 客户生命周期漏斗看板：各阶段客户数（POTENTIAL/ACTIVE）
         View::assign('funnel', CustomerLogic::lifecycleFunnel());
         View::assign('lifecycle_dict', dict('customer_lifecycle'));
         // v2.45.0：共享徽标数据——共享给我的客户 ID（前端据此标记「共享」）
@@ -71,17 +72,21 @@ class CustomerController extends BaseController
         // UX 门控：新建需 customer:create，编辑需 customer:edit（与 save() 口径一致，原 :view 过宽）
         $this->requirePermission($id ? 'customer:edit' : 'customer:create');
         $customer = $id ? CustomerLogic::getDetail($id) : null;
-        // v2.45.0：统一访问判定（公海 / 数据范围 / 显式共享 / 集团祖先 / 合同引用者）
+        // v2.45.0：统一访问判定（数据范围 / 显式共享 / 集团祖先 / 合同引用者）
         if ($customer && !CustomerLogic::canAccessCustomer($this->userId, $customer, (int)($this->user['dept_id'] ?? 0))) {
             return '无权查看该客户';
         }
         View::assign('customer', $customer);
+        View::assign('lifecycle_dict', dict_options('customer_lifecycle'));
+        View::assign('industry_dict', dict_options('customer_industry'));
         return $template ? View::fetch($template) : View::fetch();
     }
 
     /** AJAX: 保存客户 */
     public function save()
     {
+        $idemKey=(string)$this->getPost('idempotency_key','');
+        try{$cached=\app\common\service\IdempotencyService::cached($this->userId,'customer.save',$idemKey);if($cached)return json_success($cached,'保存成功');}catch(\RuntimeException $e){return json_error($e->getMessage());}
         $id = (int)$this->getPost('id', 0);
         // 新建需 customer:create，编辑需 customer:edit
         $this->requirePermission($id ? 'customer:edit' : 'customer:create');
@@ -89,8 +94,7 @@ class CustomerController extends BaseController
         // 越权防护：编辑仅允许归属人/部门/管理员
         if ($id) {
             $existing = CustomerLogic::findRaw($id);
-            if (!$existing || ($existing['owner_id'] != 0
-                    && !AuthLogic::canAccessRecord($existing['owner_id'], $existing['dept_id'] ?? 0))) {
+            if (!$existing || !AuthLogic::canAccessRecord($existing['owner_id'], $existing['dept_id'] ?? 0)) {
                 return json_error('无权限编辑该客户');
             }
         }
@@ -101,38 +105,58 @@ class CustomerController extends BaseController
             'legal_person'   => $this->getPost('legal_person', ''),
             'contact_name'   => $this->getPost('contact_name', ''),
             'contact_mobile' => $this->getPost('contact_mobile', ''),
-            'contact_email'  => $this->getPost('contact_email', ''),
             'address'        => $this->getPost('address', ''),
-            'source'         => $this->getPost('source', 'MANUAL'), // v2.38.2 客户来源
-            'credit_score'   => (int)$this->getPost('credit_score', 100), // v2.38.3 信用评分(手动维护)
+            'remark'         => mb_substr(trim($this->getPost('remark', '')), 0, 255),
+            'source'         => $this->getPost('source', ''), // v2.51.4 客户来源：新建表单必填（快速建档不传该字段则跳过校验）
             'status'         => (int)$this->getPost('status', 1),
-            // v2.38.9：客户生命周期（客户/成交/公海）——补全 M10 漏斗的字段编辑入口
-            'lifecycle_status' => $this->getPost('lifecycle_status', 'ACTIVE'),
+            // 客户生命周期（客户/成交）——补全 M10 漏斗的字段编辑入口
+            'lifecycle_status' => $this->getPost('lifecycle_status', $id ? 'ACTIVE' : 'POTENTIAL'),
             // v2.40.0 P1-7：客户行业（GOV/REAL_ESTATE/FOOD_TOURISM/OTHER）
             'industry'         => $this->getPost('industry', ''),
+            'credit_score'   => (int)$this->getPost('credit_score', 100), // v2.38.3 信用评分(手动维护)
         ];
 
-        // 生命周期值白名单校验（防篡改：仅允许字典内值，非法回退 ACTIVE）
-        if (!in_array($data['lifecycle_status'], ['POTENTIAL', 'ACTIVE', 'INACTIVE'], true)) {
-            $data['lifecycle_status'] = 'ACTIVE';
+        // 生命周期值白名单校验（业务状态码固定，字典仅负责可配置显示名称）
+        if (!in_array($data['lifecycle_status'], ['POTENTIAL', 'ACTIVE'], true)) {
+            $data['lifecycle_status'] = $id ? 'ACTIVE' : 'POTENTIAL';
         }
 
-        // 行业值白名单校验（防篡改：仅允许字典内值，非法回退空）
-        if (!in_array($data['industry'], ['GOV', 'REAL_ESTATE', 'FOOD_TOURISM', 'OTHER'], true)) {
+        // 行业值白名单校验：允许后台「客户行业」字典新增项，非法值仍回退未设置。
+        if ($data['industry'] !== '' && !array_key_exists($data['industry'], dict('customer_industry'))) {
             $data['industry'] = '';
+        }
+        // v2.51.4：来源值白名单校验，非法值回退空
+        if ($data['source'] !== '' && !array_key_exists($data['source'], dict('customer_source'))) {
+            $data['source'] = '';
         }
 
         if (empty($data['name'])) {
             return json_error('请输入客户名称');
         }
+        // v2.51.4：新增客户时来源/行业必填——仅当请求显式带该字段（正式表单）时校验，
+        // 合同/发票等「快速建档」只传基础字段，不强制，避免轻量流程被拦截。
+        if (!$id) {
+            if ($this->getPost('source', null) !== null && $data['source'] === '') {
+                return json_error('请选择客户来源');
+            }
+            if ($this->getPost('industry', null) !== null && $data['industry'] === '') {
+                return json_error('请选择客户行业');
+            }
+        }
 
         // v2.38.2：新建时检测重复客户
         if (!$id) {
-            $dup = CustomerLogic::checkDuplicate($data['name'], $data['credit_code'] ?? '');
+            $dup = CustomerLogic::checkDuplicate($data['name'], $data['credit_code'] ?? '', $data['contact_mobile'] ?? '');
             if (!empty($dup['duplicates'])) {
                 $names = array_map(function($c){ return $c['name'] . '(#' . $c['id'] . ')'; }, $dup['duplicates']);
-                $hint = empty($data['credit_code']) ? '' : '（信用代码匹配）';
-                return json_error('可能存在重复客户：' . implode('、', $names) . $hint . '。若确认为不同客户请修改名称，或使用已有客户', 409);
+                if (!empty($dup['exact_credit'])) {
+                    return json_error('统一社会信用代码已存在：' . implode('、', $names) . '，禁止重复创建', 409);
+                }
+                $confirmed = $this->getPost('duplicate_confirmed','') === '1';
+                if (!$this->isSuperAdmin() || !$confirmed) {
+                    $hint = !empty($dup['exact_phone']) ? '（联系电话相同）' : '（名称疑似重复）';
+                    return json_error('可能存在重复客户：' . implode('、', $names) . $hint . '。仅管理员确认后可继续创建', 409, ['requires_admin_confirmation'=>true]);
+                }
             }
         }
         // CR-21：统一社会信用代码格式校验（非空时校验 18 位 + 校验码）
@@ -155,7 +179,8 @@ class CustomerController extends BaseController
             AuditService::log($this->userId, 'create', 'customer', $id);
         }
 
-        return json_success(['id' => $id], '保存成功');
+        $result=['id'=>$id];\app\common\service\IdempotencyService::remember($this->userId,'customer.save',$idemKey,$result);
+        return json_success($result, '保存成功');
     }
 
     /** 客户详情（v2.38.3：360° 聚合视图） */
@@ -167,7 +192,7 @@ class CustomerController extends BaseController
         // 无权限用户也会触发合同/回款等聚合查询，扩大数据外泄面）
         $base = CustomerLogic::getDetail((int)$id);
         if (empty($base)) return '客户不存在';
-        // v2.45.0：统一访问判定（公海 / 数据范围 / 显式共享 / 集团祖先 / 合同引用者），
+        // v2.45.0：统一访问判定（数据范围 / 显式共享 / 集团祖先 / 合同引用者），
         // 替换原 owner||canAccessRecord||getSharedViewers 三段式
         if (!CustomerLogic::canAccessCustomer($this->userId, $base, (int)($this->user['dept_id'] ?? 0))) {
             return '无权查看该客户';
@@ -191,13 +216,11 @@ class CustomerController extends BaseController
         // v2.38.3：M9 独立联系人矩阵
         // v2.38.11: 主联系人字段兜底（customer_contact 空时展示 customer.contact_name）
         View::assign('contacts', CustomerContactLogic::getListForDisplay((int)$id, $customer));
-        View::assign('contact_roles', CustomerContactLogic::ROLES);
         // v2.38.14：往来汇总（360 交易合同口径）+ 最近动态——360 能力内嵌 PC 客户详情（统计 tab 升级，与移动端同源）
         $g360 = PartyLogic::get360('customer', (int)$id);
         View::assign('g360', !empty($g360['ok']) ? $g360 : null);
-        // 2026-08-03：PC 端客户操作（认领/释放/转移，与移动端 REV-31 对齐）——归属人=本人可释放/转移，公海可认领
+        // PC 端客户操作（转移）——归属人=本人可转移
         View::assign('is_owner', ((int)$customer['owner_id'] ?? 0) === $this->userId);
-        View::assign('is_public_pool', ((int)$customer['owner_id'] ?? 0) === 0);
         View::assign('can_edit', $this->hasPermission('customer:edit'));
         // 转移选人弹窗初始列表（启用用户、排除本人、非管理员仅同部门；与移动端同源 getTransferTargets）
         View::assign('transfer_users', \app\common\logic\UserLogic::getTransferTargets(
@@ -220,6 +243,17 @@ class CustomerController extends BaseController
             ->field('id, name')->order('id', 'asc')->select()->toArray());
         // v2.47.8：集团归属搜索选择器数据源（全量客户，排除自身在视图端处理）
         View::assign('group_options', CustomerLogic::getOptionsForSelect(100));
+        // v2.51.4：基本信息集团归属标注——成员显示所属集团名；根节点显示子公司数
+        $group_parent_name = null;
+        $group_child_count = 0;
+        $pid = (int)($customer['parent_id'] ?? 0);
+        if ($pid > 0) {
+            $group_parent_name = Db::name('customer')->where('id', $pid)->where('is_deleted', 0)->value('name');
+        } else {
+            $group_child_count = (int)Db::name('customer')->where('parent_id', (int)$id)->where('is_deleted', 0)->count();
+        }
+        View::assign('group_parent_name', $group_parent_name);
+        View::assign('group_child_count', $group_child_count);
         return View::fetch();
     }
 
@@ -235,8 +269,7 @@ class CustomerController extends BaseController
         $this->requirePermission('customer:delete');
         $id = (int)$this->getPost('id', 0);
         $existing = CustomerLogic::findRaw($id);
-        if (!$existing || ($existing['owner_id'] != 0
-                && !AuthLogic::canAccessRecord($existing['owner_id'], $existing['dept_id'] ?? 0))) {
+        if (!$existing || !AuthLogic::canAccessRecord($existing['owner_id'], $existing['dept_id'] ?? 0)) {
             return json_error('无权限删除该客户');
         }
         // CR-16：删除前检查关联活跃合同，存在则拒绝并提示合同编号
@@ -251,47 +284,12 @@ class CustomerController extends BaseController
         return json_error('删除失败');
     }
 
-    /** 公海池 */
-    public function pool()
-    {
-        $this->requirePermission('customer:view');
-        $keyword = $this->getParam('keyword', '');
-        list($page, $pageSize) = $this->getPageParams();
-        [$sortField, $sortOrder] = $this->getSortParams([
-            'id'         => 'id',
-            'name'       => 'name',
-            'created_at' => 'created_at',
-        ], 'id', 'desc');
-        $result = CustomerLogic::getPoolList($page, $pageSize, $keyword, [$sortField, $sortOrder]);
-
-        if (request()->isAjax()) {
-            return layui_table($result['list'], $result['total']);
-        }
-
-        View::assign('customers', $result['list']);
-        View::assign('keyword', $keyword);
-        return View::fetch();
-    }
-
-    /** AJAX: 认领客户 */
-    public function claim($id)
-    {
-        $this->requirePermission('customer:edit');
-        $result = CustomerLogic::claim((int)$id, $this->userId, $this->user['dept_id'] ?? 0, \app\common\logic\CustomerLogic::DAILY_CLAIM_LIMIT);
-        if ($result === true) {
-            return json_success(null, '认领成功');
-        }
-        return json_error(is_string($result) ? $result : '认领失败，该客户已被他人认领');
-    }
-
-    /** AJAX: 转移客户（2026-08-03：管理员可从公海直接分配，传 allowFromPool=true） */
+    /** AJAX: 转移客户 */
     public function transfer($id)
     {
         $this->requirePermission('customer:edit');
-        $toUserId      = (int)$this->getPost('to_user_id', 0);
-        $isAdmin       = !empty($this->user['is_admin']);
-        $allowFromPool = $isAdmin;
-        if (CustomerLogic::transfer((int)$id, $this->userId, $toUserId, $allowFromPool)) {
+        $toUserId = (int)$this->getPost('to_user_id', 0);
+        if (CustomerLogic::transfer((int)$id, $this->userId, $toUserId)) {
             return json_success(null, '转移成功');
         }
         return json_error('转移失败');
@@ -320,23 +318,6 @@ class CustomerController extends BaseController
             'page'     => $page,
             'has_more' => ($page * $pageSize) < $res['total'],
         ]);
-    }
-
-    /** AJAX: 释放到公海 */
-    public function release($id)
-    {
-        $this->requirePermission('customer:edit');
-        try {
-            if (CustomerLogic::releaseToPool((int)$id, $this->userId)) {
-                return json_success(null, '已释放到公海');
-            }
-            return json_error('释放失败，客户不存在或已不属于您');
-        } catch (\RuntimeException $e) {
-            return json_error($e->getMessage());
-        } catch (\Throwable $e) {
-            Log::error('释放客户到公海失败', ['id' => (int)$id, 'error' => $e->getMessage()]);
-            return json_error('释放失败，请稍后重试');
-        }
     }
 
     // ===================== v2.45.0 客户协作共享 / 集团层级 =====================
@@ -498,7 +479,7 @@ class CustomerController extends BaseController
 
     /**
      * AJAX: 记录跟进（v2.40.0 P0-2 手动录入：电话/拜访/会议/微信 + 下次跟进时间）
-     * 公海客户必须先认领；数据权限收敛到归属人或其部门。
+     * 数据权限收敛到归属人或其部门。
      */
     public function addActivity($id)
     {
@@ -507,9 +488,6 @@ class CustomerController extends BaseController
         $existing = CustomerLogic::findRaw($customerId);
         if (!$existing || !empty($existing['is_deleted'])) {
             return json_error('客户不存在');
-        }
-        if ((int)$existing['owner_id'] === 0) {
-            return json_error('公海客户请先认领再记录跟进');
         }
         if (!AuthLogic::canAccessRecord($existing['owner_id'], $existing['dept_id'] ?? 0)) {
             return json_error('无权限记录该客户跟进');
@@ -537,6 +515,11 @@ class CustomerController extends BaseController
         }
 
         CustomerLogic::addActivity($customerId, $this->userId, $type, $content, $nextFollowAt);
+        // 跟进计划会即时改变提醒列表；清除当前负责人及操作人的短缓存，避免最多 60 秒看不到新状态。
+        foreach (array_unique([(int)$existing['owner_id'], $this->userId]) as $uid) {
+            if ($uid <= 0) continue;
+            Cache::delete('remind_scan_' . $uid);
+        }
         return json_success(null, '已记录跟进');
     }
 

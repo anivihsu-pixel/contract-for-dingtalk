@@ -40,7 +40,7 @@ include __DIR__ . '/_head.php';
     </div>
     <div class="m-stat">
       <div class="n" style="color:var(--m-success)"><?=intval($signed_contracts)?></div>
-      <div class="l">生效合同</div>  <!-- v2.38.10: 统计 SIGNED+EXECUTING，签署已移除→改名 -->
+      <div class="l">执行中合同</div>
     </div>
   </div>
 

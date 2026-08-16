@@ -5,6 +5,9 @@
 
 use think\facade\Route;
 
+// 负载均衡/监控探针：仅返回通用状态，详细检查使用 php think system:check。
+Route::get('/health', 'Health/index');
+
 // 钉钉免登 (无Auth中间件)
 Route::post('dingtalk/sso-login', 'DingTalk/ssoLogin');
 Route::get('dingtalk/jsapi-config', 'DingTalk/jsapiConfig');
@@ -17,8 +20,8 @@ Route::post('/login', 'Auth/login');
 Route::post('/logout', 'Auth/logout');
 
 // 仪表盘
-Route::get('/', 'Dashboard/index');
 Route::get('/dashboard', 'Dashboard/index');
+Route::get('/search', 'Search/index');
 
 // 提醒 & 财务中心
 Route::get('/remind', 'Remind/index');
@@ -38,7 +41,6 @@ Route::post('/ajax/contract/<id>/renew', 'Contract/renew');   // v2.38.3 续约�
 // 客户
 Route::get('/customer', 'Customer/index');
 Route::get('/customer/create', 'Customer/create');
-Route::get('/customer/pool', 'Customer/pool');
 
 // 供应商
 Route::get('/supplier', 'Supplier/index');
@@ -68,6 +70,7 @@ Route::get('/party/<type>/<id>', 'Party/view');
 Route::get('/approval', 'Approval/index');
 // F5（v2.38.7）：发票申请独立入口（我的申请/待我审批/快捷申请开票）
 Route::get('/invoice-apply', 'InvoiceApply/index');
+Route::get('/invoice-apply/detail', 'InvoiceApply/detail'); // 2026-08-15：开票申请详情页（列表整行点击跳转）
 Route::get('/approval/create/<contractId>', 'Approval/create');
 Route::get('/approval/<id>', 'Approval/detail');
 
@@ -118,7 +121,6 @@ Route::get('/m/contract/<id>/edit', 'Mobile/contractForm');
 Route::get('/m/contract/<id>/approval', 'Mobile/approvalCreate');
 Route::get('/m/contracts', 'Mobile/contracts');
 Route::get('/m/customers', 'Mobile/customers');
-Route::get('/m/customers/pool', 'Mobile/customerPool'); // v2.38.2 移动公海
 Route::get('/m/customer/create', 'Mobile/customerForm');
 Route::get('/m/customer/<id>', 'Mobile/customerDetail');
 Route::get('/m/customer/<id>/edit', 'Mobile/customerForm');
@@ -141,6 +143,7 @@ Route::get('/m/invoice-apply', 'Mobile/invoiceApply');
 // 移动端报表概览 / 归档查看 / 项目列表 / 项目详情（CR-17 补齐核心遗漏模块，Phase 2.6 加项目详情）
 Route::get('/m/reports', 'Mobile/reports');
 Route::get('/m/report/weekly', 'Mobile/weeklyReport'); // v2.47.0：经营周报移动落地页（钉钉通知/站内信点击直达）
+Route::get('/m/dept', 'Mobile/dept'); // v2.51.3：部门经营详情页（工作台经营卡片/经营周报部门行点击进入）
 Route::get('/m/archive', 'Mobile/archive');
 Route::get('/m/projects', 'Mobile/projects');
 Route::get('/m/project/<id>', 'Mobile/projectDetail'); // Phase 2.6：移动端项目详情页
@@ -165,8 +168,10 @@ Route::group('ajax', function () {
     Route::post('contract/update', 'Contract/save');
     Route::post('contract/delete', 'Contract/delete');
     Route::get('contract/search', 'Contract/search');
+    Route::get('contract/invoice-info', 'Contract/invoiceInfo'); // v2.51.4：合同开票信息（申请开票关联合同 → 带出乙方抬头/税号）
     Route::get('party/search', 'Contract/partySearch');
     Route::post('contract/status-transition', 'Contract/statusTransition');
+    Route::post('contract/execution-ack', 'Contract/acknowledgeExecution');
     Route::get('export/contracts', 'Contract/exportCsv');
     Route::get('export/contracts-xlsx', 'Contract/exportXlsx'); // REV-27：合同 xlsx 导出
     Route::post('contract/batch-archive', 'Contract/batchArchive'); // REV-28：批量归档
@@ -175,10 +180,8 @@ Route::group('ajax', function () {
     Route::post('customer/save', 'Customer/save');
     Route::post('customer/delete', 'Customer/delete');
     Route::get('customer/search', 'Customer/search');
-    Route::post('customer/<id>/claim', 'Customer/claim');
     Route::post('customer/<id>/transfer', 'Customer/transfer');
     Route::get('customer/transfer-targets', 'Customer/transferTargets'); // 2026-08-03 转移选人弹窗搜索+分页
-    Route::post('customer/<id>/release', 'Customer/release');
     Route::post('customer/merge', 'Customer/merge');       // v2.38.2 客户合并
     Route::get('customer/duplicates', 'Customer/duplicates'); // v2.38.2 查重扫描
     Route::post('customer/<id>/activity', 'Customer/addActivity'); // v2.40.0 P0-2 手动录入跟进
@@ -216,6 +219,7 @@ Route::group('ajax', function () {
     Route::get('invoice/my-list', 'Invoice/myList');
     Route::get('invoice/pending-approval', 'Invoice/pendingApproval');
     Route::get('invoice/pending-issue', 'Invoice/pendingIssue');
+    Route::get('invoice/detail', 'Invoice/detail'); // 2026-08-15：发票申请详情（我的申请/待审批/待开票共用）
     Route::post('invoice/resubmit', 'Invoice/resubmit');
 
     // 提醒
@@ -250,6 +254,8 @@ Route::group('ajax', function () {
     Route::post('payment/revoke', 'Payment/revoke'); // REV-06：回款撤销入口（已有逻辑，补路由）
     Route::post('payment/copy-prev', 'Payment/copyPrev'); // M14：复制上期回款计划（返回预填字段）
     Route::post('payment/batch-add', 'Payment/batchAdd'); // v2.40.0 P1-5：收款计划模板一键生成多期
+    Route::get('payment/<paymentId>/collection-list', 'Payment/collectionList');
+    Route::post('payment/collection-add', 'Payment/collectionAdd');
 
     Route::post('approval/submit', 'Approval/submit');
     Route::post('approval/<id>/action', 'Approval/action');

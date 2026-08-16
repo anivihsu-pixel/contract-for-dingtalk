@@ -58,7 +58,6 @@ include __DIR__ . '/_head.php';
 .m-radio input{width:18px;height:18px;flex:none}
 .m-radio:has(input:checked){border-color:#3b82f6;background:#f5f9ff}
 .m-fold-sub{color:#9aa3af;font-size:12px;font-weight:400;margin-left:4px}
-.m-fold-badge{background:#3b82f6;color:#fff;border-radius:12px;padding:1px 8px;font-size:12px;font-weight:500;margin-left:auto}
 </style>
 
 <div class="m-nav">
@@ -72,7 +71,7 @@ include __DIR__ . '/_head.php';
       $reqMark = $isNew ? '<span class="req">*</span>' : '';  // label 后红星
       $reqAttr = $isNew ? ' required' : '';                    // input/select 的 required 属性（供 JS 提交前遍历校验）
 ?>
-<div class="m-page has-submitbar" id="page">
+<div class="m-page" id="page">
   <form class="m-form" id="form" onsubmit="return false">
 <?php if(!empty($contract)): ?><input type="hidden" name="id" value="<?=htmlspecialchars($contract['id'] ?? 0)?>"><?php endif; ?>
 <input type="hidden" name="custom_fields" value="{}">
@@ -80,18 +79,18 @@ include __DIR__ . '/_head.php';
 <?php
 use app\common\form\ContractFormConfig;
 $__mmaps = [
-    'categories'       => $categories ?? [],
+    'business_types'   => $business_types ?? [],
     'companies'        => $companies ?? [],
     'projects'         => $projects ?? [],
-    'parent_contracts' => $parent_contracts ?? [],
 ];
 echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $default_company_id ?? 0);
 ?>
+<script>window.__contractDraft=mobileFormDraft(document.getElementById('form'),'contract:<?=intval($contract['id']??0)?>');</script>
+    <!-- v2.51.4：提交按钮由固定悬浮栏改为直接放在页面内容末尾（随内容滚动，不悬浮遮挡）；居中自适应宽度 -->
+    <div style="padding: 6px var(--m-pad) calc(18px + var(--safe-bottom)); display:flex; justify-content:center;">
+      <button type="button" class="m-btn m-btn-brand" id="submitBtn" style="flex:none; min-width:160px; padding:0 32px;"><?=!empty($is_edit)?'保存修改':'创建合同'?></button>
+    </div>
   </form>
-</div>
-
-<div class="m-submitbar">
-  <button class="m-btn m-btn-brand" id="submitBtn"><i class="bi bi-check-lg"></i> <?=!empty($is_edit)?'保存修改':'创建合同'?></button>
 </div>
 
 <div class="m-toast" id="toast"></div>
@@ -613,30 +612,47 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     });
   });
 
-  // ===== v2.40.0：更多选项折叠——已选徽章（关键词/关联项目/关联框架合同实时统计） =====
-  function refreshFoldBadge(){
-    var n = 0;
-    var p = document.getElementById('parentIdFieldM');  if(p && parseInt(p.value,10) > 0) n++;
-    var pr = document.getElementById('projectIdFieldM'); if(pr && parseInt(pr.value,10) > 0) n++;
-    var kw = document.getElementById('f_keywords');      if(kw && kw.value.trim()) n++;
-    var b = document.getElementById('foldBadge'), c = document.getElementById('foldCount');
-    if(b && c){ b.style.display = n > 0 ? '' : 'none'; c.textContent = n; }
-  }
-  ['parentIdFieldM','projectIdFieldM','f_keywords'].forEach(function(fid){
-    var el = document.getElementById(fid);
-    if(el) new MutationObserver(refreshFoldBadge).observe(el, {attributes:true, attributeFilter:['value']});
-  });
-  refreshFoldBadge();
+  // ===== 更多选项折叠（v2.51.4：已移除「已选N项」徽章——数值小看不清） =====
 
-  // ===== 关联框架合同 / 关联项目：搜索选择器（2026-08-05 替代原下拉）=====
-  // 输入关键字走 /ajax/contract/search?scope=framework、/ajax/project/search；
+  // ===== 关联项目搜索选择器（2026-08-05 替代原下拉）=====
+  // 输入关键字走 /ajax/project/search；
   // 输入为空时自动展示「与我有关」推荐备选；点击选中写入隐藏字段。
+  // v2.51.4：下拉自适应视口——搜索框位于表单最底部（更多选项面板）时固定向下展开会被
+  // 软键盘/视口边缘截断，改为下方空间不足则向上展开、并限制高度为剩余可视空间；
+  // 钉钉 WebView 软键盘为 overlay 模式（不压缩布局视口、innerHeight 不变），
+  // 必须用 visualViewport 计算真实可视区，否则键盘弹出后下拉仍被遮挡。
   function bindSearchSuggest(inputId, suggId, hiddenId, url){
     var input = document.getElementById(inputId);
     var sugg  = document.getElementById(suggId);
     var hidden= document.getElementById(hiddenId);
     if(!input || !sugg || !hidden) return;
     var timer = null;
+    function placeSuggest(){
+      var r = input.getBoundingClientRect();
+      var vv = window.visualViewport;
+      var vh  = vv ? vv.height : innerHeight;
+      var vTop = vv ? vv.offsetTop : 0;
+      var gap = 4, MAX = 280;                    // 卡片上限高度（原 240 调高，选项一次可见更多）
+      var below = vTop + vh - r.bottom - gap;    // 输入框下方剩余空间
+      var above = r.top - vTop - gap;            // 输入框上方剩余空间
+      if (below >= 120) {
+        sugg.style.top = 'calc(100% + ' + gap + 'px)';
+        sugg.style.bottom = 'auto';
+        sugg.style.maxHeight = Math.min(MAX, below) + 'px';
+      } else if (above >= 120) {
+        sugg.style.top = 'auto';
+        sugg.style.bottom = 'calc(100% + ' + gap + 'px)';
+        sugg.style.maxHeight = Math.min(MAX, above) + 'px';
+      } else if (below > above) {
+        sugg.style.top = 'calc(100% + ' + gap + 'px)';
+        sugg.style.bottom = 'auto';
+        sugg.style.maxHeight = Math.max(80, below) + 'px';
+      } else {
+        sugg.style.top = 'auto';
+        sugg.style.bottom = 'calc(100% + ' + gap + 'px)';
+        sugg.style.maxHeight = Math.max(80, above) + 'px';
+      }
+    }
     function doSearch(q){
       fetch(url + encodeURIComponent(q), {headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(function(r){return r.json();}).then(function(res){
@@ -650,6 +666,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
           });
           sugg.innerHTML = h;
           sugg.style.display = 'block';
+          placeSuggest();
           sugg._list = res.data;
           sugg.querySelectorAll('.m-party-item').forEach(function(el){
             el.addEventListener('mousedown', function(e){
@@ -657,6 +674,13 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
               var it = sugg._list[parseInt(this.dataset.idx,10)];
               input.value = (it.contract_no ? it.contract_no + ' ' : '') + (it.title || it.name || '');
               hidden.value = it.id;
+              if(hiddenId === 'projectIdFieldM' && it.business_type){
+                var businessLine = document.getElementById('f_business_type');
+                if(businessLine && businessLine.querySelector('option[value="' + it.business_type + '"]')){
+                  businessLine.value = it.business_type;
+                  businessLine.dispatchEvent(new Event('change', {bubbles:true}));
+                }
+              }
               hide();
             });
           });
@@ -670,14 +694,31 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
       timer = setTimeout(function(){ doSearch(q); }, 200);
     });
     input.addEventListener('focus', function(){
-      if(!sugg.style.display || sugg.style.display === 'none') doSearch(input.value.trim());
+      // 下拉已展开时仅重新定位（覆盖滚动后焦点停留/视口变化场景）
+      if(sugg.style.display === 'block'){ placeSuggest(); return; }
+      doSearch(input.value.trim());
+      // 延迟重算：部分老 WebView 软键盘在 focus 后才弹出且无 resize 事件
+      setTimeout(rePlace, 350);
     });
     document.addEventListener('click', function(e){
       if(!e.target.closest('.m-party-search')) hide();
     });
+    // 重新定位：视觉视口（overlay 键盘）+ 窗口缩放 + 页面滚动（输入框位置随滚动变化，须重算展开方向/高度）
+    var repTimer = null;
+    var rePlace = function(){
+      if(sugg.style.display !== 'block') return;
+      if(repTimer) return;   // 滚动/缩放节流
+      repTimer = setTimeout(function(){ repTimer = null; placeSuggest(); }, 100);
+    };
+    var vv = window.visualViewport;
+    if (vv && vv.addEventListener) {
+      vv.addEventListener('resize', rePlace);
+      vv.addEventListener('scroll', rePlace);
+    }
+    window.addEventListener('resize', rePlace);
+    window.addEventListener('scroll', rePlace, true);   // 捕获阶段，覆盖内部滚动容器
     if(hidden.value > 0) doSearch('');
   }
-  bindSearchSuggest('parentSearchM', 'parentSuggestM', 'parentIdFieldM', '/ajax/contract/search?scope=framework&q=');
   bindSearchSuggest('projectSearchM', 'projectSuggestM', 'projectIdFieldM', '/ajax/project/search?q=');
 
   // ===== 附件上传（附件预览优化：进度条 + 重试 + 友好错误提示 + 大小/数量上限） =====
@@ -946,6 +987,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     }
     var form = document.getElementById('form');
     var params = new URLSearchParams(new FormData(form));
+    params.set('idempotency_key',mobileIdempotencyKey('contract-save'));
     if(tv === '0'){ params.set('trade_attr', '0'); params.set('amount', '0'); params.set('direction', ''); }
     else { params.set('trade_attr', '1'); }
     // v2.46.0：我方身份始终提交（非交易合同也需判定对方侧做强制关联校验）
@@ -953,9 +995,9 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     var btn = this; btn.disabled = true; btn.innerHTML = '提交中…';
     // N-m1：改用 mobile-common.js 的 apiPost 统一兜底（自动带 CSRF；返回码≠0 / 网络异常统一走 onError）
     apiPost('/ajax/contract/save', params.toString(),
-      function(){ contractFormSubmitted = true; toast('保存成功'); setTimeout(function(){ location.href = '/m/contracts'; }, 700); },
+      function(){ contractFormSubmitted = true;window.__contractDraft.clear();toast('保存成功'); setTimeout(function(){ location.href = '/m/contracts'; }, 700); },
       // P2-5【M-F3】失败（码≠0/网络异常）时按 $is_edit 还原正确文案，不误显"创建合同"
-      function(err){ btn.disabled=false; btn.innerHTML='<i class="bi bi-check-lg"></i> <?=!empty($is_edit)?'保存修改':'创建合同'?>'; toast(err || '保存失败'); }
+      function(err){ btn.disabled=false; btn.innerHTML='<?=!empty($is_edit)?'保存修改':'创建合同'?>'; toast(err || '保存失败'); }
     );
   });
 

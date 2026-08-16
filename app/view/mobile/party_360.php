@@ -16,13 +16,13 @@ $dirWord = $isCust ? '收' : '付';
 $dirFull = $isCust ? '应收' : '应付';
 // 合同状态标签（复用 mobile contract_detail 的状态色映射）
 $stMap = [
-    'DRAFT'=>'m-tag-warn','PENDING_APPROVAL'=>'m-tag-warn','APPROVED'=>'m-tag-info',
-    'REJECTED'=>'m-tag-danger','SIGNED'=>'m-tag-info','EXECUTING'=>'m-tag-ok',
+    'DRAFT'=>'m-tag-warn','PENDING_APPROVAL'=>'m-tag-warn',
+    'REJECTED'=>'m-tag-danger','EXECUTING'=>'m-tag-ok',
     'COMPLETED'=>'m-tag-ok','TERMINATED'=>'m-tag-muted','EXPIRED'=>'m-tag-warn','ARCHIVED'=>'m-tag-muted',
 ];
 $stText = [
-    'DRAFT'=>'草稿','PENDING_APPROVAL'=>'待审批','APPROVED'=>'已通过','REJECTED'=>'已驳回',
-    'SIGNED'=>'历史已签','EXECUTING'=>'执行中','COMPLETED'=>'已完成','TERMINATED'=>'已终止',
+    'DRAFT'=>'草稿','PENDING_APPROVAL'=>'待审批','REJECTED'=>'已驳回',
+    'EXECUTING'=>'执行中','COMPLETED'=>'已完成','TERMINATED'=>'已终止',
     'EXPIRED'=>'已到期','ARCHIVED'=>'已归档',
 ];
 $fmt = function($v){ return number_format((float)$v, 0); };
@@ -97,7 +97,7 @@ $fmt = function($v){ return number_format((float)$v, 0); };
         <div class="m-row" style="padding:10px var(--m-pad);border-bottom:1px solid #f2f3f5">
           <div class="main">
             <!-- v2.38.11：动态显示动作中文标签 + 合同号（audit_log.content 是 JSON 详情，直接显示为乱码） -->
-            <div class="s"><span class="m-tag m-tag-info" style="font-size:11px"><?=htmlspecialchars(audit_action_label($a['action'] ?? ''))?></span> 合同 #<?=(int)($a['target_id'] ?? 0)?></div>
+            <div class="s"><span class="m-tag m-tag-info" style="font-size:11px"><?=htmlspecialchars(audit_action_label($a['action'] ?? ''))?></span> 合同 <?=htmlspecialchars($a['contract_title'] ?? ('#'.(int)($a['target_id'] ?? 0)))?></div>
             <div class="s" style="font-size:11px;color:var(--m-text-3)"><?=htmlspecialchars($a['created_at'] ?? '')?></div>
           </div>
         </div>

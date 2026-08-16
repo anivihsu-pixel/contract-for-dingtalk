@@ -141,6 +141,7 @@ EXCLUDES=(
   --exclude='./.env.bak'
   --exclude='./.env.bak2'
   --exclude='./.env.*'
+  --exclude='./.mysql-dev'
   # v2.44.0 起演示数据（seed 脚本 + 演示配置模板）不随源码树进包：
   # DEMO_DATA=1 时打包前显式注入（见下），DEMO_DATA=0 纯生产包彻底无演示数据。
   --exclude='./database/seed_demo.php'
@@ -161,6 +162,7 @@ EXCLUDES=(
 
 # 内部研发 / 设计 / 审查 / 审计报告：非客户交付物，一律不进发布包（多为英文标题、随仓库沉淀）
 DOC_EXCLUDES=(
+  --exclude='./AGENTS.md'
   --exclude='./DESIGN_*.md'
   --exclude='./DEV_PLAN_*.md'
   --exclude='./DEVELOPMENT_GUIDE.md'
@@ -198,21 +200,27 @@ DOC_EXCLUDES=(
 # 交付文档：仓库内源文件名 -> 包内中文化文件名（仅这些随包交付）
 DELIVER_DOCS=(
   "CHANGELOG.md:迭代日志.md"
-  "DEPLOY.md:部署说明.md"
-  "DEPLOY_ZERO_DOWNTIME.md:零停机部署说明.md"
-  "DINGTALK_SSO_GUIDE.md:钉钉免登配置说明.md"
+  "docs/PRODUCTION_OPERATIONS.md:生产运维说明.md"
   "VERSION.md:版本记录.md"
 )
 
 # 构建待发布文件树（排除敏感/运行时/内部研发文档/交付文档；交付 md 仅进 zip 交付层，不随 gz）
+TAR_EXTRA=()
+if tar --help 2>/dev/null | grep -q -- '--disable-copyfile'; then
+  TAR_EXTRA+=(--disable-copyfile)
+fi
+
 build_staging() {
   local STG="$1"
   rm -rf "$STG"; mkdir -p "$STG"
-  tar --disable-copyfile "${EXCLUDES[@]}" "${DOC_EXCLUDES[@]}" -cf - -C "$ROOT_DIR" . \
-    | tar --disable-copyfile -xf - -C "$STG"
+  tar "${TAR_EXTRA[@]}" "${EXCLUDES[@]}" "${DOC_EXCLUDES[@]}" -cf - -C "$ROOT_DIR" . \
+    | tar "${TAR_EXTRA[@]}" -xf - -C "$STG"
   # 同步修正 deploy.sh 内的文档引用（交付文档在 zip 层，文件名已中文化）
   local XREF="s/DEPLOY_ZERO_DOWNTIME\.md/零停机部署说明.md/g; s/DINGTALK_SSO_GUIDE\.md/钉钉免登配置说明.md/g; s/DEPLOY_DEMO\.md/部署说明.md/g; s/README_DEMO\.txt/部署说明.md/g; s/CHANGELOG\.md/迭代日志.md/g; s/VERSION\.md/版本记录.md/g; s/DEPLOY\.md/部署说明.md/g"
-  [ -f "$STG/scripts/deploy.sh" ] && sed -i '' -E "$XREF" "$STG/scripts/deploy.sh"
+  if [ -f "$STG/scripts/deploy.sh" ]; then
+    sed -i '' -E "$XREF" "$STG/scripts/deploy.sh" 2>/dev/null || \
+      sed -i -E "$XREF" "$STG/scripts/deploy.sh"
+  fi
   echo "$STG"
 }
 
@@ -231,11 +239,11 @@ if [ "$DEMO_DATA" != "0" ] && [ -f "$ROOT_DIR/runtime/data/contract.db" ]; then
   # 注入演示 seed 脚本与配置模板（演示说明已并入 部署说明.md）
   [ -f "$ROOT_DIR/database/seed_demo.php" ] && cp "$ROOT_DIR/database/seed_demo.php" "$STAGING/database/"
   [ -f "$ROOT_DIR/demo.env.example" ] && cp "$ROOT_DIR/demo.env.example" "$STAGING/"
-  tar --disable-copyfile --exclude='*.DS_Store' -czf "$PKG_PATH" -C "$STAGING" .
+  tar "${TAR_EXTRA[@]}" --exclude='*.DS_Store' -czf "$PKG_PATH" -C "$STAGING" .
   echo "  ✓ 已注入演示数据：runtime/data/contract.db + seed_demo.php + demo.env.example（演示说明见 部署说明.md）"
 else
   echo "== 打包 $PKG (纯生产包，不含演示数据) =="
-  tar --disable-copyfile --exclude='*.DS_Store' -czf "$PKG_PATH" -C "$STAGING" .
+  tar "${TAR_EXTRA[@]}" --exclude='*.DS_Store' -czf "$PKG_PATH" -C "$STAGING" .
   [ "$DEMO_DATA" = "0" ] && echo "  （DEMO_DATA=0：已跳过演示数据）" \
                           || echo "  （未找到 runtime/data/contract.db，按纯包处理）"
 fi
@@ -248,6 +256,11 @@ elif command -v sha256sum >/dev/null 2>&1; then SHA="$(sha256sum "$PKG_PATH" | a
 else SHA="(无校验工具)"; fi
 
 GIT_COMMIT="$( [ -d .git ] && git rev-parse --short HEAD 2>/dev/null || echo 'N/A' )"
+if [ -d .git ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  WORKTREE_STATUS="包含未提交工作区改动"
+else
+  WORKTREE_STATUS="干净工作区"
+fi
 
 # ---- 写 MANIFEST ----
 {
@@ -258,8 +271,9 @@ GIT_COMMIT="$( [ -d .git ] && git rev-parse --short HEAD 2>/dev/null || echo 'N/
   echo "大小      : $SIZE"
   echo "SHA256    : $SHA"
   echo "git commit: $GIT_COMMIT"
+  echo "工作区状态: $WORKTREE_STATUS"
   echo "演示数据  : $([ "$DEMO_DATA" != "0" ] && echo '已包含' || echo '未包含')"
-} >> "$MANIFEST"
+} > "$MANIFEST"
 
 echo ""
 echo "✓ 发布完成"
@@ -267,13 +281,13 @@ echo "  包路径   : releases/$PKG ($SIZE)"
 echo "  SHA256   : $SHA"
 echo "  清单     : releases/MANIFEST.txt"
 echo ""
-echo "提示：发布包默认含仿真数据库（runtime/data/contract.db）与演示配置模板 demo.env.example，客户解包两条命令即可预览；"
-echo "      已排除 .env（含密钥）。需要纯生产包时执行 DEMO_DATA=0 bash scripts/release.sh。"
+echo "提示：发布包默认为纯生产包，不含仿真数据库、演示配置或本地 MySQL 数据；"
+echo "      已排除 .env（含密钥）。需要演示包时显式执行 DEMO_DATA=1 bash scripts/release.sh。"
 
 # ---- 桌面交付（仅本地开发机存在桌面时自动生成交付文件夹）----
 # 约定：桌面生成「合同管理系统_vX.Y.Z」文件夹（不含日期），内含
 #       tar.gz + MANIFEST.txt
-#       + 中文化交付文档：迭代日志.md / 部署说明.md / 零停机部署说明.md / 钉钉免登配置说明.md / 版本记录.md
+#       + 中文化交付文档：迭代日志.md / 生产运维说明.md / 版本记录.md
 #       + 演示配置模板 demo.env.example（演示说明见 部署说明.md）
 # 服务器（无桌面）自动跳过，不报错。
 DESKTOP_DIR="$HOME/Desktop"

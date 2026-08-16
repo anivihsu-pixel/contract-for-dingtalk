@@ -166,3 +166,10 @@ tag
 flag
 signpost-split
 wallet2
+# ===== v2.48.0 合同生命周期操作与资源详情 =====
+card-text
+pen
+play-circle
+plus
+stop-circle
+file-earmark-x

@@ -1,7 +1,7 @@
 <?php
 // +----------------------------------------------------------------------
 // | 客户联系人逻辑（M9 独立联系人模块，v2.38.3）
-// | 客户可拥有多名联系人（多角色），支持主联系人标记与 CRUD。
+// | 客户可拥有多名联系人，支持主联系人标记与 CRUD。
 // +----------------------------------------------------------------------
 
 namespace app\common\logic;
@@ -10,9 +10,6 @@ use think\facade\Db;
 
 class CustomerContactLogic
 {
-    /** 角色候选（与 customer_contact.role 默认对齐） */
-    const ROLES = ['商务负责人', '技术对接人', '法务对接人', '财务对接人', '其他'];
-
     /**
      * 取某客户的全部联系人（主联系人优先，其次按 id 升序）。
      * @param int $customerId
@@ -53,7 +50,6 @@ class CustomerContactLogic
                 'name'         => $customer['contact_name'],
                 'phone'        => $customer['contact_mobile'] ?? '',
                 'email'        => $customer['contact_email'] ?? '',
-                'role'         => '主联系人',
                 'is_primary'   => 1,
                 'from_primary' => true,   // 主联系人字段兜底（非 customer_contact 表记录）
             ]];
@@ -74,7 +70,7 @@ class CustomerContactLogic
 
     /**
      * 新增/更新联系人。
-     * @param array $data 含 customer_id/name/phone/email/role/is_primary，可选 id
+     * @param array $data 含 customer_id/name/phone/email/is_primary/remark，可选 id
      * @return int 新/更新后的 id
      * @throws \InvalidArgumentException
      */
@@ -96,10 +92,6 @@ class CustomerContactLogic
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('邮箱格式不正确');
         }
-        $role = trim((string)($data['role'] ?? '商务负责人'));
-        if ($role === '') {
-            $role = '商务负责人';
-        }
         $isPrimary = !empty($data['is_primary']) ? 1 : 0;
         // v2.38.12: 备注/更多信息（微信号等）
         $remark = trim((string)($data['remark'] ?? ''));
@@ -109,7 +101,6 @@ class CustomerContactLogic
             'name'        => $name,
             'phone'       => $phone,
             'email'       => $email,
-            'role'        => $role,
             'is_primary'  => $isPrimary,
             'remark'      => $remark,
         ];

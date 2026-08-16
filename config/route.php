@@ -9,6 +9,9 @@ return [
     // 此前 url_route_must=false + 控制器无 isPost 守卫 → GET 请求可命中写操作且全局 Csrf 仅校验 POST/PUT/DELETE。
     'url_route_must'         => true,
     'route_complete_match'   => true,
+    // 生产代理/部署面板可能为页面 URL 自动补尾斜杠。
+    // 完全匹配模式下若不归一化，/login/、/dashboard/ 等会被误判为 404。
+    'remove_slash'           => true,
     'controller_suffix'      => true,
     'var_pathinfo'           => 's',
     'controller_auto_search' => false,

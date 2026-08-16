@@ -68,13 +68,6 @@ class DashboardController extends BaseController
         // isAdmin 语义：is_admin=1 ∪ admin 角色（钉钉部署 is_admin=0 同效），管理员看全公司提醒
         $remindAlerts = RemindService::getTodayAlerts($userId, $this->isSuperAdmin(), $this->hasPermission('payment:view'));
 
-        // 站内审批消息未读数（与今日提醒合并进 /remind 统一入口；表缺失时保守为 0）
-        try {
-            $msgUnread = \app\common\service\InternalNotify::unreadCount($userId);
-        } catch (\Throwable $e) {
-            $msgUnread = 0;
-        }
-
         // v2.38.17：角色裁剪——KPI 卡/区块顺序按角色动态渲染（与移动端统一待办中心同口径）
         // v2.43.0 修复：approval:view / payment:view 已为全员默认基础权限（v2.40.2 起），
         // 原「hasPermission('approval:view') 判审批人、hasPermission('payment:view') 判财务」导致
@@ -102,7 +95,6 @@ class DashboardController extends BaseController
             'pending_approval' => $summary['pending_approval'],
             'signed_contracts' => $summary['signed_contracts'],
             'total_customers'  => $summary['total_customers'],
-            'pool_count'       => $summary['pool_count'],
             'total_suppliers'  => $summary['total_suppliers'],
             'pending_count'    => $summary['pending_count'],
             'total_receivable' => $summary['total_receivable'],
@@ -120,7 +112,6 @@ class DashboardController extends BaseController
             'upcoming_payments'=> $summary['upcoming_payments'],
             'status_counts'    => $summary['status_counts'],
             'remind_alerts'    => $remindAlerts,
-            'msg_unread'       => $msgUnread,
             'top_projects'     => $topProjects,
             'dept_summary'     => $deptSummary,
             'draft_contracts'  => $draftContracts,

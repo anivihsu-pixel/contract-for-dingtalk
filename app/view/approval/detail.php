@@ -11,11 +11,53 @@ foreach (($detail['records'] ?? []) as $rp) {
 }
 $totalNodesP = count($nodes);
 ?>
-<style>.apv-current{box-shadow:0 0 0 4px rgba(13,110,253,.18)}</style>
+<style>
+.apv-current{box-shadow:0 0 0 4px rgba(13,110,253,.18)}
+.apv-contract-content{white-space:pre-wrap;line-height:1.75;color:#343a40;background:#f8f9fa;border-radius:8px;padding:14px;max-height:420px;overflow:auto}
+.apv-attach-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;text-decoration:none;color:inherit}
+.apv-attach-row:last-child{border-bottom:0}.apv-attach-row:hover{color:var(--bs-primary)}
+</style>
 <h4 class="mb-3"><i class="bi bi-check2-circle"></i> 审批详情</h4>
 <div class="card stat-card mb-3"><div class="card-header bg-white"><h5 class="mb-0"><?=htmlspecialchars($detail['flow_name'])?> — <?=htmlspecialchars($detail['contract_title'])?><?php if($totalNodesP > 0): ?> <small class="text-muted ms-2" style="font-size:13px">进度 <?=$doneCountP?>/<?=$totalNodesP?></small><?php endif; ?></h5></div><div class="card-body">
 <p>合同编号: <strong><?=htmlspecialchars($detail['contract_no'])?></strong> | 金额: <strong>¥<?=format_money($detail['amount'])?></strong></p>
 <p>提交人: <?=htmlspecialchars($detail['submitter_name'])?> | 状态: <?=approval_status_label($detail['status'])?></p></div></div>
+<div class="card stat-card mb-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h5 class="mb-0"><i class="bi bi-file-earmark-text me-1"></i>合同详情</h5>
+    <a class="btn btn-sm btn-outline-primary" href="/contract/<?=intval($contract['id'])?>?approval_id=<?=intval($detail['id'])?>"><i class="bi bi-box-arrow-up-right"></i> 查看完整合同</a>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6"><div class="text-muted small">合同名称</div><div class="fw-semibold"><?=htmlspecialchars($contract['title'] ?? '-')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">合同编号</div><div><?=htmlspecialchars($contract['contract_no'] ?? '-')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">合同金额</div><div class="fw-semibold text-danger">¥<?=format_money($contract['amount'] ?? 0)?></div></div>
+      <div class="col-md-6"><div class="text-muted small">甲方</div><div><?=htmlspecialchars(($our_company ?: ($contract['party_a_name'] ?? '')) ?: '-')?></div></div>
+      <div class="col-md-6"><div class="text-muted small">乙方</div><div><?=htmlspecialchars(($contract['party_b_name'] ?? '') ?: '-')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">收付方向</div><div><?=($contract['trade_attr'] ?? 1) == 0 ? '非交易合同' : (($contract['direction'] ?? 'sales') === 'sales' ? '应收' : '应付')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">生效日期</div><div><?=htmlspecialchars(($contract['effective_date'] ?? '') ?: '-')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">到期日期</div><div><?=htmlspecialchars(($contract['expiry_date'] ?? '') ?: '-')?></div></div>
+      <div class="col-md-3"><div class="text-muted small">合同状态</div><div><?=contract_status_label($contract['status'] ?? '')?></div></div>
+    </div>
+    <hr>
+    <div class="text-muted small mb-2">合同正文</div>
+    <div class="apv-contract-content"><?=htmlspecialchars(($contract['content'] ?? '') ?: '未填写合同正文')?></div>
+  </div>
+</div>
+<div class="card stat-card mb-3">
+  <div class="card-header bg-white"><h5 class="mb-0"><i class="bi bi-paperclip me-1"></i>合同附件 <span class="badge bg-secondary ms-1"><?=count($attachments ?? [])?></span></h5></div>
+  <div class="card-body py-1">
+  <?php if(!empty($attachments)): foreach($attachments as $att):
+    $attUrl = (string)($att['url'] ?? ($att['file_url'] ?? ''));
+    $attName = (string)($att['name'] ?? ($att['file_name'] ?? basename($attUrl)));
+    $attExt = strtoupper(pathinfo($attName, PATHINFO_EXTENSION));
+    $attExists = $attUrl !== '' && attachment_exists($attUrl);
+  ?>
+    <?php if($attExists): ?><a class="apv-attach-row" href="<?=htmlspecialchars($attUrl)?>" target="_blank" rel="noopener">
+      <i class="bi bi-file-earmark-text fs-4 text-primary"></i><span class="flex-grow-1"><?=htmlspecialchars($attName)?></span><small class="text-muted"><?=htmlspecialchars($attExt)?></small><i class="bi bi-box-arrow-up-right"></i>
+    </a><?php else: ?><div class="apv-attach-row text-muted"><i class="bi bi-file-earmark-x fs-4"></i><span class="flex-grow-1"><?=htmlspecialchars($attName)?>（文件缺失）</span></div><?php endif; ?>
+  <?php endforeach; else: ?><p class="text-muted mb-0 py-3">暂无合同附件</p><?php endif; ?>
+  </div>
+</div>
 <?php if(!empty($nodes)): ?>
 <div class="card stat-card mb-3"><div class="card-body">
   <div class="d-flex align-items-start">
@@ -77,6 +119,14 @@ $totalNodesP = count($nodes);
 <?php elseif($can_recall && $detail['status']=='PENDING'): ?>
 <div class="card stat-card"><div class="card-body d-flex gap-2">
 <button class="btn btn-outline-warning" onclick="doRecall()"><i class="bi bi-arrow-counterclockwise"></i> 撤回审批</button></div></div>
+<?php else: ?>
+<div class="card stat-card"><div class="card-body text-center text-muted">
+<?php if(($detail['status'] ?? '') === 'APPROVED'): ?><i class="bi bi-check-circle text-success me-1"></i>该审批已全部通过
+<?php elseif(($detail['status'] ?? '') === 'REJECTED'): ?><i class="bi bi-x-circle text-danger me-1"></i>该审批已被驳回
+<?php elseif(($detail['status'] ?? '') === 'RECALLED'): ?><i class="bi bi-arrow-counterclockwise me-1"></i>提交人已撤回该审批
+<?php else: ?><i class="bi bi-hourglass-split me-1"></i>当前审批由其他审批人处理
+<?php endif; ?>
+</div></div>
 <?php endif; ?>
 <script>// 质量修复：__acting 防重复提交（双击同意/驳回只发一次请求），所有出口重置；补 .catch 处理网络异常
 var __acting=false;
@@ -135,4 +185,3 @@ function loadTransferTargets(kw){
     .catch(function(){});
 }</script>
 <?php include __DIR__.'/../layout/footer.php'; ?>
-

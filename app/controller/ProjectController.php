@@ -62,6 +62,7 @@ class ProjectController extends BaseController
         View::assign('statusDict', dict('project_status'));
         // REV-44：客户下拉加载上限使用具名常量（如需随数据量增长，调整此处一处即可）
         View::assign('customers', CustomerLogic::getOptionsForSelect(self::CUSTOMER_SELECT_LIMIT));
+        View::assign('business_types', dict_options('business_type', $project['business_type'] ?? ''));
         return $template ? View::fetch($template) : View::fetch();
     }
 
@@ -89,6 +90,7 @@ class ProjectController extends BaseController
             'name'        => trim($this->getPost('name', '')),
             'code'        => trim($this->getPost('code', '')),
             'customer_id' => (int)$this->getPost('customer_id', 0),
+            'business_type' => $this->getPost('business_type', 'OTHER'),
             'status'      => $this->getPost('status', 'ACTIVE'),
             // v2.40.0 P1-6：执行阶段 + 进度
             'stage'       => $this->getPost('stage', 'PLANNING'),
@@ -101,6 +103,9 @@ class ProjectController extends BaseController
 
         if ($data['name'] === '') {
             return json_error('请输入项目名称');
+        }
+        if (!array_key_exists($data['business_type'], dict_enabled('business_type'))) {
+            return json_error('请选择有效的业务类型');
         }
         // v2.40.7：项目状态保存白名单去字典化——此前 array_keys(dict('project_status')) 直接把字典当校验白名单，
         // 字典任意增项会放行未识别状态入库（列表/统计不认识）；改为代码常量枚举，字典仅用于显示 label。
@@ -145,7 +150,6 @@ class ProjectController extends BaseController
         View::assign('contract_limit', 200);
         View::assign('statusDict', dict('project_status'));
         View::assign('contractStatusDict', dict('contract_status'));
-        // v2.40.0 P1-6：验收按钮权限
         View::assign('can_edit', $this->hasPermission('project:edit'));
         return View::fetch();
     }
@@ -188,10 +192,10 @@ class ProjectController extends BaseController
             return json_error('无权限操作该项目');
         }
 
-        // 联动：项目下销售合同（执行中/已通过/历史已签）置已完成（P1-1：下沉 ProjectLogic::completeSalesContracts）
+        // 联动：项目下销售合同（执行中/已通过/历史已签）置已完成（下沉 ProjectLogic::completeSalesContracts）
         $affected = ProjectLogic::completeSalesContracts($id);
 
-        // 待收尾款统计（项目关联合同下的 PENDING 尾款记录）（P1-1：下沉 ProjectLogic::sumPendingTailAmount）
+        // 待收尾款统计（项目关联合同下的 PENDING 尾款记录）（下沉 ProjectLogic::sumPendingTailAmount）
         $pendingTail = ProjectLogic::sumPendingTailAmount($id);
 
         ProjectLogic::update($id, [
@@ -289,6 +293,7 @@ class ProjectController extends BaseController
         AuditService::log($this->userId, 'restore', 'project', $id);
         return json_success(null, '已撤销终止，项目恢复进行中');
     }
+
 
     /** AJAX: 下拉选项（合同创建页关联项目用） */
     public function options()

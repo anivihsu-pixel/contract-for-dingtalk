@@ -19,7 +19,7 @@ include __DIR__ . '/_head.php';
     <div class="m-card-bd">
       <div class="m-kv"><div class="k">合同</div><div class="v"><?=htmlspecialchars($contract['title'] ?? '')?></div></div>
       <div class="m-kv"><div class="k">编号</div><div class="v"><?=htmlspecialchars($contract['contract_no'] ?? '')?></div></div>
-      <div class="m-kv"><div class="k">分类</div><div class="v"><?=htmlspecialchars(contract_category_name($contract['category'] ?? ''))?></div></div>
+      <div class="m-kv"><div class="k">业务类型</div><div class="v"><?=htmlspecialchars(dict_enabled('business_type')[$contract['business_type'] ?? ''] ?? ($contract['business_type'] ?? ''))?></div></div>
       <div class="m-kv"><div class="k">金额</div><div class="v"><span class="amt pay-amt">¥<?=number_format((float)($contract['amount'] ?? 0), 0)?></span></div></div>
     </div>
   </div>
@@ -37,7 +37,7 @@ include __DIR__ . '/_head.php';
             <?php if(!empty($n['resolved_names'])): ?>
               <span class="m-tag m-tag-muted" style="margin-left:4px"><?=htmlspecialchars(implode('、', $n['resolved_names']))?></span>
             <?php else: ?>
-              <span style="margin-left:4px;color:#dc3545">未指定具体人员</span>
+              <span style="margin-left:4px;color:#dc3545"><?=htmlspecialchars($n['resolve_warning'] ?? '未指定具体人员')?></span>
             <?php endif; ?>
           </li>
           <?php endforeach; ?>

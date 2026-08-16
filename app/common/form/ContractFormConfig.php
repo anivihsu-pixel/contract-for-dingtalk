@@ -10,7 +10,7 @@ namespace app\common\form;
  * 字段元数据：
  *  - name        表单字段名（提交 key）
  *  - label       显示标签
- *  - type        text|number|date|textarea|select|switch|hidden|keywords|upload|party_name|party_search|company|parent_search
+ *  - type        text|number|date|textarea|select|switch|hidden|keywords|upload|party_name|party_search|company
  *  - group       逻辑分组（basic/party/terms/attach/aux），用于选项与渲染归类
  *  - required    新建时是否必填（编辑态不追溯）
  *  - options_key 选项来源（controller 注入的 maps 中的 key，如 categories/projects）
@@ -32,7 +32,7 @@ class ContractFormConfig
     {
         // 数组顺序即【移动端】视觉顺序；pc_step 控制【PC 端】向导步骤归属。
         // 2026-08-05 重排：移动端新建合同「合同概要 / 合同附件」下移（先填核心必填信息），
-        // 关键词 / 关联框架合同 / 关联项目收进「更多选项」折叠面板（m_fold）。
+        // 关键词 / 关联项目收进「更多选项」折叠面板（m_fold）。
         return [
             // ───────── 顶部核心（移动端首屏仅标题） ─────────
             ['name'=>'title','label'=>'合同标题','type'=>'text','group'=>'basic','required'=>true,
@@ -70,10 +70,11 @@ class ContractFormConfig
              'm_id'=>'f_our_side','pc_id'=>'ourSideField'],
 
             // ───────── 更多信息（交易属性） ─────────
-            ['name'=>'category','label'=>'合同分类','type'=>'select','group'=>'basic','required'=>true,
-             'options_key'=>'categories','default'=>'SERVICE','col_pc'=>4,'pc_step'=>1,'m_sec'=>'更多信息',  // 2026-08-03: 3->4 长文本 select 窄屏不截断
-             'pc_id'=>'categorySelect','m_id'=>'f_category'],
-            ['name'=>'trade_attr','label'=>'合同性质','type'=>'switch','group'=>'basic',
+            ['name'=>'business_type','label'=>'业务类型','type'=>'select','group'=>'basic','required'=>true,
+             'options_key'=>'business_types','default'=>'','col_pc'=>4,'pc_step'=>1,'m_sec'=>'更多信息',
+             'help'=>'关联项目时自动带入；提交审批后锁定',
+             'pc_id'=>'businessTypeSelect','m_id'=>'f_business_type'],
+            ['name'=>'trade_attr','label'=>'合同性质','type'=>'trade_attr','group'=>'basic',
              'switch_label'=>'交易合同（计入收支）','default'=>1,'pc_step'=>1,'m_sec'=>'更多信息',
              'pc_id'=>'tradeAttr','m_id'=>'f_trade_attr','hide'=>'direction,amount',
              'help'=>'交易合同计入财务收支统计，非交易合同仅存档'],
@@ -82,11 +83,10 @@ class ContractFormConfig
              'show_when'=>'trade_attr=1','col_pc'=>4,'pc_step'=>1,'m_sec'=>'更多信息',  // 2026-08-03: 3->4 长文本不截断
              'pc_id'=>'directionSelect','row_id'=>'directionRow','m_row_id'=>'directionField'],
             ['name'=>'our_company_id','label'=>'签约主体','type'=>'company','group'=>'basic','required'=>true,
-             'col_pc'=>4,'pc_step'=>1,'m_sec'=>'更多信息','pc_id'=>'companySelect','m_id'=>'f_company'],  // 2026-08-03: 3->4 公司名长文本不截断
+             'col_pc'=>4,'pc_step'=>1,'m_sec'=>'更多信息','pc_id'=>'companySelect','m_id'=>'f_company'],
             ['name'=>'amount','label'=>'金额（元）','type'=>'number','group'=>'basic','required'=>true,
              'step'=>'0.01','show_when'=>'trade_attr=1','col_pc'=>3,'pc_step'=>1,'m_sec'=>'金额与期限',
              'm_id'=>'f_amount','row_id'=>'amountField','m_row_id'=>'amountField'],
-
             // ───────── 条款与期限（v2.40.0：移动端移出到「金额与期限」独立区，日期必填不设默认值） ─────────
             ['name'=>'effective_date','label'=>'生效日期','type'=>'date','group'=>'terms','required'=>true,
              'col_pc'=>6,'pc_step'=>2,'m_sec'=>'金额与期限', 'm_id'=>'effective_date'],
@@ -110,8 +110,6 @@ class ContractFormConfig
             // ───────── 更多选项（移动端默认折叠：不常用字段） ─────────
             ['name'=>'keywords','label'=>'关键词','type'=>'keywords','group'=>'aux',
              'placeholder'=>'输入关键词后回车添加','col_pc'=>6,'pc_step'=>1,'m_sec'=>'','m_fold'=>true],
-            ['name'=>'parent_id','label'=>'关联框架合同','type'=>'parent_search','group'=>'aux',
-             'col_pc'=>6,'pc_step'=>1,'m_sec'=>'','m_fold'=>true],
             ['name'=>'project_id','label'=>'关联项目','type'=>'project_search','group'=>'aux',
              'col_pc'=>3,'pc_step'=>1,'m_sec'=>'','m_fold'=>true],
 
@@ -213,7 +211,7 @@ class ContractFormConfig
      * PC 端字段 HTML 生成入口：按 config 顺序遍历，自动处理向导步骤(step1/step2)与分区分隔。
      * @param array $contract 编辑态字段值
      * @param bool  $isNew    是否新建（控制 required）
-     * @param array $maps     ['categories'=>code=>name,'companies'=>[id=>name],'projects'=>[id=>name],'parent_contracts'=>[...]]
+     * @param array $maps     ['categories'=>code=>name,'companies'=>[id=>name],'projects'=>[id=>name]]
      * @param int   $defaultCompanyId
      */
     public static function pcRenderAll(array $contract, bool $isNew, array $maps, int $defaultCompanyId = 0): string
@@ -332,15 +330,17 @@ class ContractFormConfig
                 $html = '<div class="' . $colCls . '"' . $rowIdAttr . '><label class="form-label">' . self::h($label) . $req . '</label>'
                     . '<select name="' . $name . '" class="form-select" id="' . $id . '"' . $reqAttr . '>';
                 if (!$hasMatch) {
-                    $html .= '<option value="" selected>- 请选择 -</option>';
+                    $placeholder = '- 请选择 -';
+                    $html .= '<option value="" selected>' . $placeholder . '</option>';
                 }
                 foreach ($opts as $code => $n) {
                     $html .= '<option value="' . self::h($code) . '"' . ($val == $code ? ' selected' : '') . '>' . self::h($n) . '</option>';
                 }
-                $html .= '</select></div>';
+                $help = !empty($f['help']) ? '<div class="form-text">' . self::h($f['help']) . '</div>' : '';
+                $html .= '</select>' . $help . '</div>';
                 return $html;
 
-            case 'switch':
+            case 'trade_attr':
                 $trade = ($val == '' ? ($f['default'] ?? 1) : $val);
                 $checkedTrade = $trade == 1 ? ' checked' : '';
                 $checkedNon = $trade == 0 ? ' checked' : '';
@@ -354,32 +354,20 @@ class ContractFormConfig
                     . '<input type="hidden" name="trade_attr" id="tradeAttr" value="' . self::h($trade) . '">'
                     . '<div class="form-text text-muted" id="taHint"></div></div>';
 
-            case 'company':
-                $companies = $maps['companies'] ?? [];
-                $sel = $val ?: $defaultCompanyId;
-                $html = '<div class="' . $colCls . '"><label class="form-label">' . self::h($label) . $req . '</label>'
-                    . '<select name="' . $name . '" class="form-select" id="' . $id . '"' . $reqAttr . '>'
-                    . '<option value="0">- 未指定 -</option>';
-                foreach ($companies as $c) {
-                    $cid = is_array($c) ? ($c['id'] ?? 0) : $c;
-                    $cname = is_array($c) ? ($c['name'] ?? '') : $c;
-                    $html .= '<option value="' . self::h($cid) . '"' . ($sel == $cid ? ' selected' : '') . '>' . self::h($cname) . '</option>';
-                }
-                $html .= '</select></div>';
-                return $html;
+            case 'boolean':
+                $checked = (int)$val === 1 ? ' checked' : '';
+                $help = !empty($f['help']) ? '<div class="form-text">' . self::h($f['help']) . '</div>' : '';
+                return '<div class="' . $colCls . '"><label class="form-label d-block">' . self::h($label) . '</label>'
+                    . '<div class="form-check form-switch">'
+                    . '<input type="hidden" name="' . $name . '" value="0">'
+                    . '<input class="form-check-input" type="checkbox" role="switch" name="' . $name . '" id="' . $id . '" value="1"' . $checked . '>'
+                    . '<label class="form-check-label" for="' . $id . '">' . self::h($f['switch_label'] ?? '启用') . '</label>'
+                    . '</div>' . $help . '</div>';
 
-            case 'parent_search':
-                $pid = (int)($contract['parent_id'] ?? 0);
-                $display = '';
-                foreach (($maps['parent_contracts'] ?? []) as $p) {
-                    if (($p['id'] ?? 0) == $pid) { $display = ($p['contract_no'] ?? '') . ' ' . ($p['title'] ?? ''); break; }
-                }
-                return '<div class="col-6 col-md-3"><label class="form-label">关联框架合同'
-                    . ' <i class="bi bi-question-circle text-muted" style="font-size:12px;cursor:help" title="年度框架协议下的单次执行合同。\n不关联框架则为独立合同。"></i></label>'
-                    . '<div class="position-relative">'
-                    . '<input type="text" class="form-control parent-search" id="parentSearch" placeholder="搜索框架合同编号或标题..." autocomplete="off" value="' . self::h($display) . '">'
-                    . '<div class="party-suggestions" id="parentSuggestions"></div></div>'
-                    . '<input type="hidden" name="parent_id" id="parentIdField" value="' . $pid . '"></div>';
+            case 'company':
+                $sel = $val ?: $defaultCompanyId;
+                // PC 端主体仅通过第二步甲乙方的「切换」入口选择，避免重复输入。
+                return '<input type="hidden" name="' . $name . '" id="' . $id . '" value="' . self::h($sel) . '">';
 
             case 'project_search':
                 // 2026-08-05：关联项目由下拉改为「搜索选择器」，输入关键字搜索未归档项目，
@@ -483,8 +471,8 @@ class ContractFormConfig
             'party_a_name','party_a_contact','party_a_phone','party_a_customer_id','party_a_supplier_id','party_a_type',
             'party_b_name','party_b_contact','party_b_phone','party_b_customer_id','supplier_id','our_side',
             'amount','effective_date','expiry_date',
-            'category','trade_attr','direction','our_company_id',
-            'keywords','parent_id','project_id'];
+            'business_type','trade_attr','direction','our_company_id',
+            'keywords','project_id'];
         $byName = [];
         foreach (self::fields() as $f) { $byName[$f['name']] = $f; }
         $out = [];
@@ -514,17 +502,16 @@ class ContractFormConfig
         $reqAttr = $isNew ? ' required' : '';
         $out = '';
         $lastSec = '__init__';
-        // 2026-08-05：m_fold=true 的字段（关键词/关联框架/关联项目）收进「更多选项」折叠面板
+        // m_fold=true 的字段（关键词/关联项目）收进「更多选项」折叠面板
         $inFold = false;
         $partyHeader = false;
         foreach (self::mobileOrderedFields() as $f) {
             if (!empty($f['skip_mobile'])) continue;
             $isFold = !empty($f['m_fold']);
             if ($isFold && !$inFold) {
-                // v2.40.0：折叠标题带内容副标题 + 已选徽章（解决发现性与状态不可见）
+                // v2.51.4：折叠标题仅副标题，移除「已选N项」徽章（数值小看不清，体验差）
                 $out .= '<details class="m-fold" id="moreOptionsFold"><summary>更多选项'
-                    . '<span class="m-fold-sub">关键词 · 关联项目 · 关联框架合同</span>'
-                    . '<b class="m-fold-badge" id="foldBadge" style="display:none">已选 <i id="foldCount">0</i> 项</b>'
+                    . '<span class="m-fold-sub">关键词 · 关联项目</span>'
                     . '<i class="bi bi-chevron-down"></i></summary><div class="m-fold-body">';
                 $inFold = true;
             }
@@ -605,15 +592,17 @@ class ContractFormConfig
                 $html = '<div class="m-field"' . $wrapId . '><label>' . self::h($label) . $req . '</label>'
                     . '<select class="m-select" name="' . $name . '" id="' . $id . '"' . $reqAttr . '>';
                 if (!$hasMatch) {
-                    $html .= '<option value="" selected>- 请选择 -</option>';
+                    $placeholder = '- 请选择 -';
+                    $html .= '<option value="" selected>' . $placeholder . '</option>';
                 }
                 foreach ($opts as $code => $n) {
                     $html .= '<option value="' . self::h($code) . '"' . ($val == $code ? ' selected' : '') . '>' . self::h($n) . '</option>';
                 }
-                $html .= '</select></div>';
+                $help = !empty($f['help']) ? '<div class="m-help">' . self::h($f['help']) . '</div>' : '';
+                $html .= '</select>' . $help . '</div>';
                 return $html;
 
-            case 'switch':
+            case 'trade_attr':
                 // v2.40.0：移动端「合同性质」改为交易/非交易 radio 无默认必选（避免默认值错填；
                 // 后端 trade_attr 漏传默认 0=非交易，显式选择最稳妥；PC 端 switch 默认保持）
                 $trade = $contract['trade_attr'] ?? '';
@@ -622,6 +611,14 @@ class ContractFormConfig
                     . '<label class="m-radio"><input type="radio" name="trade_attr" value="1"' . ($trade == 1 ? ' checked' : '') . '><span>交易合同（计入收支）</span></label>'
                     . '<label class="m-radio"><input type="radio" name="trade_attr" value="0"' . ($trade === 0 || $trade === '0' ? ' checked' : '') . '><span>非交易合同（仅存档）</span></label>'
                     . '</div></div>';
+
+            case 'boolean':
+                $checked = (int)$val === 1 ? ' checked' : '';
+                $help = !empty($f['help']) ? '<div class="m-help">' . self::h($f['help']) . '</div>' : '';
+                return '<div class="m-field"><label>' . self::h($label) . '</label>'
+                    . '<input type="hidden" name="' . $name . '" value="0">'
+                    . '<label class="m-radio"><input type="checkbox" name="' . $name . '" id="' . $id . '" value="1"' . $checked . '>'
+                    . '<span>' . self::h($f['switch_label'] ?? '启用') . '</span></label>' . $help . '</div>';
 
             case 'company':
                 return '<input type="hidden" name="our_company_id" id="f_company" value="' . self::h($val ?: $defaultCompanyId) . '">';
@@ -668,22 +665,8 @@ class ContractFormConfig
                     . '<div class="m-upload-list" id="uploadList"></div>'
                     . '<input type="hidden" name="file_url" id="f_file_url" value="' . self::h($val) . '"></div>';
 
-            case 'parent_search':
-                // 2026-08-05：移动端「关联框架合同」由下拉改为「搜索选择器」，
-                // 输入关键字搜索框架合同（/ajax/contract/search?scope=framework），空输入时展示推荐（与我有关）。
-                $pid = (int)($contract['parent_id'] ?? 0);
-                $display = '';
-                foreach (($maps['parent_contracts'] ?? []) as $p) {
-                    if (($p['id'] ?? 0) == $pid) { $display = trim(($p['contract_no'] ?? '') . ' ' . ($p['title'] ?? '')); break; }
-                }
-                return '<div class="m-field"><label>' . self::h($label) . '</label>'
-                    . '<div class="m-party-search">'
-                    . '<input class="m-input" id="parentSearchM" placeholder="搜索框架合同编号或标题…" autocomplete="off" value="' . self::h($display) . '">'
-                    . '<div class="m-party-suggest" id="parentSuggestM"></div></div>'
-                    . '<input type="hidden" name="' . $name . '" id="parentIdFieldM" value="' . $pid . '"></div>';
-
             case 'project_search':
-                // 2026-08-05：移动端「关联项目」由下拉改为搜索选择器（同框架合同交互）
+                // 2026-08-05：移动端「关联项目」由下拉改为搜索选择器
                 $pid = (int)($contract['project_id'] ?? 0);
                 $display = '';
                 foreach (($maps['projects'] ?? []) as $p) {

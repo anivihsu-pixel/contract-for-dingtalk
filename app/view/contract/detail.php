@@ -9,6 +9,9 @@ include __DIR__.'/../layout/header.php'; ?>
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
 <h4><i class="bi bi-file-text"></i> 合同详情</h4>
 <div class="d-flex gap-1 flex-wrap">
+<?php if(!empty($execution_cc) && !empty($execution_cc['needs_ack']) && empty($execution_cc['acknowledged_at'])): ?>
+<button class="btn btn-warning btn-sm" onclick="ackExecution()"><i class="bi bi-check2-square"></i> 确认知悉</button>
+<?php endif; ?>
 <?php if(in_array($contract['status'],['DRAFT','REJECTED']) && !empty($can_edit)): ?>
 <a href="/contract/<?=$contract['id']?>/edit" class="btn btn-primary btn-sm"><i class="bi bi-pencil"></i> 编辑</a>
 <?php endif; ?>
@@ -18,7 +21,7 @@ include __DIR__.'/../layout/header.php'; ?>
 <?php if(in_array('ARCHIVED', \app\common\logic\ContractLogic::getAvailableActions($contract['status'])) && !empty($can_edit)): ?>
 <button class="btn btn-outline-secondary btn-sm" onclick="doArchive()"><i class="bi bi-archive"></i> 归档</button>
 <?php endif; ?>
-<?php if(in_array($contract['status'],['SIGNED','EXECUTING','ARCHIVED','EXPIRED']) && !empty($can_renew)): ?>
+<?php if(in_array($contract['status'],['EXECUTING','ARCHIVED','EXPIRED']) && !empty($can_renew)): ?>
 <button class="btn btn-info btn-sm" onclick="doRenew(<?=$contract['id']?>)"><i class="bi bi-recycle"></i> 续约</button>
 <?php endif; ?>
 <?php if(!empty($can_delete)): ?>
@@ -31,7 +34,7 @@ include __DIR__.'/../layout/header.php'; ?>
 <button class="btn btn-outline-danger btn-sm" disabled title="仅草稿/已驳回/已归档/已完成/已到期/已终止状态可删除"><i class="bi bi-trash"></i> 删除</button>
 <?php endif; ?>
 <?php endif; ?>
-<?php if(in_array($contract['status'],['SIGNED','EXECUTING']) && !empty($can_edit)): ?>
+<?php if($contract['status']==='EXECUTING' && !empty($can_edit)): ?>
 <button class="btn btn-outline-danger btn-sm" onclick="doTerminate()"><i class="bi bi-stop-circle"></i> 终止</button>
 <?php endif; ?>
 <?php
@@ -56,7 +59,7 @@ if (!empty($approvals)) {
 <table class="table table-sm"><tbody>
 <tr><td class="text-muted" width="80">合同编号</td><td><strong><?=htmlspecialchars($contract['contract_no'])?></strong></td><td class="text-muted" width="80">状态</td><td><?=contract_status_label($contract['status'])?></td></tr>
 <tr><td class="text-muted">标题</td><td colspan="3"><strong><?=htmlspecialchars($contract['title'])?></strong></td></tr>
-<tr><td class="text-muted">分类</td><td><?=contract_category_name($contract['category'])?></td><td class="text-muted">金额</td><td><strong>¥<?=format_money($contract['amount'])?></strong></td></tr>
+<tr><td class="text-muted">业务类型</td><td><?=htmlspecialchars(dict_enabled('business_type')[$contract['business_type'] ?? ''] ?? ($contract['business_type'] ?? ''))?></td><td class="text-muted">金额</td><td><strong>¥<?=format_money($contract['amount'])?></strong></td></tr>
 <?php
 // v2.28.2：签约主体与建议审批流名由 ContractController::detail() 注入（$company / $flowName），视图层不再 Db::name
 $__isNonTrade = ($contract['trade_attr'] ?? 1) == 0;
@@ -94,7 +97,6 @@ if(!empty($party360['customer']) || !empty($party360['supplier'])):
     $__pt = !empty($party360['customer']) ? 'customer' : 'supplier';
 ?>
 <tr><td class="text-muted">乙方往来</td><td colspan="3">
-  <span class="<?=$__p['high_risk'] ? 'pc-tag pc-tag-danger' : 'credit-'.credit_grade($__p['credit_score'])?>" style="font-weight:500"><?=$__p['high_risk'] ? '高风险' : '信用 '.$__p['credit_score']?></span>
   <span class="ms-3">往来余额 <strong>¥<?=number_format((float)$__p['balance'],0)?></strong> · 待<?=$__p['role']==='应收'?'收':'付'?></span>
   <a href="/party/<?=$__pt?>/<?=$__p['id']?>" class="btn btn-sm btn-outline-primary ms-3"><i class="bi bi-compass"></i> 往来全景</a>
 </td></tr>
@@ -105,41 +107,12 @@ if(!empty($party360['customer_a']) || !empty($party360['supplier_a'])):
     $__pta = !empty($party360['customer_a']) ? 'customer' : 'supplier';
 ?>
 <tr><td class="text-muted">甲方往来</td><td colspan="3">
-  <span class="<?=$__pa['high_risk'] ? 'pc-tag pc-tag-danger' : 'credit-'.credit_grade($__pa['credit_score'])?>" style="font-weight:500"><?=$__pa['high_risk'] ? '高风险' : '信用 '.$__pa['credit_score']?></span>
   <span class="ms-3">往来余额 <strong>¥<?=number_format((float)$__pa['balance'],0)?></strong> · 待<?=$__pa['role']==='应收'?'收':'付'?></span>
   <a href="/party/<?=$__pta?>/<?=$__pa['id']?>" class="btn btn-sm btn-outline-primary ms-3"><i class="bi bi-compass"></i> 往来全景</a>
 </td></tr>
 <?php endif; ?>
 <tr><td class="text-muted">生效</td><td><?=htmlspecialchars($contract['effective_date']??'-')?></td><td class="text-muted">到期</td><td><?=htmlspecialchars($contract['expiry_date']??'-')?></td></tr>
 </tbody></table></div></div>
-
-<?php if(!empty($contract['parent_no'])): ?>
-<!-- 关联框架合同 -->
-<div class="card stat-card mb-3 border-start border-primary border-4"><div class="card-body py-2 px-3">
-<div class="d-flex align-items-center gap-2">
-  <i class="bi bi-link-45deg text-primary fs-5"></i>
-  <span class="text-muted small">关联框架合同：</span>
-  <a href="/contract/<?=$contract['parent_id']?>" class="fw-bold small"><?=htmlspecialchars($contract['parent_no'])?> <?=htmlspecialchars($contract['parent_title'])?></a>
-  <span class="pc-tag pc-tag-info" style="font-size:10px">执行订单</span>
-</div></div></div>
-<?php endif; ?>
-
-<?php if(!empty($contract['child_contracts'])): ?>
-<!-- 子合同列表 -->
-<div class="card stat-card mb-3"><div class="card-header bg-white d-flex justify-content-between align-items-center">
-<h5 class="mb-0"><i class="bi bi-diagram-2"></i> 执行订单（<?=count($contract['child_contracts'])?>）</h5>
-<span class="pc-tag pc-tag-info">框架合同</span></div>
-<div class="card-body p-0">
-<?php foreach($contract['child_contracts'] as $child): ?>
-<div class="d-flex align-items-center gap-2 p-2 border-bottom" role="link" tabindex="0" style="cursor:pointer" onclick="location.href='/contract/<?=$child['id']?>'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='/contract/<?=$child['id']?>';}">
-  <i class="bi bi-file-text text-muted"></i>
-  <small class="flex-grow-1"><strong><?=htmlspecialchars($child['contract_no'])?></strong> <?=htmlspecialchars($child['title'])?></small>
-  <small class="text-end">¥<?=format_money($child['amount'])?></small>
-  <?=contract_status_label($child['status'])?>
-</div>
-<?php endforeach; ?>
-</div></div>
-<?php endif; ?>
 
 <!-- 合同概要 -->
 <?php if(!empty($contract['content'])): ?>
@@ -463,7 +436,6 @@ window.__ATTACHMENTS__ = <?php
 <?php else: ?><p class="text-center text-muted py-3 small">暂无操作记录</p><?php endif; ?>
 </div></div>
 
-<!-- 审批记录 -->
 <div class="card stat-card mt-3"><div class="card-header bg-white"><h5 class="mb-0">审批记录</h5></div><div class="card-body p-0">
 <?php if(!empty($approvals)): foreach($approvals as $a): ?>
 <div class="p-2 border-bottom">
@@ -570,17 +542,25 @@ window.__ATTACHMENTS__ = <?php
 // esc() 已统一下沉至 public/static/js/app.js（全局 window.esc），此处不再重复定义
 // UX 门控：回款/发票行内操作按钮按后端守卫同口径（payment:create / invoice:create）控制
 var __canPay = <?= !empty($can_pay) ? 'true' : 'false' ?>;
+var __canCollectionFollow = <?= !empty($can_collection_follow) ? 'true' : 'false' ?>;
 var __canIssue = <?= !empty($can_issue) ? 'true' : 'false' ?>;
 function doArchive(){pcConfirm({message:'确定归档？'}).then(function(ok){if(!ok)return;$ajax('/ajax/archive/<?=$contract['id']?>',{method:'POST',loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.reload();}).catch(function(){});});}
 // v2.47.2：超管强制删除审批中合同（force=true 时提示将终结进行中的审批流程）
 function delContract(id, force){pcConfirm({message:force ? '确定强制删除该审批中合同？将终结其进行中的审批流程并删除，进入回收站可恢复' : '确定删除该合同？删除后进入回收站，可在数据回收站恢复或彻底清除',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/delete',{method:'POST',body:new URLSearchParams({id:id}),loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.href='/contract';}).catch(function(){});});}
-// v2.43.4：执行中/已签署合同「终止」入口（后端 statusTransition 已有，补前端按钮；
+// v2.43.4：执行中合同「终止」入口（后端 statusTransition 已有，补前端按钮；
 // 存在逾期未结回款时后端会拦截并提示，前端弹窗预先提醒）
 function doTerminate(){pcConfirm({message:'确定终止该合同？终止后需另走新合同，请确认无逾期未结回款。',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/status-transition',{method:'POST',body:new URLSearchParams({id:<?=(int)$contract['id']?>,status:'TERMINATED'}),loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.reload();}).catch(function(){});});}
+function ackExecution(){ $ajax('/ajax/contract/execution-ack',{method:'POST',body:new URLSearchParams({id:<?=(int)$contract['id']?>}),loading:false}).then(function(res){showToast(res.msg||'操作完成',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});}
+var __changePartyTimer=null;
+function searchChangeParty(input,side){clearTimeout(__changePartyTimer);var box=document.getElementById(side==='a'?'changePartyAResults':'changePartyBResults');var q=input.value.trim();if(!q){box.innerHTML='';return;}__changePartyTimer=setTimeout(function(){ $ajax('/ajax/party/search?q='+encodeURIComponent(q),{loading:false}).then(function(res){var rows=res.data||[];box.innerHTML=rows.slice(0,10).map(function(p){return '<button type="button" class="list-group-item list-group-item-action py-1" data-id="'+p.id+'" data-type="'+esc(p.party_type||'')+'" data-name="'+esc(p.name||'')+'" onclick="chooseChangeParty(this,\''+side+'\')">'+esc(p.name||'')+' <small class="text-muted">'+esc(p.type_name||'')+'</small></button>';}).join('');}).catch(function(){});},250);}
+function chooseChangeParty(btn,side){var f=document.getElementById('changeForm'),type=btn.dataset.type,id=btn.dataset.id;f.elements['party_'+side+'_name'].value=btn.dataset.name;if(side==='a'){f.elements.party_a_customer_id.value=type==='customer'?id:0;f.elements.party_a_supplier_id.value=type==='supplier'?id:0;}else{f.elements.party_b_customer_id.value=type==='customer'?id:0;f.elements.supplier_id.value=type==='supplier'?id:0;}document.getElementById(side==='a'?'changePartyAResults':'changePartyBResults').innerHTML='';}
+function addChangePlan(){var box=document.getElementById('changePlanRows');box.insertAdjacentHTML('beforeend','<div class="row g-2 mb-2 change-plan-row"><div class="col-3"><input type="number" min="0.01" step="0.01" class="form-control form-control-sm cp-amount" placeholder="金额"></div><div class="col-3"><input type="date" class="form-control form-control-sm cp-date"></div><div class="col-5"><input class="form-control form-control-sm cp-desc" placeholder="说明/里程碑"></div><div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.change-plan-row\').remove()"><i class="bi bi-x"></i></button></div></div>');}
+function uploadChangeEvidence(input){if(!input.files||!input.files[0])return;var fd=new FormData();fd.append('file',input.files[0]);$ajax('/ajax/upload/contract',{method:'POST',body:fd,loadingText:'上传依据中…'}).then(function(res){if(res.code===0){document.getElementById('changeEvidenceUrl').value=JSON.stringify([res.data]);document.getElementById('changeEvidenceTip').textContent='已上传：'+res.data.name;showToast('依据附件上传成功','success');}else{showToast(res.msg||'上传失败','error');}}).catch(function(){});}
 // v2.43.4：审批中合同「撤回审批」直达（仅提交人可撤回，后端校验兜底；撤回后回草稿）
 function doRecallApproval(id){pcConfirm({message:'确定撤回该审批？撤回后合同回到草稿状态，可继续编辑或删除。',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/approval/'+id+'/recall',{method:'POST',loading:false}).then(res=>{showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');if(res.code===0)location.reload();}).catch(function(){});});}
 function doRenew(id){pcConfirm({message:'确定基于当前合同生成续约草案？生成后可编辑并走审批流程。'}).then(function(ok){if(!ok)return;$ajax('/ajax/contract/'+id+'/renew',{method:'POST',loading:false}).then(res=>{if(res.code===0){showToast('续约草案已生成', 'success');location.href=res.data.url;}else{showToast(res.msg||'续约失败','error');}}).catch(function(){});});}
-function loadPayments(){var __payUrl='/ajax/payment/list/'+<?= (int)$contract['id'] ?>;$ajax(__payUrl,{loading:false}).then(res=>{if(res.code===0){var h='';if(!res.data||!res.data.length)h='<div class="text-center py-3 text-muted small">暂无<?=$__payWord?>记录</div>';else{res.data.forEach(function(p){var overdue=p.status=='OVERDUE',paid=p.status=='PAID';var isPay=p.payment_type=='PAYABLE';var stWord=isPay?'已付':'已收';var cfWord=isPay?'确认付款':'确认收款';var ops='';if(__canPay){if(paid){ops='<button class="btn btn-sm btn-outline-secondary ms-1" onclick="revokePayment('+p.id+')">撤销</button>';}else{ops=(overdue?'':'<button class="btn btn-sm btn-outline-success me-1" onclick="confirmPay('+p.id+','+p.amount+')">'+cfWord+'</button>')+'<button class="btn btn-sm btn-outline-warning" onclick="markOverdue('+p.id+')">逾期</button>'+'<button class="btn btn-sm btn-outline-danger ms-1" aria-label="删除" onclick="delPayment('+p.id+')"><i class="bi bi-trash"></i></button>';}}h+='<div class="p-2 border-bottom '+(overdue?'bg-light':'')+'"><div class="d-flex justify-content-between align-items-center"><div><strong>¥'+parseFloat(p.amount).toLocaleString()+'</strong> <small class="text-muted">'+esc(p.description||'')+'</small><br><small class="text-muted">计划: '+esc(p.planned_date||'-')+' | 实际: '+esc(p.actual_date||'-')+'</small></div><div class="text-end">'+(paid?'<span class="pc-tag pc-tag-ok">'+stWord+(p.payment_method_label?'（'+esc(p.payment_method_label)+'）':'')+'</span>':overdue?'<span class="pc-tag pc-tag-danger">逾期</span>':'<span class="pc-tag pc-tag-warn">待'+stWord+'</span>')+ops+'</div></div></div>';});}document.getElementById('paymentList').innerHTML=h;}}).catch(function(){var el=document.getElementById('paymentList');if(el)el.innerHTML='<div class="text-center py-4 text-muted"><i class="bi bi-exclamation-triangle" style="font-size:1.5rem"></i><div class="mt-2">加载失败，点击重试</div><button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="loadPayments()"><i class="bi bi-arrow-clockwise"></i> 重新加载</button></div>';});}
+function loadPayments(){var __payUrl='/ajax/payment/list/'+<?= (int)$contract['id'] ?>;$ajax(__payUrl,{loading:false}).then(res=>{if(res.code===0){var h='';if(!res.data||!res.data.length)h='<div class="text-center py-3 text-muted small">暂无<?=$__payWord?>记录</div>';else{res.data.forEach(function(p){var overdue=p.status=='OVERDUE',paid=p.status=='PAID';var isPay=p.payment_type=='PAYABLE';var stWord=isPay?'已付':'已收';var cfWord=isPay?'确认付款':'确认收款';var ops='';if(__canPay){if(paid){ops='<button class="btn btn-sm btn-outline-secondary ms-1" onclick="revokePayment('+p.id+')">撤销</button>';}else{ops=(overdue?'':'<button class="btn btn-sm btn-outline-success me-1" onclick="confirmPay('+p.id+','+p.amount+')">'+cfWord+'</button>')+'<button class="btn btn-sm btn-outline-warning" onclick="markOverdue('+p.id+')">逾期</button>'+'<button class="btn btn-sm btn-outline-danger ms-1" aria-label="删除" onclick="delPayment('+p.id+')"><i class="bi bi-trash"></i></button>';}}if(__canCollectionFollow&&!isPay&&!paid)ops+='<button class="btn btn-sm btn-outline-primary ms-1" onclick="collectionFollow('+p.id+')">记录催收</button>';h+='<div class="p-2 border-bottom '+(overdue?'bg-light':'')+'"><div class="d-flex justify-content-between align-items-center"><div><strong>¥'+parseFloat(p.amount).toLocaleString()+'</strong> <small class="text-muted">'+esc(p.description||'')+'</small><br><small class="text-muted">计划: '+esc(p.planned_date||'-')+' | 实际: '+esc(p.actual_date||'-')+'</small></div><div class="text-end">'+(paid?'<span class="pc-tag pc-tag-ok">'+stWord+(p.payment_method_label?'（'+esc(p.payment_method_label)+'）':'')+'</span>':overdue?'<span class="pc-tag pc-tag-danger">逾期</span>':'<span class="pc-tag pc-tag-warn">待'+stWord+'</span>')+ops+'</div></div></div>';});}document.getElementById('paymentList').innerHTML=h;}}).catch(function(){var el=document.getElementById('paymentList');if(el)el.innerHTML='<div class="text-center py-4 text-muted">加载失败，点击重试</div>';});}
+function collectionFollow(id){var content=prompt('请输入本次催收内容');if(!content)return;var promise=prompt('客户承诺（选填）','')||'';var reason=prompt('未付款原因（选填）','')||'';$ajax('/ajax/payment/collection-add',{method:'POST',body:new URLSearchParams({payment_id:id,content:content,customer_promise:promise,reason:reason})}).then(function(r){showToast(r.msg||'操作完成',r.code===0?'success':'error');});}
 function showAddPayment(){
   // v2.41.0：每次打开重置分期计划区（无预置模板，从上一次残留状态清空）
   var tr = document.getElementById('tplRows'); if (tr) tr.innerHTML = '';

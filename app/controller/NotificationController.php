@@ -51,8 +51,6 @@ class NotificationController extends BaseController
         if ($id > 0) {
             InternalNotify::markRead($this->userId, $id);
         }
-        // P2：已读后失效顶栏角标短缓存，否则红点最长滞后 60s
-        \think\facade\Cache::delete('badge_remind_' . $this->userId);
         return json_success(null, '已标记为已读');
     }
 
@@ -60,15 +58,13 @@ class NotificationController extends BaseController
     public function markAllRead()
     {
         InternalNotify::markAllRead($this->userId);
-        // P2：同上，立即刷新顶栏红点
-        \think\facade\Cache::delete('badge_remind_' . $this->userId);
         return json_success(null, '全部已读');
     }
 
     /**
      * AJAX: 检查消息指向的审批目标是否存在
      * 前端点击审批类消息前调用，避免跳转到已删除的审批页面。
-     * 若审批已删除，后端同时标记该消息为已读。
+     * 点击审批消息后，后端统一标记该消息为已读，避免前端异步跳转导致角标残留。
      * 返回 {code:0, data:{exists:bool, url:string}}
      */
     public function checkTarget()
@@ -108,11 +104,12 @@ class NotificationController extends BaseController
             $instance = \app\common\logic\ApprovalQueryService::getDetail($apprId);
             if (!$instance) {
                 $exists = false;
-                // 审批已删除，自动标记已读
-                if ($n['is_read'] == 0) {
-                    InternalNotify::markRead($this->userId, $id);
-                }
             }
+        }
+
+        // 审批存在或已删除都视为用户已处理消息；不能依赖前端先发起的异步 mark-read。
+        if ((int)($n['is_read'] ?? 0) === 0) {
+            InternalNotify::markRead($this->userId, $id);
         }
 
         return json_success([

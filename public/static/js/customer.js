@@ -33,22 +33,21 @@ function load(n){
             if(Number(c.child_count||0)>0) b+=' <a class="pc-tag pc-tag-info" style="font-size:10px;text-decoration:none;cursor:pointer" href="/customer/'+c.id+'#group" title="该客户为集团根，含 '+c.child_count+' 个成员客户">集团</a>';
             // 集团成员：有父客户
             if(Number(c.parent_id||0)>0) b+=' <a class="pc-tag pc-tag-warn" style="font-size:10px;text-decoration:none;cursor:pointer" href="/customer/'+c.id+'#group" title="集团成员 · 所属：'+(c.parent_name?esc(c.parent_name):'#'+c.parent_id)+'">集团成员</a>';
-            // 共享给我且非本人/非公海
+            // 共享给我且非本人
             if(window._mySharedIds && window._mySharedIds.indexOf(Number(c.id))>-1
-                && Number(c.owner_id)!==0 && Number(c.owner_id)!==Number(window._myUserId))
+                && Number(c.owner_id)!==Number(window._myUserId))
                 b+=' <span class="pc-tag pc-tag-info" style="font-size:10px" title="他人共享给我，可查看并关联合同">共享给我</span>';
             // 我共享出去（负责人主动共享）
-            if(window._mySharedOutIds && window._mySharedOutIds.indexOf(Number(c.id))>-1
-                && Number(c.owner_id)!==0)
+            if(window._mySharedOutIds && window._mySharedOutIds.indexOf(Number(c.id))>-1)
                 b+=' <span class="pc-tag pc-tag-ok" style="font-size:10px" title="我共享给了他人，可在详情页撤销">我共享</span>';
             return b;
         }
         // ---- 空列表状态 ----
         if(!res.data||!res.data.length){
             if(isMobile){
-                h='<tr><td colspan="8"><div class="c-empty">暂无客户<br><small>录入客户信息，或认领公海池中的客户</small></div></td></tr>';
+                h='<tr><td colspan="8"><div class="c-empty">暂无客户<br><small>录入客户信息</small></div></td></tr>';
             }else{
-                h=emptyState({colspan:8,icon:'bi-people',title:'暂无客户',desc:'录入客户信息，或认领公海池中的客户',btn:'新增客户',href:'/customer/create',canCreate:window._canCreateCustomer});
+                h=emptyState({colspan:8,icon:'bi-people',title:'暂无客户',desc:'录入客户信息',btn:'新增客户',href:'/customer/create',canCreate:window._canCreateCustomer});
             }
         }else{
             // ---- 逐行渲染 ----
@@ -63,15 +62,15 @@ function load(n){
                     h+='<div class="c-card-meta">';
                     if(c.contact_name) h+='<span class="c-card-contact"><i class="bi bi-person"></i>'+esc(c.contact_name)+'</span>';
                     if(c.contact_mobile) h+='<span class="c-card-contact"><i class="bi bi-telephone"></i>'+esc(c.contact_mobile)+'</span>';
-                    // v2.38.9：移动卡片生命周期标签
+                    // 生命周期标签
                     var lc=c.lifecycle_status||'ACTIVE';
-                    var lcCls={POTENTIAL:'c-tag-info',ACTIVE:'c-tag-ok',INACTIVE:'c-tag-warn'}[lc]||'c-tag-muted';
+                    var lcCls={POTENTIAL:'c-tag-info',ACTIVE:'c-tag-ok'}[lc]||'c-tag-muted';
                     var lcLabel=window._lifecycleDict&&window._lifecycleDict[lc]?window._lifecycleDict[lc]:lc;
                     h+='<span class="c-tag '+lcCls+'">'+esc(lcLabel)+'</span>';
                     // v2.40.0 P1-7：移动卡片行业标签
                     var ind=c.industry||'';
                     if(ind){ var indLabel=window._industryDict&&window._industryDict[ind]?window._industryDict[ind]:ind; h+='<span class="c-tag c-tag-muted">'+esc(indLabel)+'</span>'; }
-                    h+='<span class="c-tag '+(c.owner_id===0?'c-tag-muted':'c-tag-info')+'">'+(c.owner_id===0?'公海':(esc(c.owner_name)||'用户#'+(c.owner_id||'?')))+'</span>';
+                    h+='<span class="c-tag c-tag-info">'+(esc(c.owner_name)||'未分配')+'</span>';
                     h+='</div>';
                     h+='</div>';
                     h+='</td></tr>';
@@ -84,15 +83,15 @@ function load(n){
                     var ind=c.industry||'';
                     var indLabel=window._industryDict&&window._industryDict[ind]?window._industryDict[ind]:ind;
                     h+='<td>'+(ind?(esc(indLabel)||esc(ind)):'<span class="text-muted">—</span>')+'</td>';
-                    // v2.38.9：生命周期列（pc-tag 风格，与漏斗同色系）
+                    // 生命周期列（pc-tag 风格，与漏斗同色系）
                     var lc=c.lifecycle_status||'ACTIVE';
-                    var lcCls={POTENTIAL:'pc-tag-info',ACTIVE:'pc-tag-ok',INACTIVE:'pc-tag-warn'}[lc]||'pc-tag-muted';
+                    var lcCls={POTENTIAL:'pc-tag-info',ACTIVE:'pc-tag-ok'}[lc]||'pc-tag-muted';
                     var lcLabel=window._lifecycleDict&&window._lifecycleDict[lc]?window._lifecycleDict[lc]:lc;
                     h+='<td><span class="pc-tag '+lcCls+'">'+esc(lcLabel)+'</span></td>';
-                    h+='<td>'+(c.owner_id===0?'<span class="text-muted">公海</span>':(esc(c.owner_name)||'用户#'+(c.owner_id||'?')))+'</td>';
+                    h+='<td>'+(esc(c.owner_name)||'未分配')+'</td>';
                     h+='<td>'+(c.status==1?'<span class="badge bg-success">正常</span>':'<span class="badge bg-secondary">禁用</span>')+'</td>';
-                    // v2.47.8：操作列——编辑 + 快捷共享（负责人/超管且非公海）
-                    var canShare = (window._isAdmin || Number(c.owner_id)===Number(window._myUserId)) && Number(c.owner_id)!==0;
+                    // 操作列——编辑 + 快捷共享（负责人/超管）
+                    var canShare = (window._isAdmin || Number(c.owner_id)===Number(window._myUserId));
                     h+='<td>';
                     h+='<a href="/customer/'+c.id+'/edit" class="btn btn-sm btn-outline-secondary" aria-label="编辑" title="编辑"><i class="bi bi-pencil"></i></a>';
                     if(canShare) h+=' <button type="button" class="btn btn-sm btn-outline-primary" aria-label="共享" title="共享设置" onclick="openListShare('+c.id+',this)"><i class="bi bi-people"></i></button>';

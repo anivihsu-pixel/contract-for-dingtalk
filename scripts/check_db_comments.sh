@@ -55,9 +55,18 @@ for fn in files:
     missing_comment = []
     missing_table, total_table = [], 0
     in_block, cur, table_comment = False, None, None
+    in_comment = False
 
     for i, line in enumerate(lines, 1):
         s = line.strip()
+        if in_comment:
+            if '*/' in s:
+                in_comment = False
+            continue
+        if s.startswith('/*'):
+            if '*/' not in s:
+                in_comment = True
+            continue
         if not in_block:
             m = CREATE_RE.search(s)
             if m:
