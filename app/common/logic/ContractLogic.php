@@ -6,6 +6,7 @@
 namespace app\common\logic;
 
 use think\facade\Db;
+use think\facade\Session;
 use app\common\service\AuditService;
 
 class ContractLogic
@@ -146,7 +147,16 @@ class ContractLogic
         $q = Db::name('contract')->where('id', $id)->where('is_deleted', 0);
         AuthLogic::appendDataScope($q, 'owner_id', 'dept_id');
         $contract = $q->find();
-        if ($contract) return $contract;
+        if ($contract) {
+            // v2.51.9：草稿私有化——非超管查看他人草稿详情视为无权限（正式合同仍按数据范围）
+            if ($contract['status'] === self::STATUS_DRAFT) {
+                $user = Session::get('user');
+                if (empty($user['is_admin']) && (int)($contract['owner_id'] ?? 0) !== (int)($user['id'] ?? 0)) {
+                    return null;
+                }
+            }
+            return $contract;
+        }
         // 执行抄送人获得该合同的只读查看权，避免通知深链落到 404。
         $userId = (int)\think\facade\Session::get('user_id', 0);
         if ($userId > 0 && Db::name('contract_execution_cc')->where('contract_id', $id)->where('user_id', $userId)->find()) {
@@ -169,8 +179,25 @@ class ContractLogic
     }
 
     /**
+     * 草稿私有化（v2.51.9）：草稿（DRAFT）仅创建者本人与超管可见，
+     * 部门/总经理等数据范围不再作用于草稿（未定稿内容不对外暴露）；
+     * 正式合同保持原有数据范围不变。超管直接放行全量。
+     * @param string $statusField 状态字段（带表别名时传 'c.status'）
+     * @param string $ownerField  归属人字段（带表别名时传 'c.owner_id'）
+     */
+    private static function applyDraftPrivacy(&$query, string $statusField, string $ownerField = 'owner_id'): void
+    {
+        $user = Session::get('user');
+        if (!empty($user['is_admin'])) return;
+        $uid = (int)($user['id'] ?? 0);
+        $query->where(function ($q) use ($statusField, $ownerField, $uid) {
+            $q->where($statusField, '<>', self::STATUS_DRAFT)->whereOr($ownerField, $uid);
+        });
+    }
+
+    /**
      * 草稿待处理列表（v2.40.0：PC 仪表盘「草稿待处理」卡片 + 列表页快捷筛选共用）
-     * 走数据权限（AuthLogic::appendDataScope），仅草稿状态、未删除，按更新时间倒序。
+     * 走数据权限（AuthLogic::appendDataScope）+ 草稿私有化（v2.51.9：非超管仅本人草稿），仅草稿状态、未删除，按更新时间倒序。
      * @param array $user  当前用户
      * @param int   $limit 返回条数
      * @return array ['list' => 草稿数组, 'total' => 草稿总数]
@@ -183,6 +210,10 @@ class ContractLogic
             ->where('c.is_deleted', 0)
             ->where('c.status', self::STATUS_DRAFT);
         AuthLogic::appendDataScope($query, 'c.owner_id', 'c.dept_id');
+        // v2.51.9：草稿私有化——非超管仅展示本人草稿（超管走 appendDataScope 全量放行）
+        if (empty($user['is_admin'])) {
+            $query->where('c.owner_id', (int)($user['id'] ?? 0));
+        }
         $total = (clone $query)->count();
         $list  = $query->order('c.updated_at', 'desc')->limit($limit)->select()->toArray();
         foreach ($list as &$r) {
@@ -203,6 +234,8 @@ class ContractLogic
 
         // 数据范围
         AuthLogic::appendDataScope($query, 'c.owner_id', 'c.dept_id');
+        // v2.51.9：草稿私有化——非超管列表中的草稿行仅限本人（正式合同仍走数据范围）
+        self::applyDraftPrivacy($query, 'c.status', 'c.owner_id');
 
         // P3b-9：筛选条件集中到 applyListFilters，主方法聚焦编排（count/select/聚合）
         self::applyListFilters($query, $filter);
@@ -525,6 +558,8 @@ class ContractLogic
     {
         $query = Db::name('contract')->where('is_deleted', 0);
         AuthLogic::appendDataScope($query, 'owner_id', 'dept_id');
+        // v2.51.9：草稿私有化——导出同样不暴露他人草稿
+        self::applyDraftPrivacy($query, 'status');
 
         if ($status) {
             $query->where('status', $status);
@@ -557,6 +592,7 @@ class ContractLogic
     public static function countExportRows(string $status, string $dateStart, string $dateEnd): int
     {
         $query=Db::name('contract')->where('is_deleted',0);AuthLogic::appendDataScope($query,'owner_id','dept_id');
+        self::applyDraftPrivacy($query, 'status');
         if($status)$query->where('status',$status);if($dateStart)$query->where('created_at','>=',$dateStart);if($dateEnd)$query->where('created_at','<=',$dateEnd.' 23:59:59');
         return (int)$query->count();
     }

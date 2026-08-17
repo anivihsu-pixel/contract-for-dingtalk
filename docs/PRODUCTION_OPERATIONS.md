@@ -16,7 +16,6 @@
 0 2 * * * cd /srv/contract/current && bash scripts/run_task.sh db:backup --keep=30
 5 0 * * * cd /srv/contract/current && bash scripts/run_task.sh payment:mark-overdue
 10 0 * * * cd /srv/contract/current && bash scripts/run_task.sh contract:expire
-20 0 * * * cd /srv/contract/current && bash scripts/run_task.sh customer:credit-check
 0 3 * * * cd /srv/contract/current && bash scripts/run_task.sh customer:pool-release
 */30 * * * * cd /srv/contract/current && bash scripts/run_task.sh approval:sla-check
 */10 * * * * cd /srv/contract/current && bash scripts/run_task.sh remind:dispatch
@@ -27,6 +26,6 @@
 
 `remind:dispatch` 同时处理合同到期、回款到期/逾期和客户计划跟进。客户跟进按填写的精确时间生效，因此建议保持每 10 分钟调度；每个客户仅最新一条跟进计划有效，避免旧计划重复提醒。
 
-`payment:mark-overdue`、`contract:expire`、`customer:credit-check`、`customer:pool-release` 分别维护回款逾期、合同到期、客户信用和公海候选扫描（须经理确认，不自动释放）；`approval:sla-check` 每 30 分钟处理审批超时提醒与升级。以上任务不可省略，否则页面数据会逐步偏离实际业务状态。
+`payment:mark-overdue`、`contract:expire`、`customer:pool-release` 分别维护回款逾期、合同到期和公海候选扫描（须经理确认，不自动释放）；`approval:sla-check` 每 30 分钟处理审批超时提醒与升级。以上任务不可省略，否则页面数据会逐步偏离实际业务状态。
 
 数据库每日备份保留 30 份。异地加密备份需在云存储凭据确认后接入；每季度应在隔离环境恢复最新备份并记录演练结果。

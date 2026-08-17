@@ -95,6 +95,7 @@
 - [x] 移除客户信用评级功能（2026-08-17）：产品评估——轻量化合同客户管理，信用评分（0-100）无任何业务消费（不联动赊销/发货/审批），credit_manual 人工锁定补丁证明模型水土不服，逾期风险已由回款报表/仪表盘/提醒独立覆盖。移除 customer 表 credit_score/high_risk/credit_manual 三列（`database/migration_v2.51.7_remove_customer_credit.sql` 合并幂等 DROP，参照 v2.38.13 风格）、CustomerLogic 两个重算方法、`customer:credit-check` 命令及注册、PaymentMarkOverdue/autoMarkOverdue 联动文案、PC 表单评分输入与详情风险/评分展示（基本信息表重排保持四列对称）、common.php 死注释；init.sql/init_mysql.php/init_sqlite.php/seed_demo.php 同步去列。保留生命周期（漏斗）/行业/统一社会信用代码等档案属性。验收：php -l 12 文件全过；本地 MySQL 3307 执行迁移 remain=0、复跑 init_mysql 幂等；登录→新建客户保存成功→删除测试客户→详情页 200
 - [x] 记录测试环境 admin 固定口令（2026-08-17）：init_mysql.php `$initPwdAdmin=85151818` 固定注释说明（上传 GitHub 前改回随机强口令）；底部 `Default login` 打印由写死的 `admin / password` 改为动态 `{$initPwdAdmin}`，杜绝打印与实现脱节误导。验收：php -l 通过；复跑 init_mysql.php 输出 `Default login: admin / 85151818`
 - [x] 移动端提交审批抄送节点样式对齐（2026-08-17）：抄送知会由独立内联蓝色块改为 `m-flow` 列表内 `<li>`（与审批节点同列表行/分隔线/间距），节点名用 `m-flow-name`，角色与抄送人名渲染为蓝色 `m-tag m-tag-info`（区别于灰色审批人标签）。验收：php -l 通过；浏览器实测（临时草稿合同+含抄送流程）显示「部门经理审批→总经理审批→抄送知会（财务/王财务/李员工）」同一列表；测试数据已清理
+- [x] 合同草稿私有化（2026-08-17，v2.51.9）：草稿（DRAFT）仅创建者本人与超管可见，部门/总经理等数据范围不再作用于草稿（未定稿内容不对外暴露）；正式合同保持原有数据范围。落地 ContractLogic 五处：新增 `applyDraftPrivacy()`（非超管拼 `status<>DRAFT OR owner_id=本人`），getList/countExportRows/eachExportRow 统一挂接、draftList 直接加归属人过滤、accessible 详情对非本人草稿返 null（超管全量放行）。验收：manager01 列表仅见自己草稿+部门内正式合同、他人草稿详情 404、自己草稿详情 200；admin 列表见全部草稿+正式合同、他人草稿/正式合同详情均 200；php -l 通过；测试数据已清理。无 DB 变更
 - [ ] （待产品确认）后续需求池：按需补充，进入开发前更新本看板
 
 ## 五、维护约定
