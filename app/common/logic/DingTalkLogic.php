@@ -75,6 +75,8 @@ class DingTalkLogic
                 'is_admin'        => 0,
                 'created_at'      => date('Y-m-d H:i:s'),
             ]);
+            // 钉钉同步的新用户默认授予「普通用户」角色（role.code='user'）
+            DingTalkService::grantDefaultRole((int)$userId);
             $user = Db::name('user')->find($userId);
         }
 

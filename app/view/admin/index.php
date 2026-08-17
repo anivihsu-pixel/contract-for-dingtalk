@@ -301,6 +301,53 @@ function renderUserList(){
     if(_curDept === 0){ title.textContent = '全部成员'; }
     else { let d = allDepts.find(function(x){ return x.id === _curDept; }); title.textContent = d ? d.name : ('部门#'+_curDept); }
   }
+  // v2.51.7：仅选中具体部门时显示「禁用本部门成员」按钮（全部成员不适用）
+  let db = document.getElementById('deptDisableBtn');
+  if(db) db.style.display = (_curDept === 0) ? 'none' : '';
+}
+
+// v2.51.7：按部门禁用——收集当前部门（含/不含子部门）成员名单，弹窗二次确认
+function openDeptDisable(){
+  if(_curDept <= 0){ showToast('请先在部门树中选择要禁用的部门','error'); return; }
+  let ids = collectDeptIds(_curDept, _incChildren);
+  let names = [];
+  document.querySelectorAll('#userTableBody tr[data-dept-id]').forEach(function(tr){
+    if(tr.style.display === 'none') return;
+    if(ids.indexOf(parseInt(tr.getAttribute('data-dept-id'),10)) >= 0){
+      names.push(tr.getAttribute('data-user-name') || (tr.children[2] ? tr.children[2].textContent.trim() : '用户'));
+    }
+  });
+  if(!names.length){ showToast('该部门暂无在职用户','warning'); return; }
+  let d = allDepts.find(function(x){ return x.id === _curDept; });
+  document.getElementById('ddDeptTitle').textContent = d ? d.name : ('部门#'+_curDept);
+  document.getElementById('ddScope').textContent = _incChildren ? '含子部门' : '本部门';
+  document.getElementById('ddCount').textContent = names.length;
+  document.getElementById('ddUserList').textContent = names.join('、');
+  new bootstrap.Modal('#deptDisableModal').show();
+}
+function confirmDeptDisable(){
+  if(_curDept <= 0) return;
+  let btn = document.getElementById('ddConfirmBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 禁用中…';
+  let body = new URLSearchParams({dept_id: _curDept, include_children: _incChildren ? 1 : 0});
+  $ajax('/ajax/admin/user/disable-dept',{method:'POST',body:body}).then(function(res){
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-dash"></i> 确认禁用';
+    let m = bootstrap.Modal.getInstance(document.getElementById('deptDisableModal'));
+    if(m) m.hide();
+    showToast(res.msg||'已禁用',res.code===0?'success':'error');
+    if(res.code===0){
+      let d = res.data || {};
+      let skipped = d.skipped || [];
+      if(skipped.length){
+        let s = skipped.map(function(x){ return x.name + '（' + (x.reason||'进行中审批') + '）'; }).join('；');
+        pcConfirm({title:'部分用户未禁用', message:'已禁用 ' + (d.disabled||[]).length + ' 名用户；跳过 ' + skipped.length + ' 名（未禁用）：' + s + '。请先到「离职交接」办理审批转交后再单独禁用。', danger:false, okText:'知道了'});
+      }
+      location.reload();
+    }
+  }).catch(function(){
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-dash"></i> 确认禁用';
+    showToast('操作失败','error');
+  });
 }
 </script>
 
@@ -324,13 +371,15 @@ function renderUserList(){
       <div class="d-flex gap-2">
         <button class="btn btn-primary btn-sm" onclick="syncDingTalk(this)"><i class="bi bi-cloud-download"></i> 同步钉钉</button>
         <button class="btn btn-primary btn-sm" onclick="showAddUser()"><i class="bi bi-plus-lg"></i> 新增用户</button>
+        <!-- v2.51.7：按部门一键禁用（仅选中具体部门时显示，范围跟随「包含子部门」勾选） -->
+        <button class="btn btn-outline-danger btn-sm" id="deptDisableBtn" style="display:none" onclick="openDeptDisable()"><i class="bi bi-person-dash"></i> 禁用本部门成员</button>
         <button class="btn btn-outline-warning btn-sm" onclick="showUserMode('handover')"><i class="bi bi-person-x"></i> 待交接<span class="pc-tag pc-tag-warn ms-1"><?=count($handoverUsers??[])?></span></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="showUserMode('recycle')"><i class="bi bi-archive"></i> 回收站<span class="pc-tag pc-tag-muted ms-1"><?=count($disabledUsers??[])?></span></button>
       </div>
     </div>
 <div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>手机</th><th>部门</th><th>钉钉ID</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="userTableBody">
 <?php if(!empty($users)): foreach($users as $u): ?>
-<tr data-dept-id="<?=$u['dept_id']??0?>"><td><?=$u['id']?></td><td><?=htmlspecialchars($u['username'])?></td><td><?=htmlspecialchars($u['name'])?></td><td><?=htmlspecialchars($u['mobile']?:'-')?></td>
+<tr data-dept-id="<?=$u['dept_id']??0?>" data-user-name="<?=htmlspecialchars($u['name'],ENT_QUOTES)?>"><td><?=$u['id']?></td><td><?=htmlspecialchars($u['username'])?></td><td><?=htmlspecialchars($u['name'])?></td><td><?=htmlspecialchars($u['mobile']?:'-')?></td>
 <td><?=htmlspecialchars($u['dept_name']?:'-')?></td>
 <td><?=$u['dingtalk_userid']?'<i class="bi bi-check-circle-fill text-success"></i> '.htmlspecialchars($u['dingtalk_userid']):'<i class="bi bi-dash-circle text-muted"></i>'?></td>
 <td><?=htmlspecialchars(implode(', ',$u['roles']??[]))?></td>
@@ -339,7 +388,7 @@ function renderUserList(){
 <button class="btn btn-sm btn-primary" aria-label="编辑" onclick='editUser(<?=htmlspecialchars(json_encode($u,JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>)'><i class="bi bi-pencil"></i></button>
 <button class="btn btn-sm btn-outline-primary" title="在职数据交接" aria-label="在职数据交接" onclick='showDataTransfer(<?=$u['id']?>, <?=htmlspecialchars(json_encode($u['name'],JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>)'><i class="bi bi-arrow-left-right"></i></button>
 <button class="btn btn-sm btn-outline-warning" title="离职交接" aria-label="离职交接" onclick='showHandover(<?=$u['id']?>, <?=htmlspecialchars(json_encode($u['name'],JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>, false)'><i class="bi bi-person-x"></i></button>
-<button class="btn btn-sm btn-outline-danger" aria-label="删除" onclick="delUser('<?=$u['id']?>')"><i class="bi bi-trash"></i></button>
+<button class="btn btn-sm btn-outline-danger" title="禁用" aria-label="禁用" onclick="delUser('<?=$u['id']?>')"><i class="bi bi-person-dash"></i></button>
 </td></tr>
 <?php endforeach; else: ?><tr><td colspan="9" class="text-center py-4 text-muted">暂无用户</td></tr><?php endif; ?>
 <tr id="userNoMatch" style="display:none"><td colspan="9" class="text-center py-4 text-muted">该部门暂无用户</td></tr>
@@ -1221,8 +1270,9 @@ function toggleOffZone(key) {
   <div class="card-header bg-light"><i class="bi bi-arrow-counterclockwise"></i> 系统配置备份 / 恢复</div>
   <div class="card-body">
     <p class="text-muted small mb-3">
-      将「角色 / 权限 / 部门 / 本公司主体 / 审批流程 / 资料库 / 系统配置 / 字典设置 / 钉钉配置」等配置整体导出为 JSON 快照；
-      需要时可原样恢复（覆盖上述表的全部行并保留原 id）。<b>不含用户账号（user 表）</b>，避免密码出域。
+      将「角色 / 权限 / 部门 / 本公司主体 / 审批流程 / 资料库 / 系统配置 / 字典设置 / 钉钉配置 / 用户账号（含钉钉同步用户及其角色）」等配置整体导出为 JSON 快照；
+      需要时可原样恢复：配置表覆盖全部行并保留原 id，<b>用户账号按 id 对齐覆盖/补入，不清除备份之外的用户</b>（保护合同/审批等业务归属）。
+      <b class="text-danger">备份含用户密码哈希与角色授权，请妥善保管备份文件。</b>
       钉钉配置（.env 中 DINGTALK_*）随备份导出、恢复时写回 .env。恢复会覆盖当前配置，建议在恢复前先手动备份数据库。
     </p>
     <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
@@ -1357,7 +1407,7 @@ function renderRestorePreview(d) {
     html += '<div class="form-check mb-2">'
         + '<input class="form-check-input" type="checkbox" id="confirmRestoreChk" '
         + 'onchange="document.getElementById(\'btnCommitRestore\').disabled = !this.checked">'
-        + '<label class="form-check-label" for="confirmRestoreChk">我已确认将覆盖上方勾选表的全部配置（未勾选表保持现状，建议先手动备份）</label></div>';
+        + '<label class="form-check-label" for="confirmRestoreChk">我已确认将恢复上方勾选表（配置表覆盖全部行；用户账号按 id 对齐覆盖/补入，不删除备份之外的用户；未勾选表保持现状，建议先手动备份）</label></div>';
     html += '<button class="btn btn-danger" id="btnCommitRestore" disabled onclick="confirmRestore()">'
         + '<i class="bi bi-arrow-counterclockwise"></i> 确认恢复</button>';
     document.getElementById('restorePreview').innerHTML = html;
@@ -1652,6 +1702,23 @@ invLinkRender();
 <div class="modal-footer">
   <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
   <button class="btn btn-warning" id="hoConfirmBtn"><i class="bi bi-arrow-left-right"></i> 确认交接</button>
+</div>
+</div></div></div>
+
+<!-- v2.51.7 按部门禁用确认弹窗：选中部门（可含子部门）一键禁用全部在职成员 -->
+<div class="modal fade" id="deptDisableModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+<div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="bi bi-person-dash"></i> 禁用本部门成员</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+<div class="modal-body">
+  <div class="alert alert-danger small mb-3"><i class="bi bi-exclamation-triangle"></i> 将禁用 <strong id="ddDeptTitle"></strong>（<span id="ddScope"></span>）下的 <strong id="ddCount"></strong> 名在职用户。禁用后进入回收站，可恢复。</div>
+  <div class="mb-3">
+    <label class="form-label small d-block mb-1">将禁用的用户</label>
+    <div id="ddUserList" class="small text-muted border rounded p-2" style="max-height:160px;overflow:auto"></div>
+  </div>
+  <div class="alert alert-warning small mb-0"><i class="bi bi-info-circle"></i> 有进行中审批的用户将被跳过（需先在「离职交接」中转交审批后再单独禁用）；当前登录账号同样不会被禁用。</div>
+</div>
+<div class="modal-footer">
+  <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+  <button class="btn btn-danger" id="ddConfirmBtn" onclick="confirmDeptDisable()"><i class="bi bi-person-dash"></i> 确认禁用</button>
 </div>
 </div></div></div>
 

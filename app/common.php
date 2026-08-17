@@ -545,12 +545,6 @@ function resolve_library_attachment_ext(string $realMime, string $origExt = ''):
     return resolve_attachment_ext($realMime, $origExt);
 }
 
-/**
- * 信用评分梯度档位（v2.38.14）：90+ → a(深绿) / 80+ → b(绿) / 60+ → c(蓝) / 40+ → d(橙) / <40 → e(红)。
- * 返回档位后缀，双端拼类名：移动端 `m-tag-credit-<档>`（标签）、PC 端 `credit-<档>`（文本色）。
- * 单一事实来源，避免各视图重复维护分档映射。
- */
-
 /** 审批动作标签 */
 function approval_action_label(string $action): string
 {

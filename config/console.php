@@ -10,9 +10,8 @@ return [
         'db:backup'         => \app\command\DbBackup::class,
         'approval:escalate' => \app\command\ApprovalEscalate::class,
         'approval:sla-check' => \app\command\ApprovalSlaCheck::class,
-        'customer:credit-check' => \app\command\CustomerCreditCheck::class,
         'contract:expire'   => \app\command\ContractExpire::class,
-        // P1-4（deep review）：逾期自动置 OVERDUE，每日 cron 执行，统一账龄/信用/提醒口径
+        // P1-4（deep review）：逾期自动置 OVERDUE，每日 cron 执行，统一账龄/提醒口径
         'payment:mark-overdue' => \app\command\PaymentMarkOverdue::class,
         // v2.47.0：经营周报推送（每周一 cron：0 8 * * 1 php think report:weekly）
         'report:weekly' => \app\command\WeeklyReport::class,

@@ -203,6 +203,24 @@ class DingTalkService
         return $ticket;
     }
 
+    /**
+     * 钉钉创建的新用户默认授予「普通用户」角色（role.code='user'）。
+     * 角色不存在时仅记日志不中断（管理员可后补授权）。
+     */
+    public static function grantDefaultRole(int $uid): void
+    {
+        if ($uid <= 0) return;
+        $roleId = Db::name('role')->where('code', 'user')->value('id');
+        if (!$roleId) {
+            Log::warning('钉钉默认角色缺失：未找到 role.code=user', ['user_id' => $uid]);
+            return;
+        }
+        $exists = Db::name('user_role')->where('user_id', $uid)->where('role_id', $roleId)->find();
+        if (!$exists) {
+            Db::name('user_role')->insert(['user_id' => $uid, 'role_id' => $roleId]);
+        }
+    }
+
     /** 同步组织架构 */
     /**
      * CR-24：钉钉组织同步（逐条容错）
@@ -262,8 +280,10 @@ class DingTalkService
                             $udata['password']   = '';
                             $udata['status']     = 1;
                             $udata['created_at'] = date('Y-m-d H:i:s');
-                            Db::name('user')->insert($udata);
+                            $uid = Db::name('user')->insertGetId($udata);
                             $userCount++;
+                            // 钉钉同步的新用户默认授予「普通用户」角色（role.code='user'）
+                            self::grantDefaultRole((int)$uid);
                         }
                     } catch (\Throwable $e) {
                         $failures++;

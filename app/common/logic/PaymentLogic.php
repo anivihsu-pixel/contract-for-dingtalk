@@ -377,9 +377,6 @@ class PaymentLogic
     {
         $record = Db::name('payment_record')->where('id', $id)->find();
         Db::name('payment_record')->where('id', $id)->delete();
-        // M8 修复：删除回款后重算乙方客户信用评级（删除逾期/待收 → 评分随之变化）
-        if ($record) {
-        }
     }
 
 }

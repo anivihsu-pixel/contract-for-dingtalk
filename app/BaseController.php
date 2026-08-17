@@ -112,6 +112,15 @@ abstract class BaseController
         $this->deny();
     }
 
+    /** 要求超级管理员（is_admin=1 或 admin 角色），否则拒绝 */
+    protected function requireSuperAdmin(): void
+    {
+        if ($this->isSuperAdmin()) {
+            return;
+        }
+        $this->deny();
+    }
+
     /**
      * 财务/报表统一权限门面（v2.38.1）：PC与移动端共享同一权限门槛，
      * 避免 report:view 类权限码不存在导致的跨端不一致。

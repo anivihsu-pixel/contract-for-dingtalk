@@ -212,6 +212,30 @@ class AdminController extends BaseController
         return json_success(null, '已禁用');
     }
 
+    /** AJAX: 按部门批量禁用用户（v2.51.7）——选中部门（可含子部门）下全部在职用户一键禁用；
+     *  有进行中审批或当前登录账号跳过并汇总提示（前者需先办离职交接转交审批） */
+    public function disableDeptUsers()
+    {
+        $this->requirePermission('system:user');
+        $deptId       = (int)$this->getPost('dept_id', 0);
+        $includeChild = (int)$this->getPost('include_children', 0) === 1;
+        if ($deptId <= 0) {
+            return json_error('请先在部门树中选择要禁用的部门');
+        }
+        $res = AdminLogic::disableDeptUsers($deptId, $includeChild, (int)$this->userId);
+        // 批量权限变更，审计留痕
+        \app\common\service\AuditService::log($this->userId, 'disable_user', 'department', $deptId, [
+            'include_children' => $includeChild,
+            'disabled'         => count($res['disabled']),
+            'skipped'          => count($res['skipped']),
+        ]);
+        $msg = '已禁用 ' . count($res['disabled']) . ' 名用户';
+        if (!empty($res['skipped'])) {
+            $msg .= '，跳过 ' . count($res['skipped']) . ' 名';
+        }
+        return json_success($res, $msg);
+    }
+
     /** AJAX: 离职交接（v2.38.16）——将用户客户/合同/待审批批量转移给接收人，可同时禁用离职用户
      *  v2.38.26：权限放宽为 system:user 或 system:handover（离职交接独立权限码，可单独授予角色） */
     public function handoverUser()
@@ -582,7 +606,7 @@ class AdminController extends BaseController
     }
 
     /**
-     * 系统配置备份：下载 JSON 快照（不含 user 表，v2.36.0）
+     * 系统配置备份：下载 JSON 快照（v2.36.0；v2.51.7 起含 user 表用户账号与其角色）
      * 通过浏览器直接导航到本接口即可触发下载（会话 cookie 随行）。
      * v2.45.1：支持 ?tables[]=role&tables[]=permission 只导出勾选表（缺省 = 全量导出）。
      */
@@ -641,10 +665,11 @@ class AdminController extends BaseController
         }
 
         if ($mode === 'commit') {
-            // ① 防自锁（评估优化）：user 表不参与恢复（is_admin 恒保留），但 admin 角色 / system:user
-            // 授权随 role/user_role/role_permission 被覆盖——若备份未包含当前账号的管理授权，恢复后操作者将失去权限被锁死
-            if (empty($this->user['is_admin']) && !AdminLogic::restorePreservesAdmin($this->userId, $payload)) {
-                return json_error('已阻止：恢复后当前账号将失去系统管理权限（备份须包含当前账号的 admin 角色或 system:user 授权）');
+            // ① 防自锁（评估优化）：恢复会覆盖权限/角色矩阵与 user 表（is_admin 可能被覆盖），
+            // 校验恢复后当前账号是否仍具备管理身份（is_admin=1 或 admin 角色/system:user 授权），
+            // 否则操作者将失去权限被锁死
+            if (!AdminLogic::restorePreservesAdmin($this->userId, $payload)) {
+                return json_error('已阻止：恢复后当前账号将失去系统管理权限（备份须包含当前账号的 is_admin=1 或 admin 角色/system:user 授权）');
             }
             $res = AdminLogic::commitConfigImport($payload);
             if ($res['ok']) {
@@ -658,8 +683,8 @@ class AdminController extends BaseController
         // 默认 / mode=preview：仅预览
         $preview = AdminLogic::previewConfigImport($payload);
         // ① 预览预警：恢复后当前账号将失去系统管理权限（提交将被阻断）
-        if (empty($this->user['is_admin']) && !AdminLogic::restorePreservesAdmin($this->userId, $payload)) {
-            $preview['warnings'][] = '恢复后当前账号将失去系统管理权限，提交将被阻止（备份须包含当前账号的 admin 角色或 system:user 授权）。';
+        if (!AdminLogic::restorePreservesAdmin($this->userId, $payload)) {
+            $preview['warnings'][] = '恢复后当前账号将失去系统管理权限，提交将被阻止（备份须包含当前账号的 is_admin=1 或 admin 角色/system:user 授权）。';
         }
         return json_success($preview);
     }

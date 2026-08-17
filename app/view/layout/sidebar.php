@@ -163,7 +163,7 @@ if ($__showAdminGroup) {
   <?php if($__canDingTalk): ?><a href="/admin/dingtalk" class="nav-link sub <?=$menu_active=='admin'&&$tab=='dingtalk'?'active':''?>"><i class="bi bi-chat-dots"></i> 钉钉设置</a><?php endif; ?>
   <?php if($__canConfig): ?><a href="/admin/config" class="nav-link sub <?=$menu_active=='admin'&&$tab=='config'?'active':''?>"><i class="bi bi-sliders"></i> 系统配置</a><?php endif; ?>
   <?php if($__admin): ?><a href="/recycle" class="nav-link sub <?=$menu_active=='recycle'?'active':''?>"><i class="bi bi-trash3"></i> 数据回收站</a><?php endif; ?>
-  <?php if($__canAudit): ?><a href="/audit" class="nav-link sub <?=$menu_active=='audit'?'active':''?>"><i class="bi bi-shield-check"></i> 审计中心</a><?php endif; ?>
+  <?php if($__admin): ?><a href="/audit" class="nav-link sub <?=$menu_active=='audit'?'active':''?>"><i class="bi bi-shield-check"></i> 审计中心</a><?php endif; ?>
 </div>
 <?php
     $__blocks['admin'] = ob_get_clean();

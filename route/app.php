@@ -295,6 +295,7 @@ Route::group('ajax', function () {
 
     Route::post('admin/user/save', 'Admin/saveUser');
     Route::post('admin/user/delete', 'Admin/deleteUser');
+    Route::post('admin/user/disable-dept', 'Admin/disableDeptUsers'); // v2.51.7：按部门批量禁用（含子部门，可跳过有审批者）
     Route::post('admin/user/handover', 'Admin/handoverUser'); // v2.38.16：离职交接（客户/合同/待审批批量转移）
     Route::post('admin/user/clear-handover', 'Admin/clearHandover'); // v2.38.25：清除待交接标记（误报/已回岗）
     Route::post('admin/user/restore', 'Admin/restoreUser');   // 从回收站恢复禁用用户

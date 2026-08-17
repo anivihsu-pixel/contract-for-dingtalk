@@ -39,21 +39,21 @@ if (Db::name('department')->count() === 0) {
 
 // ---------- 客户 ----------
 $customers = [
-    [1, '上海云启科技有限公司', '91310000MA1FL00001', '陈志远', '王建国', '13800001111', 'wangjg@yunqi.example.com', '上海市浦东新区张江路88号', 'OTHER', 'ACTIVE', 2, 1, 92, 0, 'MANUAL', '2026-01-05 10:00:00'],
-    [2, '杭州星野文化传媒有限公司', '91330100MA2GK00002', '林雅', '陈晓梅', '13800002222', 'chenxm@xingye.example.com', '杭州市西湖区文三路100号', 'FOOD_TOURISM', 'ACTIVE', 3, 1, 78, 0, 'RECOMMEND', '2026-01-12 14:30:00'],
-    [3, '宁波智联设备制造有限公司', '91330200MA2HQ00003', '周正', '周正', '13800003333', 'zhouzheng@zhilian.example.com', '宁波市北仑区工业大道66号', 'OTHER', 'ACTIVE', 2, 1, 85, 0, 'MANUAL', '2026-02-03 09:20:00'],
-    [4, '北京数科信息技术有限公司', '91110100MA01800004', '孙伟', '孙伟', '13800004444', 'sunwei@shuke.example.com', '北京市海淀区中关村大街1号', 'OTHER', 'POTENTIAL', 3, 1, 95, 0, 'AD', '2026-07-15 16:00:00'],
-    [5, '深圳海岸线贸易有限公司', '91440300MA5FP00005', '刘志强', '刘志强', '13800005555', 'liuzq@haianxian.example.com', '深圳市南山区科技园南区', 'OTHER', 'ACTIVE', 3, 1, 55, 1, 'MANUAL', '2026-02-20 11:10:00'],
-    [6, '义乌小商品城运营有限公司', '91330782MA2ED00006', '吴国华', '吴国华', '13800006666', 'wugh@yiwucheng.example.com', '义乌市国际商贸城一区', 'OTHER', 'ACTIVE', 2, 1, 70, 0, 'MANUAL', '2026-03-08 15:40:00'],
-    [7, '苏州蓝海物流有限公司', '91320500MA1YG00007', '沈峰', '沈峰', '13800007777', 'shenfeng@lanhai.example.com', '苏州市工业园区物流园', 'OTHER', 'ACTIVE', 3, 1, 60, 0, 'DINGTALK', '2026-04-01 10:30:00'],
-    [8, '某市政务服务中心', '11330000MB0000088', '赵建国', '赵处长', '057900000000', 'zhaochu@gov.example.com', '某市行政服务中心大楼', 'GOV', 'ACTIVE', 2, 1, 98, 0, 'MANUAL', '2026-05-10 09:00:00'],
+    [1, '上海云启科技有限公司', '91310000MA1FL00001', '陈志远', '王建国', '13800001111', 'wangjg@yunqi.example.com', '上海市浦东新区张江路88号', 'OTHER', 'ACTIVE', 2, 1, 'MANUAL', '2026-01-05 10:00:00'],
+    [2, '杭州星野文化传媒有限公司', '91330100MA2GK00002', '林雅', '陈晓梅', '13800002222', 'chenxm@xingye.example.com', '杭州市西湖区文三路100号', 'FOOD_TOURISM', 'ACTIVE', 3, 1, 'RECOMMEND', '2026-01-12 14:30:00'],
+    [3, '宁波智联设备制造有限公司', '91330200MA2HQ00003', '周正', '周正', '13800003333', 'zhouzheng@zhilian.example.com', '宁波市北仑区工业大道66号', 'OTHER', 'ACTIVE', 2, 1, 'MANUAL', '2026-02-03 09:20:00'],
+    [4, '北京数科信息技术有限公司', '91110100MA01800004', '孙伟', '孙伟', '13800004444', 'sunwei@shuke.example.com', '北京市海淀区中关村大街1号', 'OTHER', 'POTENTIAL', 3, 1, 'AD', '2026-07-15 16:00:00'],
+    [5, '深圳海岸线贸易有限公司', '91440300MA5FP00005', '刘志强', '刘志强', '13800005555', 'liuzq@haianxian.example.com', '深圳市南山区科技园南区', 'OTHER', 'ACTIVE', 3, 1, 'MANUAL', '2026-02-20 11:10:00'],
+    [6, '义乌小商品城运营有限公司', '91330782MA2ED00006', '吴国华', '吴国华', '13800006666', 'wugh@yiwucheng.example.com', '义乌市国际商贸城一区', 'OTHER', 'ACTIVE', 2, 1, 'MANUAL', '2026-03-08 15:40:00'],
+    [7, '苏州蓝海物流有限公司', '91320500MA1YG00007', '沈峰', '沈峰', '13800007777', 'shenfeng@lanhai.example.com', '苏州市工业园区物流园', 'OTHER', 'ACTIVE', 3, 1, 'DINGTALK', '2026-04-01 10:30:00'],
+    [8, '某市政务服务中心', '11330000MB0000088', '赵建国', '赵处长', '057900000000', 'zhaochu@gov.example.com', '某市行政服务中心大楼', 'GOV', 'ACTIVE', 2, 1, 'MANUAL', '2026-05-10 09:00:00'],
 ];
 $rows = array_map(fn($c) => [
     'id' => $c[0], 'name' => $c[1], 'credit_code' => $c[2], 'legal_person' => $c[3],
     'contact_name' => $c[4], 'contact_mobile' => $c[5], 'contact_email' => $c[6], 'address' => $c[7],
     'industry' => $c[8], 'lifecycle_status' => $c[9], 'owner_id' => $c[10], 'dept_id' => $c[11],
-    'credit_score' => $c[12], 'high_risk' => $c[13], 'source' => $c[14], 'status' => 1,
-    'is_self' => 0, 'credit_manual' => 0, 'created_at' => $c[15], 'updated_at' => $c[15],
+    'source' => $c[12], 'status' => 1,
+    'is_self' => 0, 'created_at' => $c[13], 'updated_at' => $c[13],
 ], $customers);
 Db::name('customer')->insertAll($rows);
 echo "客户: " . count($rows) . " 条\n";

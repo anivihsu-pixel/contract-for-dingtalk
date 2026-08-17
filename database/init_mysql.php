@@ -218,9 +218,6 @@ $tables = [
         `source` VARCHAR(32) DEFAULT 'MANUAL' COMMENT '来源(MANUAL/IMPORT)',    -- 来源(MANUAL/IMPORT)
         `status` TINYINT DEFAULT 1 COMMENT '状态(1正常/0禁用)',    -- 状态(1正常/0禁用)
         `is_self` TINYINT DEFAULT 0 COMMENT '是否本公司(1=是)',    -- 是否本公司(1=是)
-        `credit_score` INT DEFAULT 100 COMMENT '信用评分(满分100)(v2.38.3)',    -- 信用评分(满分100)(v2.38.3)
-        `high_risk` TINYINT DEFAULT 0 COMMENT '高风险标记(1=高风险)(v2.38.3)',    -- 高风险标记(1=高风险)(v2.38.3)
-        `credit_manual` TINYINT NOT NULL DEFAULT 0 COMMENT '信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)',    -- 信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)
         `lifecycle_status` VARCHAR(16) DEFAULT 'ACTIVE' COMMENT '生命周期(POTENTIAL/ACTIVE)(v2.38.3)',    -- 生命周期(POTENTIAL/ACTIVE)(v2.38.3)
         `industry` VARCHAR(32) DEFAULT '' COMMENT '行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)',    -- 行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)
         `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID
@@ -764,7 +761,7 @@ foreach ([1,2,3,4,5,6,7,8,9,10,11,12,13,18,19,20,21,22,23,24,25,28,29,30,31,32,4
     $db->execute("INSERT IGNORE INTO `role_permission` (`role_id`, `perm_id`) VALUES (12, ?)", [$pid]);
 }
 
-// Admin user（局域网预览固定口令，首登强制改密；生产环境请改用随机强口令）
+// Admin user（测试/本地环境固定口令 85151818，首登强制改密；上传 GitHub 前请改回随机强口令）
 $initPwdAdmin = '85151818';
 $db->execute("INSERT IGNORE INTO `user` (`id`, `username`, `password`, `name`, `is_admin`, `status`, `force_reset`) VALUES (1, 'admin', ?, '系统管理员', 1, 1, 1)", [
     password_hash($initPwdAdmin, PASSWORD_BCRYPT)
@@ -846,4 +843,5 @@ $db->execute("UPDATE `contract` SET `project_id` = 1 WHERE `id` = 1");
 $db->execute("UPDATE `contract` SET `project_id` = 2 WHERE `id` = 2");
 
 echo "MySQL database initialized successfully!\n";
-echo "Default login: admin / password\n";
+// 测试/本地环境 admin 口令固定为 85151818（与 $initPwdAdmin 一致），动态打印避免与实现脱节误导
+echo "Default login: admin / {$initPwdAdmin}\n";

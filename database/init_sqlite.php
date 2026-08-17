@@ -148,9 +148,6 @@ $tables = [
         source TEXT DEFAULT 'MANUAL',  -- 来源(MANUAL/IMPORT)
         status INTEGER DEFAULT 1,  -- 状态
         is_self INTEGER DEFAULT 0,  -- 是否本公司(1=是)
-        credit_score INTEGER DEFAULT 100,  -- 信用评分(满分100)(v2.38.3)
-        high_risk INTEGER DEFAULT 0,  -- 高风险标记(1=高风险)(v2.38.3)
-        credit_manual INTEGER NOT NULL DEFAULT 0,  -- 信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)
         lifecycle_status TEXT DEFAULT 'ACTIVE',  -- 生命周期(POTENTIAL/ACTIVE)(v2.38.3)
         industry TEXT DEFAULT '',  -- 行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)
         owner_id INTEGER DEFAULT 0,  -- 归属人ID

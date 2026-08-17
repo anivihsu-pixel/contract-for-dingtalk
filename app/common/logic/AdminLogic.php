@@ -450,6 +450,52 @@ class AdminLogic
     }
 
     /**
+     * 按部门批量禁用用户（v2.51.7）：禁用选中部门（可选含子部门）下的全部在职用户。
+     * 有进行中审批或为当前登录账号的用户跳过（不禁用），避免产生无人审批的僵尸审批 / 管理员自锁。
+     * @return array ['disabled'=>[['id','name']], 'skipped'=>[['id','name','reason']]]
+     */
+    public static function disableDeptUsers(int $deptId, bool $includeChildren, int $operatorId): array
+    {
+        $deptIds = [$deptId];
+        if ($includeChildren) {
+            // 收集全部子部门 id（含嵌套）
+            $all = Db::name('department')->field('id, parent_id')->select()->toArray();
+            $changed = true;
+            while ($changed) {
+                $changed = false;
+                foreach ($all as $d) {
+                    if (in_array((int)$d['parent_id'], $deptIds, true) && !in_array((int)$d['id'], $deptIds, true)) {
+                        $deptIds[] = (int)$d['id'];
+                        $changed = true;
+                    }
+                }
+            }
+        }
+        $users = Db::name('user')
+            ->where('status', 1)
+            ->whereIn('dept_id', $deptIds)
+            ->field('id, name')
+            ->select()->toArray();
+        $disabled = [];
+        $skipped  = [];
+        foreach ($users as $u) {
+            $id = (int)$u['id'];
+            if ($id === $operatorId) {
+                $skipped[] = ['id' => $id, 'name' => $u['name'], 'reason' => '当前登录账号'];
+                continue;
+            }
+            $pending = self::countPendingApprovals($id);
+            if ($pending > 0) {
+                $skipped[] = ['id' => $id, 'name' => $u['name'], 'reason' => "有 {$pending} 条进行中审批"];
+                continue;
+            }
+            self::disableUser($id);
+            $disabled[] = ['id' => $id, 'name' => $u['name']];
+        }
+        return ['disabled' => $disabled, 'skipped' => $skipped];
+    }
+
+    /**
      * 统计用户进行中的审批数（v2.47.2）：作为审批人待处理的记录（PENDING 且实例进行中）
      * + 作为提交人仍审批中的实例。禁用前校验用——有进行中审批即禁用会使其成为
      * 无人能审批/撤回的僵尸审批（对应合同卡死在审批中，普通删除被拦截）。
@@ -1124,17 +1170,18 @@ class AdminLogic
 
     // ========================================================================
     // 系统配置备份 / 恢复（v2.36.0）
-    // 导出范围：配置/组织/权限/流程/字典/钉钉配置/资料库，**不含 user 表**（避免密码哈希出域，
-    //   同时满足用户「导出不含 user 表」的明确要求）。
-    // 导入采用整簇「DELETE + 批量 INSERT 保留原 id」事务恢复，保证 role_permission 等
-    //   靠 id join 的引用不断链（与 RBAC 教训一致：不可重排号）。
+    // 导出范围：配置/组织/权限/流程/字典/钉钉配置/用户账号（v2.51.7 起含 user 表，
+    //   确保钉钉同步的用户信息与其角色可整体备份、恢复）。
+    // 恢复策略：配置表为事务内「DELETE + 批量 INSERT 保留原 id」整簇覆盖；
+    //   user 表为「按 id 对齐 upsert」——备份内的用户覆盖其资料/按原 id 补入，
+    //   不清除备份之外的用户（user 被合同/审批等业务表引用，DELETE 会制造孤儿数据）。
     // 表顺序即依赖顺序（先父后子），便于日志与排错。
     // ========================================================================
 
-    /** 配置备份允许导出的表（不含 user）。dict=字典设置（system_config 中 dict_% 键的独立分区）、
+    /** 配置备份允许导出的表（含 user）。dict=字典设置（system_config 中 dict_% 键的独立分区）、
      *  dingtalk=钉钉配置（.env 中 DINGTALK_*，恢复写回 .env）。 */
     public const CONFIG_BACKUP_TABLES = [
-        'role', 'permission', 'role_permission', 'user_role',
+        'role', 'permission', 'role_permission', 'user', 'user_role',
         'department', 'company_profile', 'approval_flow',
         'resource_library', 'system_config', 'dict', 'dingtalk',
     ];
@@ -1144,6 +1191,7 @@ class AdminLogic
         'role'             => '角色',
         'permission'       => '权限',
         'role_permission'  => '角色权限关系',
+        'user'             => '用户账号',
         'user_role'        => '用户角色关系',
         'department'       => '部门',
         'company_profile'  => '本公司主体',
@@ -1223,7 +1271,8 @@ class AdminLogic
                 'db_type'     => config('database.default'),
                 'exported_at' => date('Y-m-d H:i:s'),
                 'tables'      => $export,
-                'note'        => '不含 user 表；恢复时将覆盖上述表的全部行并保留原 id。',
+                'note'        => '含用户账号（user 表，含密码哈希，请妥善保管备份文件）；'
+                    . '恢复时配置表覆盖全部行并保留原 id，user 表按 id 对齐覆盖/补入且不删除备份之外的用户。',
             ],
             'tables' => $tables,
         ];
@@ -1231,16 +1280,24 @@ class AdminLogic
 
     /**
      * 校验恢复后的权限矩阵是否仍赋予指定用户系统管理权限（防自锁，评估优化①）
-     * user 表不参与恢复，故 is_admin=1 的用户恒安全（调用方据此放行）；
-     * 此处判定恢复数据中的 admin 角色 / system:user 授权是否仍包含该用户。
+     * user 表参与恢复（v2.51.7）后 is_admin 可能被覆盖：备份显式包含当前账号时以备份值为准，
+     * 备份不含当前账号时 upsert 不覆盖其 is_admin（恒保留）；再结合 admin 角色 / system:user
+     * 授权（role/user_role/role_permission）兜底判定。
      */
     public static function restorePreservesAdmin(int $userId, array $payload): bool
     {
         $t = $payload['tables'] ?? [];
-        // v2.45.1：部分恢复（自选表）时不涉及权限矩阵（role/role_permission/user_role/permission），
+        // v2.45.1：部分恢复（自选表）时不涉及权限矩阵（role/role_permission/user_role/permission/user），
         // 不会覆盖当前账号的管理授权，无自锁风险，直接放行
-        if (empty($t['role']) && empty($t['role_permission']) && empty($t['user_role']) && empty($t['permission'])) {
+        if (empty($t['role']) && empty($t['role_permission']) && empty($t['user_role']) && empty($t['permission']) && empty($t['user'])) {
             return true;
+        }
+        // user 表：备份显式包含当前账号 → 以备份中的 is_admin 为准；不含 → 不覆盖，无需拦截
+        foreach (($t['user'] ?? []) as $u) {
+            if ((int)($u['id'] ?? 0) === $userId) {
+                if (!empty($u['is_admin'])) { return true; }
+                break; // 备份将当前账号置为非管理员，继续按角色授权兜底
+            }
         }
         $permCodes = [];
         foreach (($t['permission'] ?? []) as $p) { $permCodes[(int)($p['id'] ?? 0)] = $p['code'] ?? ''; }
@@ -1286,8 +1343,11 @@ class AdminLogic
                 . '），跨库恢复时字段类型/默认值可能不兼容，导入失败将整体回滚，请谨慎操作。';
         }
 
-        // 当前库存在的 user id 集合（用于孤立引用检测）
+        // 恢复后「将存在」的 user id 集合：当前库用户 + 备份 user 表中的用户（用于孤立引用检测）
         $userIds = array_flip(Db::name('user')->column('id'));
+        foreach (($payload['tables']['user'] ?? []) as $u) {
+            if ((int)($u['id'] ?? 0) > 0) { $userIds[(int)$u['id']] = true; }
+        }
 
         $tablePreview = [];
         foreach (self::CONFIG_BACKUP_TABLES as $t) {
@@ -1303,8 +1363,8 @@ class AdminLogic
             $tablePreview[$t] = ['rows' => count($rows), 'label' => self::tableLabel($t)];
             $orphan = self::countOrphanUserRefs($t, $rows, $userIds);
             if ($orphan > 0) {
-                $warnings[] = "表 {$t} 存在 {$orphan} 条指向「当前库不存在的用户」的引用"
-                    . "（恢复后这些引用将悬空，因导出不含 user 表）。";
+                $warnings[] = "表 {$t} 存在 {$orphan} 条指向「备份与当前库均不存在的用户」的引用"
+                    . "（恢复后这些引用将悬空，请确认备份含对应 user 记录）。";
             }
         }
         return ['valid' => true, 'meta' => $metaInfo, 'tables' => $tablePreview, 'warnings' => $warnings];
@@ -1351,6 +1411,29 @@ class AdminLogic
                         Db::name('system_config')->insertAll($chunk);
                     }
                     $restored[$t] = count($rows);
+                    continue;
+                }
+                // user 表：按 id 对齐 upsert（v2.51.7）——覆盖备份内的用户资料、按原 id 补入缺失用户；
+                // 不清除备份之外的用户（user 被合同/审批等业务表引用，DELETE 全清会制造孤儿数据）
+                if ($t === 'user') {
+                    $cols = self::tableColumns($t);
+                    $n = 0;
+                    foreach ($rows as $row) {
+                        $cleanRow = array_intersect_key($row, array_flip($cols));
+                        $id = (int)($cleanRow['id'] ?? 0);
+                        if ($id <= 0) { continue; }
+                        $upd = $cleanRow;
+                        unset($upd['id']);
+                        if (Db::name('user')->where('id', $id)->find()) {
+                            if (!empty($upd)) {
+                                Db::name('user')->where('id', $id)->update($upd);
+                            }
+                        } else {
+                            Db::name('user')->insert($cleanRow);
+                        }
+                        $n++;
+                    }
+                    $restored[$t] = $n;
                     continue;
                 }
                 // 仅保留当前表真实存在的列，规避版本间列差异（多出的列丢弃，缺失的列由 DB 默认值补齐）

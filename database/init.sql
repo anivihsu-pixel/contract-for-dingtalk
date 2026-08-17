@@ -146,9 +146,6 @@ CREATE TABLE `customer` (
     `source` VARCHAR(32) DEFAULT 'MANUAL' COMMENT '来源(MANUAL/IMPORT)',    -- 来源(MANUAL/IMPORT)
     `status` TINYINT DEFAULT 1 COMMENT '状态(1正常/0禁用)',    -- 状态(1正常/0禁用)
     `is_self` TINYINT DEFAULT 0 COMMENT '是否本公司(1=是)',    -- 是否本公司(1=是)
-    `credit_score` INT DEFAULT 100 COMMENT '信用评分(满分100)(v2.38.3)',    -- 信用评分(满分100)(v2.38.3)
-    `high_risk` TINYINT DEFAULT 0 COMMENT '高风险标记(1=高风险)(v2.38.3)',    -- 高风险标记(1=高风险)(v2.38.3)
-    `credit_manual` TINYINT NOT NULL DEFAULT 0 COMMENT '信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)',    -- 信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)
     `lifecycle_status` VARCHAR(16) DEFAULT 'ACTIVE' COMMENT '生命周期(POTENTIAL/ACTIVE)(v2.38.3)',    -- 生命周期(POTENTIAL/ACTIVE)(v2.38.3)
     `industry` VARCHAR(32) DEFAULT '' COMMENT '行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)',    -- 行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)
     `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID

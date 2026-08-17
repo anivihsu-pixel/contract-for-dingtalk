@@ -17,7 +17,7 @@ class PaymentMarkOverdue extends Command
     protected function configure()
     {
         $this->setName('payment:mark-overdue')
-            ->setDescription('扫描已过计划回款日仍为待收的回款记录，自动置为「逾期」，并联动重算客户信用评级');
+            ->setDescription('扫描已过计划回款日仍为待收的回款记录，自动置为「逾期」');
     }
 
     protected function execute(Input $input, Output $output)

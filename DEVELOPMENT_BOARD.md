@@ -1,7 +1,7 @@
 # 开发进度看板（产品经理窗口）
 
 > 本看板用于管理合同管理系统的开发进度：需求 → 开发 → 闭环测试 → 发布，集中跟踪模块状态与待办。
-> 最后更新：2026-08-15
+> 最后更新：2026-08-17
 
 ## 一、项目概览
 
@@ -86,6 +86,15 @@
 - [x] 移动端客户列表标签重排（2026-08-15）：「正常」状态标签移到行最前面（行业标签之前），标签行 `justify-content:space-between` → `normal` + `gap:8px`，状态/行业标签左对齐、归属标签 `margin-left:auto` 右推；服务端渲染与 JS `cardHtml` 两处同步改（验证：正常 x=28 最左、行业 x=76、归属 x=275）
 - [x] 新增客户来源/行业必填且不默认选项（2026-08-15）：移动端/PC 表单来源下拉去除默认「手动录入」改为空占位「请选择客户来源」、行业占位「未设置」→「请选择客户行业」并标红星必填；后端 CustomerController::save 来源白名单校验 + 新建时必填（`getPost('source', null)` 判字段显式存在，合同/发票快速建档不传字段不受影响）；顺带修复 `$this->request` 属性不存在导致保存 500（改用 getPost 判空）；前端提交前校验拦截，编辑旧数据（行业为空）不强制
 - [x] 移动端客户/供应商列表顶部统一设计（2026-08-15）：删除客户页生命周期漏斗卡片（含控制器 funnel 赋值、mobile.css `.lc-funnel-stage` 残留样式）；两页顶部统一「客户 / 供应商」等宽分段切换（直角无圆角）；布局顺序对齐为「切换 → 搜索 → 筛选 → 列表」，筛选标签容器 gap 统一 8px、搜索框/chip 样式一致；新增 `.m-hide-scrollbar` 隐藏标签横向滚动条（保留滑动能力，不显示下方线条）；筛选与栏目跳转验证正常
+- [x] 审计中心权限收敛至管理员（2026-08-17）：AuditController index/list 改 `requireSuperAdmin`（BaseController 新增）；侧边栏审计中心入口仅超管可见。验收：admin 正常访问；manager01 页面 403、AJAX 403、入口隐藏
+- [x] 钉钉同步用户默认授予普通用户角色（2026-08-17）：`DingTalkService::grantDefaultRole` 幂等授予 `role.code=user`（角色缺失仅记日志不中断）；组织同步新建用户与免登自动开户两处建号入口均接入。验收：新用户正确获得角色 5（普通用户）、重复调用不重复插入、演示库回归无影响
+- [x] 系统配置备份/恢复纳入用户与角色（2026-08-17）：user 表纳入备份（含钉钉同步字段、密码哈希，UI 提示妥善保管）；恢复按 id 对齐 upsert——覆盖备份内用户资料、按原 id 补入、不删除备份之外的用户（保护合同/审批业务归属）；防自锁升级（user 参与恢复后 is_admin 可能被覆盖，以备份值为准+admin 角色兜底）；预览孤儿引用按「恢复后」视角判定。验收：导出含 user/role/user_role；恢复覆盖/补入/保留备份外用户均通过；备份降权当前账号被拦截；再次钉钉同步（更新分支不触碰 user_role）角色不被覆盖
+- [x] 后台用户按部门关闭使用（2026-08-17）：部门树选中部门（范围跟随「包含子部门」勾选）→ 成员列表标题栏「禁用本部门成员」一键禁用；有进行中审批者与当前登录账号跳过并汇总原因（需先办离职交接转交审批）；确认弹窗展示部门/范围/成员名单 + 结果明细弹窗；用户列表删除图标 `bi-trash` → `bi-person-dash`（禁用语义）。验收：演示库真实审批数据（employee01×1、finance01×2）正确跳过、其余禁用；构造审批后追加跳过；当前登录账号防护生效；已禁用用户不重复处理
+- [x] 修复：部署 MySQL 老库新建客户 500「数据表字段不存在:[credit_score]」（2026-08-17）：v2.38.3 引入 credit_score/lifecycle_status 时仅补了 high_risk 的迁移脚本，老库升级缺列致客户 INSERT 报 Unknown column（ThinkPHP 10500）→ 500。本地 MySQL 8.4.9 + init.sql 完整复现（删列→INSERT 同错→补列→通过）；新增合并迁移 `database/migration_v2.38.3_customer_credit_columns.sql`（一次补齐 credit_score/lifecycle_status/high_risk/credit_manual/industry 5 列，逐列幂等；本地实测删 5 列→执行→全恢复→复跑幂等→INSERT 通过）。部署库执行该文件即修复
+- [x] 本地开发环境切换 MySQL（2026-08-17）：.env 改 `DB_TYPE=mysql`、`DB_PORT=3307`（独立数据目录 `data_dev`、root 空密码，与机器 3306 既有实例完全隔离，不独占端口/不注册服务）；新增 `dev_mysql_start.ps1` / `dev_mysql_stop.ps1` 一键启停；`php database/init_mysql.php` 建表+种子（32 表，customer 5 个 v2.38.3+ 列齐全）；端到端验证：登录（admin/85151818，force_reset 已清零）→ 强制改密 → 新建客户保存成功——此前的缺列 500 在 MySQL 下彻底消失
+- [x] 移除客户信用评级功能（2026-08-17）：产品评估——轻量化合同客户管理，信用评分（0-100）无任何业务消费（不联动赊销/发货/审批），credit_manual 人工锁定补丁证明模型水土不服，逾期风险已由回款报表/仪表盘/提醒独立覆盖。移除 customer 表 credit_score/high_risk/credit_manual 三列（`database/migration_v2.51.7_remove_customer_credit.sql` 合并幂等 DROP，参照 v2.38.13 风格）、CustomerLogic 两个重算方法、`customer:credit-check` 命令及注册、PaymentMarkOverdue/autoMarkOverdue 联动文案、PC 表单评分输入与详情风险/评分展示（基本信息表重排保持四列对称）、common.php 死注释；init.sql/init_mysql.php/init_sqlite.php/seed_demo.php 同步去列。保留生命周期（漏斗）/行业/统一社会信用代码等档案属性。验收：php -l 12 文件全过；本地 MySQL 3307 执行迁移 remain=0、复跑 init_mysql 幂等；登录→新建客户保存成功→删除测试客户→详情页 200
+- [x] 记录测试环境 admin 固定口令（2026-08-17）：init_mysql.php `$initPwdAdmin=85151818` 固定注释说明（上传 GitHub 前改回随机强口令）；底部 `Default login` 打印由写死的 `admin / password` 改为动态 `{$initPwdAdmin}`，杜绝打印与实现脱节误导。验收：php -l 通过；复跑 init_mysql.php 输出 `Default login: admin / 85151818`
+- [x] 移动端提交审批抄送节点样式对齐（2026-08-17）：抄送知会由独立内联蓝色块改为 `m-flow` 列表内 `<li>`（与审批节点同列表行/分隔线/间距），节点名用 `m-flow-name`，角色与抄送人名渲染为蓝色 `m-tag m-tag-info`（区别于灰色审批人标签）。验收：php -l 通过；浏览器实测（临时草稿合同+含抄送流程）显示「部门经理审批→总经理审批→抄送知会（财务/王财务/李员工）」同一列表；测试数据已清理
 - [ ] （待产品确认）后续需求池：按需补充，进入开发前更新本看板
 
 ## 五、维护约定

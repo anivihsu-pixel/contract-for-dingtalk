@@ -113,7 +113,6 @@ class CustomerController extends BaseController
             'lifecycle_status' => $this->getPost('lifecycle_status', $id ? 'ACTIVE' : 'POTENTIAL'),
             // v2.40.0 P1-7：客户行业（GOV/REAL_ESTATE/FOOD_TOURISM/OTHER）
             'industry'         => $this->getPost('industry', ''),
-            'credit_score'   => (int)$this->getPost('credit_score', 100), // v2.38.3 信用评分(手动维护)
         ];
 
         // 生命周期值白名单校验（业务状态码固定，字典仅负责可配置显示名称）
@@ -165,11 +164,6 @@ class CustomerController extends BaseController
         }
 
         if ($id) {
-            // M8 修复：编辑时用户改动过信用评分 → credit_manual=1 人工锁定，
-            // 自动重算（recalcCreditScore）将跳过评分/等级覆盖；未改则保持原锁定状态。
-            if ($existing && (int)($existing['credit_score'] ?? 100) !== $data['credit_score']) {
-                $data['credit_manual'] = 1;
-            }
             CustomerLogic::update($id, $data);
             AuditService::log($this->userId, 'update', 'customer', $id);
         } else {

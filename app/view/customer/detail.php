@@ -37,17 +37,14 @@
   <!-- 基本信息 -->
   <div class="tab-pane fade show active" id="t-info">
     <div class="card stat-card"><div class="card-body"><table class="table table-sm"><tbody>
-      <tr><td class="text-muted" width="100">名称</td><td><strong><?=htmlspecialchars($customer['name']??'')?></strong></td><td class="text-muted" width="100">风险</td><td><?=!empty($customer['high_risk'])?' <span class="pc-tag pc-tag-danger">高风险</span>':'<span class="text-muted">正常</span>'?></td></tr>
-      <!-- 生命周期展示（与漏斗同色） -->
+      <tr><td class="text-muted" width="100">名称</td><td><strong><?=htmlspecialchars($customer['name']??'')?></strong></td><td class="text-muted" width="100">生命周期</td><td>
       <?php $lc = $customer['lifecycle_status'] ?? 'ACTIVE'; $lcCls = ['POTENTIAL'=>'pc-tag-info','ACTIVE'=>'pc-tag-ok'][$lc] ?? 'pc-tag-muted'; ?>
-      <tr><td class="text-muted">生命周期</td><td><span class="pc-tag <?=$lcCls?>"><?=htmlspecialchars($lifecycle_dict[$lc] ?? $lc)?></span></td>
+      <span class="pc-tag <?=$lcCls?>"><?=htmlspecialchars($lifecycle_dict[$lc] ?? $lc)?></span></td></tr>
       <!-- v2.40.0 P1-7：客户行业展示 -->
-      <td class="text-muted">行业</td><td><?php $ind=$customer['industry']??''; echo $ind?htmlspecialchars($industry_dict[$ind]??$ind):'<span class="text-muted">—</span>'; ?></td></tr>
-      <tr><td class="text-muted">信用代码</td><td><?=htmlspecialchars($customer['credit_code']??'-')?></td><td class="text-muted">法人</td><td><?=htmlspecialchars($customer['legal_person']??'-')?></td></tr>
-      <?php $cScore=(int)($customer['credit_score']??100); $cCls=$cScore>=90?'credit-a':($cScore>=80?'credit-b':($cScore>=60?'credit-c':($cScore>=40?'credit-d':'credit-e'))); ?>
-      <tr><td class="text-muted">信用评分</td><td colspan="3"><strong class="<?=!empty($customer['high_risk'])?'text-danger':$cCls?>"><?=$cScore?></strong> / 100</td></tr>
-      <tr><td class="text-muted">邮箱</td><td><?=htmlspecialchars($customer['contact_email']??'-')?></td><td class="text-muted">地址</td><td><?=htmlspecialchars($customer['address']??'-')?></td></tr>
-      <tr><td class="text-muted">归属人</td><td><?=htmlspecialchars($owner_name ?: '未分配')?></td><td class="text-muted">状态</td><td><?=(($customer['status']??1)==1)?'正常':'禁用'?></td></tr>
+      <tr><td class="text-muted">行业</td><td><?php $ind=$customer['industry']??''; echo $ind?htmlspecialchars($industry_dict[$ind]??$ind):'<span class="text-muted">—</span>'; ?></td><td class="text-muted">信用代码</td><td><?=htmlspecialchars($customer['credit_code']??'-')?></td></tr>
+      <tr><td class="text-muted">法人</td><td><?=htmlspecialchars($customer['legal_person']??'-')?></td><td class="text-muted">邮箱</td><td><?=htmlspecialchars($customer['contact_email']??'-')?></td></tr>
+      <tr><td class="text-muted">地址</td><td><?=htmlspecialchars($customer['address']??'-')?></td><td class="text-muted">归属人</td><td><?=htmlspecialchars($owner_name ?: '未分配')?></td></tr>
+      <tr><td class="text-muted">状态</td><td><?=(($customer['status']??1)==1)?'正常':'禁用'?></td></tr>
       <!-- v2.51.4：基本信息集团归属标注（成员显示所属集团；根节点显示子公司数） -->
       <tr><td class="text-muted">集团归属</td><td colspan="3">
         <?php if(!empty($customer['parent_id']) && !empty($group_parent_name)): ?>

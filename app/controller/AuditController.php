@@ -14,7 +14,8 @@ class AuditController extends BaseController
     /** 审计中心页面 */
     public function index()
     {
-        $this->requirePermission('audit:view');
+        // 审计中心权限收敛至管理员（is_admin=1 或 admin 角色），不再由 audit:view 权限码开放
+        $this->requireSuperAdmin();
 
         // 审计操作类型 / 目标类型中文映射统一复用 common.php 的单一事实来源，
         // 确保审计中心筛选下拉、前端 window._auditActions / window._auditTypes 与
@@ -30,7 +31,7 @@ class AuditController extends BaseController
     /** 审计日志列表（AJAX） */
     public function list()
     {
-        $this->requirePermission('audit:view');
+        $this->requireSuperAdmin();
 
         [$page, $pageSize] = $this->getPageParams();
 

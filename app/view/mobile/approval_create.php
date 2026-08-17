@@ -41,14 +41,14 @@ include __DIR__ . '/_head.php';
             <?php endif; ?>
           </li>
           <?php endforeach; ?>
+          <?php if(!empty($has_cc)): ?>
+          <li>
+            <span class="m-flow-name">抄送知会</span>
+            <?php foreach($cc_roles as $ccr): ?><span class="m-tag m-tag-info"><?=htmlspecialchars($ccr)?></span><?php endforeach; ?>
+            <?php foreach($cc_names as $ccn): ?><span class="m-tag m-tag-info"><?=htmlspecialchars($ccn)?></span><?php endforeach; ?>
+          </li>
+          <?php endif; ?>
         </ol>
-        <?php if(!empty($has_cc)): ?>
-        <div style="margin:8px 0;padding:10px 12px;background:#f0f7ff;border-radius:8px;font-size:14px">
-          <strong>抄送知会：</strong>
-          <?php if(!empty($cc_roles)): ?><span style="margin-right:6px">角色：<?=htmlspecialchars(implode('、', $cc_roles))?></span><?php endif; ?>
-          <?php if(!empty($cc_names)): ?><span style="color:var(--m-text-2)"><?=htmlspecialchars(implode('、', $cc_names))?></span><?php endif; ?>
-        </div>
-        <?php endif; ?>
         <button class="m-btn m-btn-ok m-btn-block" id="btnSubmit"><i class="bi bi-send"></i> 确认提交</button>
       <?php else: ?>
         <div class="m-float-tip danger"><i class="bi bi-exclamation-triangle me-1"></i>未匹配到适用的审批流程，请联系管理员在「系统设置 → 审批流程」中配置。</div>
