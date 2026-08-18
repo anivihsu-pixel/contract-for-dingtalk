@@ -203,8 +203,46 @@ function loadMockLogs(){
 
 function showAddUser(){document.getElementById('userForm').reset();document.getElementById('userId').value='';var ul=document.getElementById('uLeader');if(ul)ul.value='0';document.getElementById('uPassword').required=true;document.getElementById('uPassword').placeholder='请设置密码(至少8位)';document.getElementById('uPassword').value='';var pm=document.getElementById('pwdMark');if(pm)pm.style.display='inline';_rpSelected=[];renderRoleView();new bootstrap.Modal('#userModal').show();}
 function editUser(u){document.getElementById('userId').value=u.id;document.getElementById('uUsername').value=u.username||'';document.getElementById('uName').value=u.name||'';document.getElementById('uMobile').value=u.mobile||'';document.getElementById('uEmail').value=u.email||'';document.getElementById('uDept').value=u.dept_id||0;document.getElementById('uStatus').value=u.status||1;var ul=document.getElementById('uLeader');if(ul)ul.value=u._is_leader?1:0;document.getElementById('uDDuid').value=u.dingtalk_userid||'';document.getElementById('uDDunion').value=u.dingtalk_unionid||'';document.getElementById('uPassword').required=false;document.getElementById('uPassword').placeholder='留空不修改';document.getElementById('uPassword').value='';var pm=document.getElementById('pwdMark');if(pm)pm.style.display='none';_rpSelected=u._role_ids||[];renderRoleView();new bootstrap.Modal('#userModal').show();}
-function saveUser(){if(!document.getElementById('userId').value && !document.getElementById('uPassword').value){showToast('请设置登录密码（至少8位）','error');return;}var fd=new FormData(document.getElementById('userForm'));var rids=_rpSelected.map(function(x){return parseInt(x);});fd.delete('role_ids[]');rids.forEach(function(v){fd.append('role_ids[]',v);});$ajax('/ajax/admin/user/save',{method:'POST',body:new URLSearchParams(fd)}).then(function(res){showToast(res.msg||'操作成功',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});}
+function saveUser(){if(!document.getElementById('userId').value && !document.getElementById('uPassword').value){showToast('请设置登录密码（至少8位）','error');return;}var fd=new FormData(document.getElementById('userForm'));var rids=_rpSelected.map(function(x){return parseInt(x);});fd.delete('role_ids[]');rids.forEach(function(v){fd.append('role_ids[]',v);});$ajax('/ajax/admin/user/save',{method:'POST',body:new URLSearchParams(fd)}).then(function(res){showToast(res.msg||'操作成功',res.code===0?'success':'error');if(res.code===0){if(res.data&&res.data.id){rebuildUserRow(res.data);}else{location.reload();}var um=document.getElementById('userModal');if(um){var m=bootstrap.Modal.getInstance(um);if(m)m.hide();}}}).catch(function(){});}
 function delUser(id){pcConfirm({message:'确定禁用该用户？',danger:true}).then(function(ok){if(!ok)return;$ajax('/ajax/admin/user/delete',{method:'POST',body:new URLSearchParams({id:id})}).then(function(res){showToast(res.msg||'已禁用',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});});}
+// v2.51.9：用户保存成功后按后端最新快照局部重建该用户行（保持部门树选中，不整页刷新）。
+// 与 PHP 首渲染行同构：data-dept-id/data-user-name/data-user-id + 9 个 td + 四个操作按钮。
+// 全部使用 DOM API 构建（textContent/闭包），规避字符串嵌入引号转义问题。
+function rebuildUserRow(u){
+  var tbody=document.getElementById('userTableBody');
+  if(!tbody||!u||!u.id){location.reload();return;}
+  var old=tbody.querySelector('tr[data-user-id="'+u.id+'"]');
+  if(!old){location.reload();return;}
+  var tr=document.createElement('tr');
+  tr.setAttribute('data-dept-id',u.dept_id||0);
+  tr.setAttribute('data-user-name',u.name||'');
+  tr.setAttribute('data-user-id',u.id);
+  function td(html){var d=document.createElement('td');d.innerHTML=html;return d;}
+  tr.appendChild(td(String(u.id)));
+  tr.appendChild(td(esc(u.username)));
+  tr.appendChild(td(esc(u.name)));
+  tr.appendChild(td(esc(u.mobile||'-')));
+  tr.appendChild(td(esc(u.dept_name||'-')));
+  tr.appendChild(td(u.dingtalk_userid?'<i class="bi bi-check-circle-fill text-success"></i> '+esc(u.dingtalk_userid):'<i class="bi bi-dash-circle text-muted"></i>'));
+  tr.appendChild(td(esc((u.roles||[]).join(', '))));
+  tr.appendChild(td(u.status==1?'<span class="pc-tag pc-tag-ok">正常</span>':'<span class="pc-tag pc-tag-danger">禁用</span>'));
+  var op=document.createElement('td');
+  function btn(cls,icon,title,fn){
+    var b=document.createElement('button');
+    b.type='button';b.className='btn btn-sm '+cls;
+    if(title){b.title=title;b.setAttribute('aria-label',title);}
+    b.innerHTML='<i class="bi '+icon+'"></i>';
+    b.onclick=fn;
+    op.appendChild(b);
+  }
+  btn('btn-primary','bi-pencil','编辑',function(){editUser(u);});
+  btn('btn-outline-primary','bi-arrow-left-right','在职数据交接',function(){showDataTransfer(u.id,u.name);});
+  btn('btn-outline-warning','bi-person-x','离职交接',function(){showHandover(u.id,u.name,false);});
+  btn('btn-outline-danger','bi-x-circle','禁用',function(){delUser(u.id);});
+  tr.appendChild(op);
+  tbody.replaceChild(tr,old);
+  renderUserList(); // 重建后重新按部门过滤，保持部门树选中状态与人数计数
+}
 // === 部门树（钉钉后台风格）：左侧可折叠部门结构，点选部门高亮并过滤右侧成员列表 ===
 let _curDept = 0;        // 当前选中部门（0=全部成员）
 let _incChildren = true; // 是否包含子部门
@@ -331,7 +369,7 @@ function confirmDeptDisable(){
   btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 禁用中…';
   let body = new URLSearchParams({dept_id: _curDept, include_children: _incChildren ? 1 : 0});
   $ajax('/ajax/admin/user/disable-dept',{method:'POST',body:body}).then(function(res){
-    btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-dash"></i> 确认禁用';
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-x-circle"></i> 确认禁用';
     let m = bootstrap.Modal.getInstance(document.getElementById('deptDisableModal'));
     if(m) m.hide();
     showToast(res.msg||'已禁用',res.code===0?'success':'error');
@@ -345,7 +383,7 @@ function confirmDeptDisable(){
       location.reload();
     }
   }).catch(function(){
-    btn.disabled = false; btn.innerHTML = '<i class="bi bi-person-dash"></i> 确认禁用';
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-x-circle"></i> 确认禁用';
     showToast('操作失败','error');
   });
 }
@@ -372,14 +410,14 @@ function confirmDeptDisable(){
         <button class="btn btn-primary btn-sm" onclick="syncDingTalk(this)"><i class="bi bi-cloud-download"></i> 同步钉钉</button>
         <button class="btn btn-primary btn-sm" onclick="showAddUser()"><i class="bi bi-plus-lg"></i> 新增用户</button>
         <!-- v2.51.7：按部门一键禁用（仅选中具体部门时显示，范围跟随「包含子部门」勾选） -->
-        <button class="btn btn-outline-danger btn-sm" id="deptDisableBtn" style="display:none" onclick="openDeptDisable()"><i class="bi bi-person-dash"></i> 禁用本部门成员</button>
+        <button class="btn btn-outline-danger btn-sm" id="deptDisableBtn" style="display:none" onclick="openDeptDisable()"><i class="bi bi-x-circle"></i> 禁用本部门成员</button>
         <button class="btn btn-outline-warning btn-sm" onclick="showUserMode('handover')"><i class="bi bi-person-x"></i> 待交接<span class="pc-tag pc-tag-warn ms-1"><?=count($handoverUsers??[])?></span></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="showUserMode('recycle')"><i class="bi bi-archive"></i> 回收站<span class="pc-tag pc-tag-muted ms-1"><?=count($disabledUsers??[])?></span></button>
       </div>
     </div>
 <div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>手机</th><th>部门</th><th>钉钉ID</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="userTableBody">
 <?php if(!empty($users)): foreach($users as $u): ?>
-<tr data-dept-id="<?=$u['dept_id']??0?>" data-user-name="<?=htmlspecialchars($u['name'],ENT_QUOTES)?>"><td><?=$u['id']?></td><td><?=htmlspecialchars($u['username'])?></td><td><?=htmlspecialchars($u['name'])?></td><td><?=htmlspecialchars($u['mobile']?:'-')?></td>
+<tr data-dept-id="<?=$u['dept_id']??0?>" data-user-name="<?=htmlspecialchars($u['name'],ENT_QUOTES)?>" data-user-id="<?=$u['id']?>"><td><?=$u['id']?></td><td><?=htmlspecialchars($u['username'])?></td><td><?=htmlspecialchars($u['name'])?></td><td><?=htmlspecialchars($u['mobile']?:'-')?></td>
 <td><?=htmlspecialchars($u['dept_name']?:'-')?></td>
 <td><?=$u['dingtalk_userid']?'<i class="bi bi-check-circle-fill text-success"></i> '.htmlspecialchars($u['dingtalk_userid']):'<i class="bi bi-dash-circle text-muted"></i>'?></td>
 <td><?=htmlspecialchars(implode(', ',$u['roles']??[]))?></td>
@@ -388,7 +426,7 @@ function confirmDeptDisable(){
 <button class="btn btn-sm btn-primary" aria-label="编辑" onclick='editUser(<?=htmlspecialchars(json_encode($u,JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>)'><i class="bi bi-pencil"></i></button>
 <button class="btn btn-sm btn-outline-primary" title="在职数据交接" aria-label="在职数据交接" onclick='showDataTransfer(<?=$u['id']?>, <?=htmlspecialchars(json_encode($u['name'],JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>)'><i class="bi bi-arrow-left-right"></i></button>
 <button class="btn btn-sm btn-outline-warning" title="离职交接" aria-label="离职交接" onclick='showHandover(<?=$u['id']?>, <?=htmlspecialchars(json_encode($u['name'],JSON_UNESCAPED_UNICODE),ENT_QUOTES)?>, false)'><i class="bi bi-person-x"></i></button>
-<button class="btn btn-sm btn-outline-danger" title="禁用" aria-label="禁用" onclick="delUser('<?=$u['id']?>')"><i class="bi bi-person-dash"></i></button>
+<button class="btn btn-sm btn-outline-danger" title="禁用" aria-label="禁用" onclick="delUser('<?=$u['id']?>')"><i class="bi bi-x-circle"></i></button>
 </td></tr>
 <?php endforeach; else: ?><tr><td colspan="9" class="text-center py-4 text-muted">暂无用户</td></tr><?php endif; ?>
 <tr id="userNoMatch" style="display:none"><td colspan="9" class="text-center py-4 text-muted">该部门暂无用户</td></tr>
@@ -939,12 +977,8 @@ function openInvoiceEditor(){
 .dict-header .dict-chev{color:var(--text-3);transition:transform .15s}
 .dict-header.active .dict-chev{transform:rotate(90deg)}
 .dict-label{min-width:110px;font-weight:600}
-.dict-item{display:inline-flex;align-items:center;background:#f0f4ff;color:var(--primary);border-radius:6px;padding:3px 10px;margin:2px 4px;font-size:13px;cursor:grab;transition:all .15s}
+.dict-item{display:inline-flex;align-items:center;background:#f0f4ff;color:var(--primary);border-radius:6px;padding:3px 10px;margin:2px 4px;font-size:13px;cursor:pointer;transition:all .15s}
 .dict-item:hover{background:#dbeafe;transform:translateY(-1px)}
-/* v2.47.2：拖动排序视觉反馈 */
-.dict-item:active{cursor:grabbing}
-.dict-dragging{opacity:.45}
-.dict-drag-over{outline:2px dashed var(--primary);outline-offset:1px;background:#dbeafe}
 .dict-item .del-x{font-size:12px;margin-left:5px;color:var(--text-3);line-height:1;cursor:pointer}
 .dict-item .del-x:hover{color:var(--danger)}
 /* v2.40.7：停用项样式（灰底+删除线），点击停用按钮可恢复 */
@@ -962,6 +996,10 @@ function openInvoiceEditor(){
 .dict-inline-form{display:inline-flex;align-items:center;gap:4px;margin:2px 4px}
 .dict-inline-form input{padding:2px 6px;font-size:12px;border:1px solid #cfe2ff;border-radius:4px;width:80px}
 .dict-inline-form input:first-child{width:70px}
+/* v2.51.10：↑/↓ 微调排序按钮（拖动难精确定位时的替代手段，点击一次移动一位） */
+.dict-move{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;font-size:8px;line-height:1;color:#6c757d;background:#e9edf3;border:1px solid #d0d7e2;border-radius:3px;cursor:pointer;margin-right:3px;user-select:none;vertical-align:middle}
+.dict-move:hover{background:#d0d7e2;color:#212529}
+.dict-move:active{transform:translateY(1px)}
 </style>
 
 <?php
@@ -971,14 +1009,10 @@ $labels = [
   'dict_contract_status'   => ['title'=>'合同状态',       'icon'=>'flag',       'color'=>'secondary'],
   'dict_supplier_type'     => ['title'=>'供应商类型',     'icon'=>'truck',      'color'=>'info'],
   'dict_invoice_type'      => ['title'=>'发票类型',       'icon'=>'receipt',    'color'=>'warning'],
-  'dict_invoice_status'    => ['title'=>'发票状态',       'icon'=>'receipt-cutoff','color'=>'dark'],
   'dict_payment_method'    => ['title'=>'收款方式',       'icon'=>'cash-stack', 'color'=>'success'],
   'dict_payment_milestone' => ['title'=>'回款里程碑',     'icon'=>'signpost-split', 'color'=>'primary'],
-  'dict_payment_status'    => ['title'=>'回款状态',       'icon'=>'wallet2',    'color'=>'danger'],
   'dict_customer_source'   => ['title'=>'客户来源',       'icon'=>'link',       'color'=>'success'],
   'dict_customer_industry' => ['title'=>'客户行业',       'icon'=>'building',   'color'=>'info'],
-  'dict_data_scope'        => ['title'=>'数据权限范围',   'icon'=>'shield-check','color'=>'secondary'],
-  'dict_tax_rate'          => ['title'=>'税率',           'icon'=>'percent',    'color'=>'danger'],
   'dict_project_status'    => ['title'=>'项目状态',       'icon'=>'kanban',     'color'=>'primary'],
   'dict_business_type'     => ['title'=>'业务类型',       'icon'=>'diagram-3',  'color'=>'primary'],
   'dict_customer_lifecycle'=> ['title'=>'客户生命周期',   'icon'=>'arrow-repeat','color'=>'info'],
@@ -986,7 +1020,7 @@ $labels = [
 ?>
 <?php if(!empty($dicts)): ?>
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <span class="text-muted small">共 <?=count($dicts)?> 个字典，点击标题展开编辑选项；启用项可直接拖动调整排序</span>
+  <span class="text-muted small">共 <?=count($dicts)?> 个字典，点击标题展开编辑选项；启用项可用 ▲▼ 按钮调整排序</span>
   <div>
     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="dictExpandAll()"><i class="bi bi-chevron-double-down"></i> 全部展开</button>
     <button type="button" class="btn btn-outline-secondary btn-sm ms-1" onclick="dictCollapseAll()"><i class="bi bi-chevron-double-up"></i> 全部收起</button>
@@ -1021,14 +1055,16 @@ $labels = [
   <?php foreach($activeItems as $code=>$label):
     $escCode = addslashes(htmlspecialchars($code));
   ?>
-    <span class="dict-item" draggable="true" data-code="<?=$escCode?>" onclick="dictEdit(this,'<?=$escKey?>','<?=$escCode?>','<?=addslashes(htmlspecialchars($label))?>')" title="拖动排序，点击修改">
+    <span class="dict-item" data-code="<?=$escCode?>" onclick="dictEdit(this,'<?=$escKey?>','<?=$escCode?>','<?=addslashes(htmlspecialchars($label))?>')" title="点击▲▼调整排序，点击修改">
+      <span class="dict-move" onclick="event.stopPropagation();dictMoveItem(this,-1)" title="上移一位">&#9650;</span>
+      <span class="dict-move" onclick="event.stopPropagation();dictMoveItem(this,1)" title="下移一位">&#9660;</span>
       <?=htmlspecialchars($label)?>
       <?php if(empty($di['system'])): ?><span class="del-x" onclick="dictDelItem(event,'<?=$escKey?>','<?=$escCode?>')" title="删除">&times;</span><?php endif; ?>
       <span class="dict-toggle" onclick="dictToggleItem(event,'<?=$escKey?>','<?=$escCode?>')" title="点击停用（从下拉隐藏，历史数据不受影响）">停用</span>
     </span>
   <?php endforeach; ?>
   </div>
-  <?php if(empty($items)): ?><span class="text-muted small">暂无选项</span><?php endif; ?>
+  <?php if(empty($items)): ?><span class="text-muted small dict-empty-hint">暂无选项</span><?php endif; ?>
   <button class="btn btn-outline-primary btn-sm ms-1 dict-add-btn" onclick="dictShowForm(event,'<?=$escKey?>')" title="添加选项" aria-label="添加选项"><i class="bi bi-plus-lg"></i></button>
   <div class="dict-off-zone" id="dictOffZone_<?=$escKey?>" <?=empty($offItems)?'style="display:none"':''?>>
     <span class="dict-off-toggle" id="dictOffToggle_<?=$escKey?>" onclick="toggleOffZone('<?=$escKey?>')"><i class="bi bi-chevron-right"></i> 已停用 <b id="dictOffCount_<?=$escKey?>"><?=count($offItems)?></b> 项</span>
@@ -1079,7 +1115,8 @@ function dictShowForm(e, key) {
     form.querySelector('button.btn-primary').onclick = function(){
         var iv = form.querySelector('input').value.trim();
         if(!iv){showToast('请填写名称','error');return;}
-        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__UPDATE_ITEM__',item_value:iv})}).then(function(res){showToast(res.msg||'已保存',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});
+        // v2.51.10：成功后局部重建该字典行（保持展开），不再整页刷新折叠
+        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__UPDATE_ITEM__',item_value:iv})}).then(function(res){showToast(res.msg||'已保存',res.code===0?'success':'error');if(res.code===0)rebuildDictRow(key,res.data);}).catch(function(){});
     };
     form.querySelector('button.btn-outline-secondary').onclick = function(){
         form.remove();
@@ -1098,7 +1135,8 @@ function dictEdit(el, key, oldCode, labelStr) {
     form.querySelector('button.btn-primary').onclick = function(){
         var iv = form.querySelector('input').value.trim();
         if(!iv){showToast('请填写名称','error');return;}
-        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__UPDATE_ITEM__',item_value:iv,old_key:oldCode})}).then(function(res){showToast(res.msg||'已保存',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});
+        // v2.51.10：成功后局部重建该字典行（保持展开），不再整页刷新折叠
+        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__UPDATE_ITEM__',item_value:iv,old_key:oldCode})}).then(function(res){showToast(res.msg||'已保存',res.code===0?'success':'error');if(res.code===0)rebuildDictRow(key,res.data);}).catch(function(){});
     };
     form.querySelector('button.btn-outline-secondary').onclick = function(){
         form.remove();
@@ -1111,86 +1149,24 @@ function dictDelItem(e, key, itemKey) {
     e.stopPropagation();
     pcConfirm({message:'确定移除此选项？'}).then(function(ok){
         if(!ok) return;
-        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__DELETE_ITEM__',item_key:itemKey})}).then(function(res){showToast(res.msg||'已删除',res.code===0?'success':'error');if(res.code===0)location.reload();}).catch(function(){});
+        // v2.51.10：成功后局部重建该字典行（保持展开），不再整页刷新折叠
+        $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__DELETE_ITEM__',item_key:itemKey})}).then(function(res){showToast(res.msg||'已删除',res.code===0?'success':'error');if(res.code===0)rebuildDictRow(key,res.data);}).catch(function(){});
     });
 }
 
 // v2.40.7：字典项停用/启用切换——停用仅从「新建/编辑选项下拉」隐藏（dict_options/dict_enabled），
 // 浏览/筛选/统计与历史 label 解析（dict() 全量）不受影响；系统枚举字典项不可删除，用停用替代删除。
-// 成功后局部 DOM 更新（停用项移入「已停用 N 项」折叠区），不整页刷新、不折叠当前字典。
+// v2.51.10：成功后局部重建该字典行（保持展开），不再整页刷新折叠。
 function dictToggleItem(e, key, itemKey) {
     e.stopPropagation();
-    var span = e.target.closest('.dict-item');
     $ajax('/ajax/admin/config/save',{method:'POST',body:new URLSearchParams({key:key,value:'__TOGGLE_ITEM__',item_key:itemKey})}).then(function(res){
         showToast(res.msg||'已更新',res.code===0?'success':'error');
-        if(res.code===0 && span){
-            var wasOff = span.classList.contains('dict-item-off');
-            var activeZone = document.getElementById('dictActive_'+key);
-            var offItems = document.getElementById('dictOffItems_'+key);
-            var offZone = document.getElementById('dictOffZone_'+key);
-            var offCount = document.getElementById('dictOffCount_'+key);
-            if(wasOff){
-                // 启用：移回启用区末尾，更新计数，无停用项则隐藏停用区
-                span.classList.remove('dict-item-off');
-                setDictToggleLabel(span, '停用', '点击停用（从下拉隐藏，历史数据不受影响）');
-                activeZone.appendChild(span);
-                var n = parseInt(offCount.textContent || '0', 10) - 1;
-                offCount.textContent = Math.max(0, n);
-                if(n <= 0) offZone.style.display = 'none';
-            } else {
-                // 停用：移入停用折叠区，展示停用区并刷新计数
-                span.classList.add('dict-item-off');
-                setDictToggleLabel(span, '启用', '点击启用（恢复选项）');
-                offItems.appendChild(span);
-                var n2 = parseInt(offCount.textContent || '0', 10) + 1;
-                offCount.textContent = n2;
-                offZone.style.display = '';
-            }
-        }
+        if(res.code===0) rebuildDictRow(key,res.data);
     }).catch(function(){});
 }
 
-function setDictToggleLabel(span, txt, tip) {
-    var t = span.querySelector('.dict-toggle');
-    if(t){ t.textContent = txt; t.title = tip; }
-}
-
-// v2.47.2：字典项拖动排序——HTML5 原生 DnD，事件委托到启用区容器，
-// 拖动后收集 data-code 顺序提交 __REORDER_ITEMS__ 保存（后端重排 config_value 键顺序）。
-function initDictDrag(zone) {
-    zone.addEventListener('dragstart', function(e){
-        var item = e.target.closest('.dict-item[data-code]');
-        if(!item) return;
-        zone._dragEl = item;
-        item.classList.add('dict-dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        try{ e.dataTransfer.setData('text/plain', item.getAttribute('data-code')); }catch(_){}
-    });
-    zone.addEventListener('dragend', function(){
-        zone._dragEl = null;
-        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-dragging','dict-drag-over'); });
-    });
-    zone.addEventListener('dragover', function(e){
-        var item = e.target.closest('.dict-item[data-code]');
-        if(!item || !zone._dragEl || item === zone._dragEl) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-drag-over'); });
-        item.classList.add('dict-drag-over');
-    });
-    zone.addEventListener('drop', function(e){
-        var item = e.target.closest('.dict-item[data-code]');
-        if(!item || !zone._dragEl || item === zone._dragEl) return;
-        e.preventDefault();
-        e.stopPropagation();
-        zone.querySelectorAll('.dict-item').forEach(function(x){ x.classList.remove('dict-drag-over'); });
-        // 落到目标下半部则插入其后，否则插入其前（按 DOM 顺序重排）
-        var rect = item.getBoundingClientRect();
-        var after = (e.clientY - rect.top) > rect.height / 2;
-        if(after) item.after(zone._dragEl); else item.before(zone._dragEl);
-        saveDictOrder(zone);
-    });
-}
+// 排序仅保留 ▲▼ 按钮（v2.51.9：用户反馈 v2.47.2 的 HTML5 原生拖拽难以精确定位，已移除 DnD）。
+// 点击后收集 data-code 顺序提交 __REORDER_ITEMS__ 保存（后端重排 config_value 键顺序）。
 function saveDictOrder(zone) {
     var key = zone.id.replace('dictActive_','');
     var codes = [];
@@ -1200,7 +1176,89 @@ function saveDictOrder(zone) {
         showToast(res.msg||'排序已保存',res.code===0?'success':'error');
     }).catch(function(){});
 }
-document.querySelectorAll('.dict-items-active').forEach(initDictDrag);
+
+// v2.51.9：▲▼ 按钮排序——点击一次移动一位，立即保存
+function dictMoveItem(btn, dir) {
+    var item = btn.closest('.dict-item');
+    var zone = item ? item.closest('.dict-items-active') : null;
+    if (!zone) return;
+    var cur = item;
+    while (cur) {
+        cur = dir < 0 ? cur.previousElementSibling : cur.nextElementSibling;
+        if (cur && cur.classList.contains('dict-item')) break;
+    }
+    if (!cur) return;
+    if (dir < 0) zone.insertBefore(item, cur); else zone.insertBefore(cur, item);
+    saveDictOrder(zone);
+}
+
+// v2.51.10：字典项操作成功后按后端最新快照重建整行 DOM（保持展开状态，不整页刷新）
+function rebuildDictRow(key, data) {
+    var row = document.querySelector('.dict-row[data-dict="'+key+'"]');
+    if (!row) { location.reload(); return; }
+    var items = data && data.items ? data.items : {};
+    var disabled = data && data.disabled ? data.disabled : [];
+    var isSystem = !!(data && data.system);
+    var badge = row.querySelector('.dict-header .badge');
+    if (badge) badge.textContent = (data && data.count != null ? data.count : Object.keys(items).length) + ' 项';
+    var activeZone = document.getElementById('dictActive_'+key);
+    var offItems = document.getElementById('dictOffItems_'+key);
+    var offZone = document.getElementById('dictOffZone_'+key);
+    var offCount = document.getElementById('dictOffCount_'+key);
+    if (!activeZone) return;
+    activeZone.innerHTML = '';
+    if (offItems) offItems.innerHTML = '';
+    // 清理残留的行内编辑表单（dictShowForm 插在 flex-grow-1 内，不随 activeZone 重建），恢复添加按钮
+    row.querySelectorAll('.dict-inline-form').forEach(function (f) { f.remove(); });
+    var addBtn = row.querySelector('.dict-add-btn');
+    if (addBtn) addBtn.style.display = '';
+    var offN = 0;
+    for (var code in items) {
+        var isOff = disabled.indexOf(code) !== -1;
+        var it = makeDictItem(key, code, items[code], isSystem, isOff);
+        if (isOff) { if (offItems) offItems.appendChild(it); offN++; }
+        else activeZone.appendChild(it);
+    }
+    if (offCount) offCount.textContent = offN;
+    if (offZone) offZone.style.display = offN > 0 ? '' : 'none';
+    var emptyHint = row.querySelector('.flex-grow-1 .dict-empty-hint');
+    if (emptyHint) emptyHint.style.display = Object.keys(items).length ? 'none' : '';
+}
+
+// v2.51.10：DOM API 构建字典项（含 ↑/↓、删除、停用按钮），文本一律 textContent 规避引号转义
+function makeDictItem(key, code, label, isSystem, isOff) {
+    var item = document.createElement('span');
+    item.className = 'dict-item' + (isOff ? ' dict-item-off' : '');
+    item.setAttribute('data-code', code);
+    item.title = isOff ? '点击修改' : '点击▲▼调整排序，点击修改';
+    item.onclick = function () { dictEdit(this, key, code, label); };
+    if (!isOff) {
+        var up = document.createElement('span');
+        up.className = 'dict-move'; up.textContent = '\u25B2'; up.title = '上移一位';
+        up.onclick = function (ev) { ev.stopPropagation(); dictMoveItem(this, -1); };
+        item.appendChild(up);
+        var down = document.createElement('span');
+        down.className = 'dict-move'; down.textContent = '\u25BC'; down.title = '下移一位';
+        down.onclick = function (ev) { ev.stopPropagation(); dictMoveItem(this, 1); };
+        item.appendChild(down);
+    }
+    var txt = document.createElement('span');
+    txt.textContent = label;
+    item.appendChild(txt);
+    if (!isSystem) {
+        var del = document.createElement('span');
+        del.className = 'del-x'; del.textContent = '\u00D7'; del.title = '删除';
+        del.onclick = function (ev) { ev.stopPropagation(); dictDelItem(ev, key, code); };
+        item.appendChild(del);
+    }
+    var tog = document.createElement('span');
+    tog.className = 'dict-toggle';
+    tog.textContent = isOff ? '启用' : '停用';
+    tog.title = isOff ? '点击启用（恢复选项）' : '点击停用（从下拉隐藏，历史数据不受影响）';
+    tog.onclick = function (ev) { ev.stopPropagation(); dictToggleItem(ev, key, code); };
+    item.appendChild(tog);
+    return item;
+}
 
 // v2.40.7：展开/收起「已停用 N 项」折叠区（.dict-off-items 由 CSS 类初始隐藏，须用 getComputedStyle 判真实可见性 + 内联 block 覆盖）
 function toggleOffZone(key) {
@@ -1707,7 +1765,7 @@ invLinkRender();
 
 <!-- v2.51.7 按部门禁用确认弹窗：选中部门（可含子部门）一键禁用全部在职成员 -->
 <div class="modal fade" id="deptDisableModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-<div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="bi bi-person-dash"></i> 禁用本部门成员</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+<div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="bi bi-x-circle"></i> 禁用本部门成员</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
 <div class="modal-body">
   <div class="alert alert-danger small mb-3"><i class="bi bi-exclamation-triangle"></i> 将禁用 <strong id="ddDeptTitle"></strong>（<span id="ddScope"></span>）下的 <strong id="ddCount"></strong> 名在职用户。禁用后进入回收站，可恢复。</div>
   <div class="mb-3">
@@ -1718,7 +1776,7 @@ invLinkRender();
 </div>
 <div class="modal-footer">
   <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-  <button class="btn btn-danger" id="ddConfirmBtn" onclick="confirmDeptDisable()"><i class="bi bi-person-dash"></i> 确认禁用</button>
+  <button class="btn btn-danger" id="ddConfirmBtn" onclick="confirmDeptDisable()"><i class="bi bi-x-circle"></i> 确认禁用</button>
 </div>
 </div></div></div>
 

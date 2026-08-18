@@ -69,7 +69,7 @@ $next = date('Y-m-d', strtotime($w['start'] . ' +7 days'));
       <?php if(empty($w['new_contracts'])): ?>
         <div style="text-align:center;padding:16px 0;color:var(--m-muted)">上周无新增生效合同</div>
       <?php else: foreach($w['new_contracts'] as $c): ?>
-        <div class="m-row"><div class="main"><a href="/contract/<?=$c['id']?>" style="color:var(--m-link,#4B3FE3)"><?=htmlspecialchars($c['title'])?></a><div class="s"><?=htmlspecialchars($c['dept_name'])?> · <?=htmlspecialchars((string)($c['effective_date']??''))?></div></div><div class="aside amt">¥<?=number_format((float)$c['amount'],0)?></div></div>
+        <div class="m-row"><div class="main"><a href="/m/contract/<?=intval($c['id'])?>" style="color:var(--m-link,#4B3FE3)"><?=htmlspecialchars($c['title'])?></a><div class="s"><?=htmlspecialchars($c['dept_name'])?> · <?=htmlspecialchars((string)($c['effective_date']??''))?></div></div><div class="aside amt">¥<?=number_format((float)$c['amount'],0)?></div></div>
       <?php endforeach; endif; ?>
     </div>
   </div>
@@ -82,7 +82,7 @@ $next = date('Y-m-d', strtotime($w['start'] . ' +7 days'));
       <?php if(empty($w['overdue_payments'])): ?>
         <div style="text-align:center;padding:16px 0;color:var(--m-muted)">暂无逾期回款</div>
       <?php else: foreach($w['overdue_payments'] as $o): ?>
-        <div class="m-row"><div class="main"><a href="/contract/<?=$o['contract_id']?>" style="color:var(--m-danger)"><?=htmlspecialchars($o['title'])?></a><div class="s"><?=htmlspecialchars($o['dept_name'])?> · 计划 <?=$o['planned_date']?></div></div><div class="aside amt" style="color:var(--m-danger)">¥<?=number_format((float)$o['amount'],0)?></div></div>
+        <div class="m-row"><div class="main"><a href="/m/contract/<?=intval($o['contract_id'])?>" style="color:var(--m-danger)"><?=htmlspecialchars($o['title'])?></a><div class="s"><?=htmlspecialchars($o['dept_name'])?> · 计划 <?=$o['planned_date']?></div></div><div class="aside amt" style="color:var(--m-danger)">¥<?=number_format((float)$o['amount'],0)?></div></div>
       <?php endforeach; endif; ?>
     </div>
   </div>

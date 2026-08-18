@@ -192,7 +192,39 @@ class AdminController extends BaseController
             'role_ids' => $roleIds,
             'action'   => $isUpdate ? 'update' : 'create',
         ]);
-        return json_success(null, '保存成功');
+        // v2.51.9：返回该用户最新完整数据（与用户列表行同构），前端据此局部重建行保持部门树选中，不再整页刷新
+        return json_success($this->buildUserRow($id), '保存成功');
+    }
+
+    /**
+     * 构造单个用户行数据（与 index 注入 $users 每项同构，含角色名/_role_ids/_is_leader/dept_name），
+     * 供保存成功后前端局部重建用户行。
+     */
+    private function buildUserRow(int $id): ?array
+    {
+        $row = \think\facade\Db::name('user')->find($id);
+        if (!$row) {
+            return null;
+        }
+        $roleIds   = \think\facade\Db::name('user_role')->where('user_id', $id)->column('role_id');
+        $roleNames = $roleIds ? \think\facade\Db::name('role')->whereIn('id', $roleIds)->column('name') : [];
+        $leaderMap = AdminLogic::getLeaderMap();
+        $deptId    = (int)($row['dept_id'] ?? 0);
+        return [
+            'id'               => $id,
+            'username'         => (string)$row['username'],
+            'name'             => (string)$row['name'],
+            'mobile'           => (string)($row['mobile'] ?? ''),
+            'email'            => (string)($row['email'] ?? ''),
+            'dept_id'          => $deptId,
+            'dept_name'        => $deptId ? (\think\facade\Db::name('department')->where('id', $deptId)->value('name') ?: '-') : '-',
+            'dingtalk_userid'  => (string)($row['dingtalk_userid'] ?? ''),
+            'dingtalk_unionid' => (string)($row['dingtalk_unionid'] ?? ''),
+            'status'           => (int)($row['status'] ?? 1),
+            'roles'            => array_values($roleNames),
+            '_role_ids'        => array_map('intval', $roleIds),
+            '_is_leader'       => isset($leaderMap[$deptId]) && $leaderMap[$deptId] == $id,
+        ];
     }
 
     /** AJAX: 禁用用户 */
@@ -593,7 +625,8 @@ class AdminController extends BaseController
         $oldKey    = $this->getPost('old_key', '');
         $res = AdminLogic::saveConfig($key, $value, $itemKey, $itemValue, $oldKey);
         if ($res['ok']) {
-            return json_success(null, $res['msg']);
+            // v2.51.10：字典项操作返回最新数据快照，前端据此局部重建保持展开，不再整页刷新
+            return json_success($res['data'] ?? null, $res['msg']);
         }
         return json_error($res['msg']);
     }

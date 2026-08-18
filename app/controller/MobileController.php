@@ -61,7 +61,7 @@ class MobileController extends BaseController
         } catch (\Throwable $e) { $notifList = []; }
 
         // 3) 统一待办流：待我审批 > 未读审批消息（供工作台「今天要处理」卡片展示）
-        $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts);
+        $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts, true);
 
         View::assign('alerts', $alerts);
         View::assign('todo_list', $todo);
@@ -142,9 +142,10 @@ class MobileController extends BaseController
      * 统一待办流组装（v2.38.18 去重调整）：
      * 返回「待我审批」和未读审批消息；到期/回款提醒仍由下方独立卡片展示。
      * public：PC /remind 待办中心复用同一口径，保证 PC/移动一致
+     * @param bool $mobileLink true=移动端渲染，将消息中的 PC 合同详情链接(/contract/{id})转为移动端(/m/contract/{id})，避免移动端跳 PC 版
      * 每项：['kind'=>'approval', 'level', 'text', 'sub', 'link']
      */
-    public static function buildTodoStream(array $pendingList, array $notifList, array $alerts): array
+    public static function buildTodoStream(array $pendingList, array $notifList, array $alerts, bool $mobileLink = false): array
     {
         $todo = [];
 
@@ -175,7 +176,7 @@ class MobileController extends BaseController
                 'level' => 'info',
                 'text'  => $n['title'] ?? '审批消息',
                 'sub'   => $n['content'] ?? '',
-                'link'  => $n['url'] ?? '#',
+                'link'  => $mobileLink ? preg_replace('#^/contract/(\d+)$#', '/m/contract/$1', $n['url'] ?? '#') : ($n['url'] ?? '#'),
             ];
         }
 
@@ -344,7 +345,7 @@ class MobileController extends BaseController
         $pending = $canApprove
             ? \app\common\logic\ApprovalQueryService::getPendingList($this->userId, 1, 10)
             : ['list' => [], 'total' => 0];
-        $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts);
+        $todo = self::buildTodoStream($pending['list'] ?? [], $notifList, $alerts, true);
         $duplicateApprovalNotif = 0;
         try {
             $duplicateApprovalNotif = InternalNotify::unreadPendingApprovalCount($this->userId);

@@ -35,7 +35,8 @@ include __DIR__ . '/_head.php';
           <li>
             <span class="m-flow-name"><?=htmlspecialchars($n['name'] ?? '节点')?></span>
             <?php if(!empty($n['resolved_names'])): ?>
-              <span class="m-tag m-tag-muted" style="margin-left:4px"><?=htmlspecialchars(implode('、', $n['resolved_names']))?></span>
+              <!-- v2.51.10：审批人标签由灰底 m-tag-muted 统一为蓝底 m-tag-info（#e8f1ff），与抄送标签一致 -->
+              <span class="m-tag m-tag-info" style="margin-left:4px"><?=htmlspecialchars(implode('、', $n['resolved_names']))?></span>
             <?php else: ?>
               <span style="margin-left:4px;color:#dc3545"><?=htmlspecialchars($n['resolve_warning'] ?? '未指定具体人员')?></span>
             <?php endif; ?>
@@ -44,7 +45,6 @@ include __DIR__ . '/_head.php';
           <?php if(!empty($has_cc)): ?>
           <li>
             <span class="m-flow-name">抄送知会</span>
-            <?php foreach($cc_roles as $ccr): ?><span class="m-tag m-tag-info"><?=htmlspecialchars($ccr)?></span><?php endforeach; ?>
             <?php foreach($cc_names as $ccn): ?><span class="m-tag m-tag-info"><?=htmlspecialchars($ccn)?></span><?php endforeach; ?>
           </li>
           <?php endif; ?>

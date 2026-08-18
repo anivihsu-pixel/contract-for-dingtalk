@@ -49,6 +49,8 @@
       var m = url.match(/[?&]to=([^&]+)/);
       if (m) { url = decodeURIComponent(m[1]).replace(/^\/approval\/(\d+)$/, '/m/approval/$1'); }
     }
+    // 合同详情 PC 路由重映射为移动端（2026-08-18：与周报逾期合同链接修复同源，避免移动端点站内消息跳 PC 版）
+    if (url) { url = url.replace(/^\/contract\/(\d+)$/, '/m/contract/$1'); }
     // 提取审批 ID（用于点击前检查目标是否存在）
     var apprId = '';
     var am = url.match(/\/(?:m\/)?approval\/(\d+)/);

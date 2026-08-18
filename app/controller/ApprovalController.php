@@ -96,14 +96,10 @@ class ApprovalController extends BaseController
         $ccList  = json_decode($flow['cc_list'] ?? '{}', true) ?: [];
         $ccRoles = $ccList['role_codes'] ?? [];
         $ccUsers = $ccList['cc_user_ids'] ?? [];
-        $ccRoleNames   = [];
+        // v2.51.10：抄送角色不展示角色名，仅展示角色对应的成员用户（$ccNames），故此处只做成员解析
         $ccResolvedIds = [];
         if (!empty($ccRoles)) {
-            $roleMap  = RoleLogic::getMap(); // code→name
-            foreach ($ccRoles as $rc) {
-                $ccRoleNames[] = $roleMap[$rc] ?? $rc;
-                $ccResolvedIds = array_merge($ccResolvedIds, ApproverResolver::resolveRoleCodes([$rc]));
-            }
+            $ccResolvedIds = ApproverResolver::resolveRoleCodes($ccRoles);
         }
         if (!empty($ccUsers)) {
             $ccResolvedIds = array_merge($ccResolvedIds, $ccUsers);
@@ -131,11 +127,10 @@ class ApprovalController extends BaseController
 
         View::assign('contract', $contract);
         View::assign('matched_flow', $flow);
-        View::assign('role_map', RoleLogic::getMap());
         View::assign('flow_nodes', $flowNodes);
         View::assign('cc_names', $ccNames);
-        View::assign('cc_roles', $ccRoleNames);
-        View::assign('has_cc', !empty($ccNames) || !empty($ccRoles));
+        // v2.51.10：仅当抄送有实际成员（角色成员或指定用户）时展示抄送行，角色名不再单独列出
+        View::assign('has_cc', !empty($ccNames));
         return View::fetch();
     }
 

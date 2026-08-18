@@ -20,7 +20,8 @@
     <li class="mb-1">
       <?=htmlspecialchars($n['name'] ?? '节点')?>
       <?php if(!empty($n['resolved_names'])): ?>
-        <span class="text-muted">（<?=htmlspecialchars(implode('、', $n['resolved_names']))?>）</span>
+        <!-- v2.51.10：审批人由灰色括号文本统一为蓝底 pc-tag-info（#e8f1ff），与抄送标签一致 -->
+        <span class="pc-tag pc-tag-info ms-1"><?=htmlspecialchars(implode('、', $n['resolved_names']))?></span>
       <?php else: ?>
         <span class="text-danger">（<?=htmlspecialchars($n['resolve_warning'] ?? '未指定具体人员')?>）</span>
       <?php endif; ?>
@@ -30,8 +31,7 @@
   <?php if(!empty($has_cc)): ?>
   <div class="mb-3">
     <strong class="text-muted">抄送知会：</strong>
-    <?php if(!empty($cc_roles)): ?><span class="pc-tag pc-tag-info me-1">角色：<?=htmlspecialchars(implode('、', $cc_roles))?></span><?php endif; ?>
-    <?php if(!empty($cc_names)): ?><span class="text-muted"><?=htmlspecialchars(implode('、', $cc_names))?></span><?php endif; ?>
+    <?php if(!empty($cc_names)): ?><span class="pc-tag pc-tag-info me-1"><?=htmlspecialchars(implode('、', $cc_names))?></span><?php endif; ?>
   </div>
   <?php endif; ?>
   <button type="submit" class="btn btn-warning"><i class="bi bi-send"></i> 确认提交</button>

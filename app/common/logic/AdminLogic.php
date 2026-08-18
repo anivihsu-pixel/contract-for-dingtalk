@@ -148,12 +148,9 @@ class AdminLogic
      */
     public const SYSTEM_DICT_KEYS = [
         'dict_contract_status',
-        'dict_payment_status',
-        'dict_invoice_status',
         'dict_payment_milestone',
         'dict_customer_lifecycle',
         'dict_project_status',
-        'dict_data_scope',
         'dict_contract_category',
     ];
 
@@ -969,6 +966,23 @@ class AdminLogic
     }
 
     /**
+     * 字典行最新数据快照（字典项操作成功后返回，供前端局部重建 DOM，保持展开不整页刷新）。
+     * @return array ['items'=>[code=>label], 'disabled'=>string[], 'system'=>bool, 'count'=>int]
+     */
+    private static function dictRowData(string $key): array
+    {
+        $name  = str_starts_with($key, 'dict_') ? substr($key, 5) : $key;
+        $row   = Db::name('system_config')->where('config_key', $key)->find();
+        $items = $row ? (json_decode($row['config_value'], true) ?: []) : [];
+        return [
+            'items'    => $items,
+            'disabled' => self::getDictDisabled($name),
+            'system'   => in_array($key, self::SYSTEM_DICT_KEYS, true),
+            'count'    => count($items),
+        ];
+    }
+
+    /**
      * 根据中文名自动生成字典项编码（拼音首字母大写）
      * 编码冲突时追加数字后缀（如 GGMT / GGMT1 / GGMT2），保证字典内唯一
      * @param string $label 中文名（如"广告媒体"）
@@ -1043,13 +1057,14 @@ class AdminLogic
             // P1-5：任何字典变更统一清 dict() 读取缓存（含非分类字典），不依赖 300s TTL
             self::clearDictCache($key);
             if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
-            return ['ok' => true, 'msg' => '字典项已保存'];
+            return ['ok' => true, 'msg' => '字典项已保存', 'data' => self::dictRowData($key)];
         }
 
         // 字典项停用/启用切换（v2.40.7：停用仅影响选项下拉 dict_options/dict_enabled，
         // 浏览/筛选/统计与 label 解析 dict() 全量不受影响，历史数据照常显示）
         if ($value === '__TOGGLE_ITEM__') {
-            if (!$itemKey) {
+            // v2.51.10：严格判空而非 !$itemKey——编码为字符串 "0"（如 0% 免税）时 empty("0") 为 true 被误拦
+            if ($itemKey === '') {
                 return ['ok' => false, 'msg' => '缺少字典项编码'];
             }
             $name     = str_starts_with($key, 'dict_') ? substr($key, 5) : $key;
@@ -1074,7 +1089,7 @@ class AdminLogic
             // P1-5：停用集合与字典缓存统一即时失效
             self::clearDictCache($key);
             if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
-            return ['ok' => true, 'msg' => $wasOff ? '已启用' : '已停用'];
+            return ['ok' => true, 'msg' => $wasOff ? '已启用' : '已停用', 'data' => self::dictRowData($key)];
         }
 
         // 字典项删除
@@ -1098,7 +1113,7 @@ class AdminLogic
             // P1-5：字典项删除同样即时清 dict() 读取缓存
             self::clearDictCache($key);
             if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
-            return ['ok' => true, 'msg' => '字典项已删除'];
+            return ['ok' => true, 'msg' => '字典项已删除', 'data' => self::dictRowData($key)];
         }
 
         // 字典项拖动排序（v2.47.2：重排 config_value 键顺序即全站下拉/筛选显示顺序；
@@ -1109,7 +1124,8 @@ class AdminLogic
                 return ['ok' => false, 'msg' => '字典不存在'];
             }
             $items = json_decode($existing['config_value'], true) ?: [];
-            $order = array_values(array_filter(array_map('trim', explode(',', (string)$itemKey))));
+            // v2.51.10：过滤仅去掉空串，array_filter 默认去 falsy 会把编码 "0"（0% 免税）一并滤掉
+            $order = array_values(array_filter(array_map('trim', explode(',', (string)$itemKey)), fn($v) => $v !== ''));
             if (!$order) {
                 return ['ok' => false, 'msg' => '缺少排序数据'];
             }
@@ -1124,7 +1140,7 @@ class AdminLogic
                 ->update(['config_value' => json_encode($newItems, JSON_UNESCAPED_UNICODE)]);
             self::clearDictCache($key);
             if ($key === 'dict_contract_category') { self::clearCategoryCaches(); }
-            return ['ok' => true, 'msg' => '排序已保存'];
+            return ['ok' => true, 'msg' => '排序已保存', 'data' => self::dictRowData($key)];
         }
 
         // 删除整个字典
