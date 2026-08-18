@@ -476,6 +476,8 @@ class CustomerLogic
         $paidAmount = 0.0;
         $overdueAmount = 0.0;
         foreach ($payments as $p) {
+            // 仅统计应收（RECEIVABLE）：应付(PAYABLE)为我方付款计划，不计入客户回款/逾期金额（口径统一）
+            if (($p['payment_type'] ?? '') !== 'RECEIVABLE') continue;
             $st = $p['status'] ?? '';
             if ($st === 'PAID') {
                 $paidAmount += (float)($p['paid_amount'] ?? $p['amount'] ?? 0);

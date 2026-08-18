@@ -79,10 +79,10 @@ echo "客户跟进: 5 条\n";
 
 // ---------- 供应商 ----------
 Db::name('supplier')->insertAll([
-    ['id' => 1, 'name' => '广州媒介推广有限公司', 'type' => 'MEDIA', 'contact_name' => '黄伟', 'contact_mobile' => '13900001111', 'contact_email' => 'huangwei@gzmedia.example.com', 'address' => '广州市天河区珠江新城', 'status' => 1, 'owner_id' => 2, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
-    ['id' => 2, 'name' => '深圳文创制作有限公司', 'type' => 'PRODUCTION', 'contact_name' => '邓丽', 'contact_mobile' => '13900002222', 'contact_email' => 'dengli@szwc.example.com', 'address' => '深圳市福田区创意园', 'status' => 1, 'owner_id' => 3, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
-    ['id' => 3, 'name' => '杭州物料供应链有限公司', 'type' => 'MATERIAL', 'contact_name' => '马超', 'contact_mobile' => '13900003333', 'contact_email' => 'machao@hzml.example.com', 'address' => '杭州市萧山区物流园区', 'status' => 1, 'owner_id' => 2, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
-    ['id' => 4, 'name' => '上海自由设计师工作室', 'type' => 'FREELANCER', 'contact_name' => '唐宁', 'contact_mobile' => '13900004444', 'contact_email' => 'tangning@studio.example.com', 'address' => '上海市静安区', 'status' => 1, 'owner_id' => 3, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
+    ['id' => 1, 'name' => '广州媒介推广有限公司', 'type' => 'MEDIA', 'contact_name' => '黄伟', 'contact_mobile' => '13900001111', 'remark' => 'huangwei@gzmedia.example.com', 'address' => '广州市天河区珠江新城', 'status' => 1, 'owner_id' => 2, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
+    ['id' => 2, 'name' => '深圳文创制作有限公司', 'type' => 'PRODUCTION', 'contact_name' => '邓丽', 'contact_mobile' => '13900002222', 'remark' => 'dengli@szwc.example.com', 'address' => '深圳市福田区创意园', 'status' => 1, 'owner_id' => 3, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
+    ['id' => 3, 'name' => '杭州物料供应链有限公司', 'type' => 'MATERIAL', 'contact_name' => '马超', 'contact_mobile' => '13900003333', 'remark' => 'machao@hzml.example.com', 'address' => '杭州市萧山区物流园区', 'status' => 1, 'owner_id' => 2, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
+    ['id' => 4, 'name' => '上海自由设计师工作室', 'type' => 'FREELANCER', 'contact_name' => '唐宁', 'contact_mobile' => '13900004444', 'remark' => 'tangning@studio.example.com', 'address' => '上海市静安区', 'status' => 1, 'owner_id' => 3, 'dept_id' => 1, 'created_at' => $now, 'updated_at' => $now],
 ]);
 echo "供应商: 4 条\n";
 

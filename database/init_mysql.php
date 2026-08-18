@@ -403,6 +403,7 @@ $tables = [
         `biz_type` VARCHAR(16) DEFAULT 'contract' COMMENT '业务类型(contract=合同审批/invoice=发票审批；发票专用流程按此过滤)',    -- 业务类型(contract=合同审批/invoice=发票审批；发票专用流程按此过滤)
         `form_condition` TEXT COMMENT '表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)',    -- 表单条件(JSON：发票按开票公司分支路由)
         `invoice_notify` TEXT DEFAULT NULL COMMENT '随合同申请开票通知确认人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.10)',    -- 随合同申请开票通知确认人(v2.51.10)
+        `payment_notify` TEXT DEFAULT NULL COMMENT '回款提醒通知人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.11)',    -- 回款提醒通知人(v2.51.11)
         `sort_order` INT DEFAULT 0 COMMENT '同类型流程内优先级(越小越靠前，审批匹配优先取小；0=未手动排序)',    -- 同类型内排序优先级
         `status` TINYINT DEFAULT 1 COMMENT '状态',    -- 状态
         `creator_id` BIGINT NOT NULL DEFAULT 0 COMMENT '创建人ID',    -- 创建人ID

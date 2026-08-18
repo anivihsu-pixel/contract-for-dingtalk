@@ -911,6 +911,17 @@ function purgeFlow(id){
       <button type="button" class="btn btn-sm btn-outline-primary" onclick="openInvNotifyPicker()"><i class="bi bi-person-plus"></i> 选择用户</button>
       <div class="form-text small">该流程过审后通知这些确认人开票（站内信 + 钉钉）；留空 = 默认财务角色。</div>
     </div>
+    <!-- v2.51.11：回款提醒通知人（每流程独立配置，复用抄送同款选人/选角色组件） -->
+    <div class="mb-3" style="border-top:1px solid var(--line);padding-top:12px">
+      <label class="form-label"><i class="bi bi-cash-coin text-success"></i> 回款提醒通知人 <span class="text-muted small">(到期/逾期抄送)</span></label>
+      <div class="d-flex flex-wrap gap-1 mb-1" id="pmtNotifyRolesView"><span class="text-muted small">未选择</span></div>
+      <input type="hidden" id="pmtNotifyRoles" value="[]">
+      <select class="form-select form-select-sm mb-2" id="pmtNotifyRoleSel" onchange="addPmtNotifyRole(this)"><option value="">选择角色…</option></select>
+      <div class="mb-2" id="pmtNotifyUsersView"><span class="text-muted small">未选择</span></div>
+      <input type="hidden" id="pmtNotifyUsers" value="[]">
+      <button type="button" class="btn btn-sm btn-outline-primary" onclick="openPmtNotifyPicker()"><i class="bi bi-person-plus"></i> 选择用户</button>
+      <div class="form-text small">该流程合同的回款到期/逾期提醒抄送这些人员（钉钉工作通知）；留空 = 默认财务角色。</div>
+    </div>
     <hr>
     <div class="text-muted small">点击左侧画布节点卡片内的「选择审批人」配置审批人；节点可上下移动、删除；「添加审批节点」按钮在画布底部。</div>
   </div>

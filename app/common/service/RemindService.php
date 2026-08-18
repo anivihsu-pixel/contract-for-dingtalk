@@ -70,11 +70,12 @@ class RemindService
             }
         }
 
-        // 3. Overdue payments (past planned_date, still PENDING)
+        // 3. Overdue payments (past planned_date, still uncollected: PENDING/OVERDUE; 仅应收 RECEIVABLE，应付不进回款提醒)
         $overdue = Db::name('payment_record')->alias('p')
             ->join('contract c', 'p.contract_id = c.id')
             ->field('p.*, c.contract_no, c.title')
-            ->where('p.status', 'PENDING')
+            ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
+            ->where('p.payment_type', 'RECEIVABLE')
             ->where('p.planned_date', '<', $today)
             ->where('c.is_deleted', 0)
             ->select()->toArray();
@@ -92,6 +93,7 @@ class RemindService
                 ->join('contract c', 'p.contract_id = c.id')
                 ->field('p.*, c.contract_no, c.title')
                 ->where('p.status', 'PENDING')
+                ->where('p.payment_type', 'RECEIVABLE')
                 ->where('p.planned_date', $date)
                 ->where('c.is_deleted', 0)
                 ->select()->toArray();
@@ -131,19 +133,26 @@ class RemindService
         // 管理员接收人（is_admin=1 ∪ admin 角色，钉钉部署 is_admin=0 同效；仅在职）
         $adminIds      = \app\common\logic\AuthLogic::getAdminUserIds(true);
 
+        // 在职用户集合（status=1）：方案D——推送前统一过滤禁用/离职用户，
+        // 避免离职创建人/负责人/财务持续收到提醒并产生无效推送失败告警
+        $activeIds = array_map('intval', Db::name('user')->where('status', 1)->column('id'));
+        $activeSet = array_flip($activeIds);
+
         // 收集每个用户待推送的文本行
         $byUser = [];
-        $enqueue = function (array $userIds, string $line) use (&$byUser) {
+        $enqueue = function (array $userIds, string $line) use (&$byUser, $activeSet) {
             foreach (array_unique(array_filter(array_map('intval', $userIds))) as $uid) {
-                if ($uid > 0) $byUser[$uid][] = $line;
+                if ($uid > 0 && isset($activeSet[$uid])) $byUser[$uid][] = $line;
             }
         };
 
         // 各业务扫描拆分到独立方法，主方法聚焦编排（推送去重 + 钉钉分发）
+        // v2.51.11：pmtCache 缓存「流程→回款通知人」解析结果（同一流程多笔回款只解析一次）
+        $pmtCache = [];
         self::scanContractExpiry($enqueue, $results, $today);
         self::scanExpiredContracts($enqueue, $results, $adminIds, $today);
-        self::scanOverduePayments($enqueue, $results, $financeIds, $today);
-        self::scanUpcomingPayments($enqueue, $results, $financeIds, $today);
+        self::scanOverduePayments($enqueue, $results, $financeIds, $today, $pmtCache);
+        self::scanUpcomingPayments($enqueue, $results, $financeIds, $today, $pmtCache);
         self::scanDueCustomerFollowups($enqueue, $results, $today);
 
         // 分用户推送钉钉工作通知；失败重试一次并告警（CR-11）
@@ -194,18 +203,22 @@ class RemindService
 
     /**
      * 扫描逾期回款（P3b-10 从 dispatch 拆分）
-     * status ∈ {PENDING, OVERDUE} 且 planned_date < today，提醒归属人 + 创建人，并抄送财务。
+     * status ∈ {PENDING, OVERDUE} 且 planned_date < today，仅应收（RECEIVABLE），提醒归属人 + 创建人，
+     * 并抄送流程配置的「回款通知人」（未配置回退财务角色，v2.51.11）。
      */
-    private static function scanOverduePayments(callable $enqueue, array &$results, array $financeIds, string $today): void
+    private static function scanOverduePayments(callable $enqueue, array &$results, array $financeIds, string $today, array &$pmtCache): void
     {
         $rows = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
-            ->field('p.*, c.contract_no, c.title, c.owner_id, c.creator_id')
+            ->field('p.*, c.contract_no, c.title, c.owner_id, c.creator_id, c.flow_id')
             ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
+            ->where('p.payment_type', 'RECEIVABLE')
             ->where('p.planned_date', '<', $today)->where('c.is_deleted', 0)
             ->select()->toArray();
         foreach ($rows as $p) {
             if (self::shouldRemind('payment', $p['id'], 'push_overdue', $today)) {
-                $enqueue(array_merge([$p['owner_id'], $p['creator_id']], $financeIds),
+                $fid    = (int)($p['flow_id'] ?? 0);
+                $notify = $pmtCache[$fid] ?? ($pmtCache[$fid] = self::resolvePaymentNotify($fid, $financeIds));
+                $enqueue(array_merge([$p['owner_id'], $p['creator_id']], $notify),
                     "💰 回款逾期：{$p['contract_no']}《{$p['title']}》 ¥" . number_format((float)$p['amount']) . "（{$p['description']}）");
                 $results['payments']++;
             }
@@ -214,25 +227,59 @@ class RemindService
 
     /**
      * 扫描即将到期回款（P3b-10 从 dispatch 拆分）
-     * 天数读 sys_config rule_payment_remind_days，P1-6 统一口径；status=PENDING 且 planned_date 命中 N 天后日期。
+     * 天数读 sys_config rule_payment_remind_days，P1-6 统一口径；status=PENDING、仅应收（RECEIVABLE）
+     * 且 planned_date 命中 N 天后日期；抄送流程配置的「回款通知人」（未配置回退财务角色，v2.51.11）。
      */
-    private static function scanUpcomingPayments(callable $enqueue, array &$results, array $financeIds, string $today): void
+    private static function scanUpcomingPayments(callable $enqueue, array &$results, array $financeIds, string $today, array &$pmtCache): void
     {
         $payDays = self::remindDays('rule_payment_remind_days', [7, 3, 1]);
         foreach ($payDays as $days) {
             $date = date('Y-m-d', strtotime("+{$days} days"));
             $rows = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
-                ->field('p.*, c.contract_no, c.title, c.owner_id, c.creator_id')
-                ->where('p.status', 'PENDING')->where('p.planned_date', $date)->where('c.is_deleted', 0)
+                ->field('p.*, c.contract_no, c.title, c.owner_id, c.creator_id, c.flow_id')
+                ->where('p.status', 'PENDING')->where('p.payment_type', 'RECEIVABLE')
+                ->where('p.planned_date', $date)->where('c.is_deleted', 0)
                 ->select()->toArray();
             foreach ($rows as $p) {
                 if (self::shouldRemind('payment', $p['id'], "push_due_{$days}d", $today)) {
-                    $enqueue(array_merge([$p['owner_id'], $p['creator_id']], $financeIds),
+                    $fid    = (int)($p['flow_id'] ?? 0);
+                    $notify = $pmtCache[$fid] ?? ($pmtCache[$fid] = self::resolvePaymentNotify($fid, $financeIds));
+                    $enqueue(array_merge([$p['owner_id'], $p['creator_id']], $notify),
                         "📅 回款提醒：{$p['contract_no']}《{$p['title']}》 ¥" . number_format((float)$p['amount']) . " 将于 {$days} 天后到期");
                     $results['payments']++;
                 }
             }
         }
+    }
+
+    /**
+     * 解析流程级「回款提醒通知人」（v2.51.11）：读 approval_flow.payment_notify（{role_codes:[],user_ids:[]}），
+     * 角色码展开为该角色成员，指定用户直接采用；配置为空（或流程不存在）时回退默认收件人（财务角色成员）。
+     * @return int[] 用户 id 列表（正数、去重）
+     */
+    private static function resolvePaymentNotify(int $flowId, array $fallback): array
+    {
+        $notify = [];
+        if ($flowId > 0) {
+            $raw = Db::name('approval_flow')->where('id', $flowId)->value('payment_notify');
+            if ($raw) {
+                $parsed = json_decode((string)$raw, true);
+                if (is_array($parsed)) $notify = $parsed;
+            }
+        }
+        $ids = array_map('intval', $notify['user_ids'] ?? []);
+        foreach (($notify['role_codes'] ?? []) as $code) {
+            $code = trim((string)$code);
+            if ($code === '') continue;
+            $rid = Db::name('role')->where('code', $code)->value('id');
+            if ($rid) {
+                $ids = array_merge($ids, Db::name('user_role')->where('role_id', (int)$rid)->column('user_id'));
+            }
+        }
+        $ids = array_values(array_unique(array_filter($ids, fn($v) => $v > 0)));
+        if (!empty($ids)) return $ids;
+        // 默认兜底：财务角色成员
+        return array_values(array_unique(array_filter(array_map('intval', $fallback), fn($v) => $v > 0)));
     }
 
     /**
@@ -395,21 +442,26 @@ class RemindService
                 'text' => "合同《{$c['title']}》已到期，请处理"];
         }
 
-        // 3. 逾期回款（v2.38.2：财务人员可看全量，不受合同归属限制）
+        // 3. 逾期回款（口径与 check/dispatch 统一：PENDING/OVERDUE 且已过计划日，仅应收；v2.38.2：财务人员可看全量，不受合同归属限制）
         $q = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
-            ->field('p.*, c.contract_no, c.title')->where('p.status', 'OVERDUE')->where('c.is_deleted', 0);
+            ->field('p.*, c.contract_no, c.title')
+            ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
+            ->where('p.payment_type', 'RECEIVABLE')
+            ->where('p.planned_date', '<', $today)
+            ->where('c.is_deleted', 0);
         self::scopeOwner($q, $userId, $isAdmin, true, $hasFinancePerm);
         foreach ($q->limit(100)->select()->toArray() as $p) {
             $alerts[] = ['type' => 'payment', 'id' => $p['contract_id'], 'level' => 'danger',
                 'text' => "回款逾期：{$p['title']} ¥{$p['amount']}（{$p['description']}）"];
         }
 
-        // 4. 即将到期回款（天数读 sys_config rule_payment_remind_days，P1-6 统一口径）
+        // 4. 即将到期回款（天数读 sys_config rule_payment_remind_days，P1-6 统一口径；仅应收 RECEIVABLE）
         $payDays = self::remindDays('rule_payment_remind_days', [7, 3, 1]);
         foreach ($payDays as $days) {
             $date = date('Y-m-d', strtotime("+{$days} days"));
             $q = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
                 ->field('p.*, c.contract_no, c.title')->where('p.status', 'PENDING')
+                ->where('p.payment_type', 'RECEIVABLE')
                 ->where('p.planned_date', $date)->where('c.is_deleted', 0);
             self::scopeOwner($q, $userId, $isAdmin, true, $hasFinancePerm);
             foreach ($q->limit(100)->select()->toArray() as $p) {

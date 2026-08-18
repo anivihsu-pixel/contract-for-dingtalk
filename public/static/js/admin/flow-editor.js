@@ -96,6 +96,15 @@ function editFlow(f){
     document.getElementById('invNotifyUsers').value = JSON.stringify(invUsers);
     let invUserBox = document.getElementById('invNotifyUsersView');
     if(invUserBox) invUserBox.innerHTML = invUsers.length ? invUsers.map(function(id){return '<span class="badge bg-primary me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') : '<span class="text-muted small">未选择</span>';
+    // v2.51.11：回款提醒通知人回填（每流程独立）
+    let pmtNotify = {}; try{ pmtNotify = f.payment_notify ? JSON.parse(f.payment_notify) : {}; }catch(e){ pmtNotify={}; }
+    let pmtRoles = (pmtNotify.role_codes && pmtNotify.role_codes.length) ? pmtNotify.role_codes : [];
+    let pmtUsers = pmtNotify.user_ids || [];
+    document.getElementById('pmtNotifyRoles').value = JSON.stringify(pmtRoles);
+    fillPmtNotifyRoleOptions();
+    document.getElementById('pmtNotifyUsers').value = JSON.stringify(pmtUsers);
+    let pmtUserBox = document.getElementById('pmtNotifyUsersView');
+    if(pmtUserBox) pmtUserBox.innerHTML = pmtUsers.length ? pmtUsers.map(function(id){return '<span class="badge bg-success me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') : '<span class="text-muted small">未选择</span>';
     new bootstrap.Modal('#flowModal').show();
 }
 
@@ -396,6 +405,60 @@ function getInvoiceNotifyData(){
     return {role_codes: roles, user_ids: users.map(function(x){ return parseInt(x); })};
 }
 
+// v2.51.11：回款提醒通知人（每流程独立配置，交互与开票通知人一致）
+function fillPmtNotifyRoleOptions(){
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('pmtNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    let box = document.getElementById('pmtNotifyRolesView');
+    if(box){
+        box.innerHTML = codes.length
+            ? codes.map(function(c){
+                let n = (allRoles||[]).find(function(r){ return r.code===c; });
+                return '<span class="badge bg-info me-1 mb-1">'+esc(n?n.name:c)+'<b style="cursor:pointer" onclick="removePmtNotifyRole(\''+c+'\')"> ×</b></span>';
+              }).join('')
+            : '<span class="text-muted small">未选择</span>';
+    }
+    let sel = document.getElementById('pmtNotifyRoleSel');
+    if(!sel) return;
+    sel.innerHTML = '<option value="">选择角色…</option>' + (allRoles||[]).filter(function(r){ return codes.indexOf(r.code)===-1; })
+        .map(function(r){ return '<option value="'+r.code+'">'+esc(r.name)+'</option>'; }).join('');
+}
+function addPmtNotifyRole(sel){
+    if(!sel || !sel.value) return;
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('pmtNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    if(codes.indexOf(sel.value)===-1) codes.push(sel.value);
+    document.getElementById('pmtNotifyRoles').value = JSON.stringify(codes);
+    fillPmtNotifyRoleOptions();
+}
+function removePmtNotifyRole(code){
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('pmtNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    codes = codes.filter(function(c){ return c!==code; });
+    document.getElementById('pmtNotifyRoles').value = JSON.stringify(codes);
+    fillPmtNotifyRoleOptions();
+}
+function openPmtNotifyPicker(){
+    let cur = [];
+    try{ cur = JSON.parse(document.getElementById('pmtNotifyUsers').value||'[]'); }catch(e){ cur = []; }
+    openUserPicker({
+        multiple: true, selected: cur,
+        onConfirm: function(ids){
+            document.getElementById('pmtNotifyUsers').value = JSON.stringify(ids);
+            let box = document.getElementById('pmtNotifyUsersView');
+            if(ids.length===0){ box.innerHTML='<span class="text-muted small">未选择</span>'; return; }
+            box.innerHTML = ids.map(function(id){return '<span class="badge bg-success me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('');
+        }
+    });
+}
+function getPaymentNotifyData(){
+    let roles = [];
+    try{ roles = JSON.parse(document.getElementById('pmtNotifyRoles').value||'[]'); }catch(e){ roles = []; }
+    let users = [];
+    try{ users = JSON.parse(document.getElementById('pmtNotifyUsers').value||'[]'); }catch(e){ users = []; }
+    return {role_codes: roles, user_ids: users.map(function(x){ return parseInt(x); })};
+}
+
 function saveFlow(){
     let nodes = getNodesData();
     if(nodes.length === 0){ showToast('至少需要1个审批节点','error'); return; }
@@ -403,6 +466,7 @@ function saveFlow(){
     fd.append('nodes', JSON.stringify(nodes));
     fd.append('cc_list', JSON.stringify(getCcListData())); // 流程级抄送
     fd.append('invoice_notify', JSON.stringify(getInvoiceNotifyData())); // v2.51.10：开票通知确认人
+    fd.append('payment_notify', JSON.stringify(getPaymentNotifyData())); // v2.51.11：回款提醒通知人
     $ajax('/ajax/admin/flow/save',{method:'POST',body:fd,loadingText:'保存中…'})
         .then(function(res){ showToast(res.msg||'已保存',res.code===0?'success':'error'); if(res.code===0)setTimeout(function(){location.reload();},800); })
         .catch(function(){});

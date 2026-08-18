@@ -316,13 +316,15 @@ class PaymentLogic
     }
 
     /**
-     * 合同是否存在逾期未结回款（P2-10：手动终结合同前的财务校验，仅拦截逾期，质保金等 PENDING 不受影响）
+     * 合同是否存在逾期未结回款（P2-10：手动终结合同前的财务校验，仅拦截逾期，质保金等 PENDING 不受影响；
+     * 仅应收 RECEIVABLE——应付(PAYABLE)逾期属我方付款计划，不拦截我方合同收尾）
      */
     public static function hasOverdue(int $contractId): bool
     {
         return (int)Db::name('payment_record')
             ->where('contract_id', $contractId)
             ->where('status', 'OVERDUE')
+            ->where('payment_type', 'RECEIVABLE')
             ->count() > 0;
     }
 
@@ -341,8 +343,9 @@ class PaymentLogic
 
     /**
      * P1-4（deep review）：逾期自动置 OVERDUE 批量扫描 —
-     * 将「待收(PENDING)且计划回款日已过」的回款记录自动置为逾期(OVERDUE)，
+     * 将「待收(PENDING)且计划回款日已过」的应收(RECEIVABLE)回款记录自动置为逾期(OVERDUE)，
      * 统一账龄/信用/提醒三处口径（此前仅手动标记，未标记的逾期不计入账龄与信用评级）。
+     * 仅处理应收：应付(PAYABLE)计划逾期不标记（无消费方，避免误判"我方回款逾期"）。
      * 幂等：已 OVERDUE 的记录不在扫描范围；重复执行安全。
      * 供命令 php think payment:mark-overdue 每日调用。
      * @return int 本次置为逾期的记录数
@@ -352,6 +355,7 @@ class PaymentLogic
         $today = date('Y-m-d');
         $ids = Db::name('payment_record')
             ->where('status', 'PENDING')
+            ->where('payment_type', 'RECEIVABLE')
             ->whereNotNull('planned_date')
             ->where('planned_date', '<>', '')
             ->where('planned_date', '<', $today)
