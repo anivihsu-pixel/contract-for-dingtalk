@@ -34,6 +34,64 @@
     <?php if(!empty($cc_names)): ?><span class="pc-tag pc-tag-info me-1"><?=htmlspecialchars(implode('、', $cc_names))?></span><?php endif; ?>
   </div>
   <?php endif; ?>
+  <hr>
+  <!-- v2.51.10：随合同申请开票——合同过审后自动生成待开票发票并通知财务，无需再单独申请 -->
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" id="withInvoice" name="with_invoice" value="1">
+    <label class="form-check-label" for="withInvoice"><i class="bi bi-receipt-cutoff"></i> 随合同申请开票（合同过审后自动生成待开票发票并通知财务确认）</label>
+  </div>
+  <div id="invIntentBox" style="display:none" class="mb-3">
+    <div class="row g-2 mb-2">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">开票主体 <span class="text-danger">*</span></label>
+        <select class="form-select" name="invoice_our_company_id">
+          <option value="">请选择开票主体</option>
+          <?php foreach(($companies ?? []) as $__c): ?>
+          <option value="<?=(int)$__c['id']?>"><?=htmlspecialchars($__c['name'])?><?=isset($__c['invoice_tax_rate']) && $__c['invoice_tax_rate'] !== '' ? '（' . (float)$__c['invoice_tax_rate'] * 100 . '%）' : ''?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">开票类型 <span class="text-danger">*</span></label>
+        <select class="form-select" name="invoice_type">
+          <option value="VAT_SPECIAL">增值税专用发票</option>
+          <option value="VAT_NORMAL">普通发票</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">含税金额（元） <span class="text-danger">*</span></label>
+        <input type="number" class="form-control" name="invoice_amount" step="0.01" min="0.01" max="<?=htmlspecialchars((string)($contract['amount'] ?? 0))?>" placeholder="≤ ¥<?=number_format((float)($contract['amount'] ?? 0),0)?>">
+      </div>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">开票内容 <span class="text-danger">*</span></label>
+        <select class="form-select" name="invoice_content_desc">
+          <option value="">请选择开票内容</option>
+          <option>软件开发服务费</option>
+          <option>咨询服务费</option>
+          <option>运维服务费</option>
+          <option>硬件销售费</option>
+          <option>其他</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small mb-1">发票抬头</label>
+        <input type="text" class="form-control" name="invoice_title" value="<?=htmlspecialchars($default_inv_title ?? '')?>" placeholder="默认带出合同乙方">
+      </div>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">税号</label>
+        <input type="text" class="form-control" name="invoice_tax_no" value="<?=htmlspecialchars($default_inv_tax_no ?? '')?>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small mb-1">申请说明</label>
+        <input type="text" class="form-control" name="invoice_remark" placeholder="选填">
+      </div>
+    </div>
+    <div class="text-muted small"><i class="bi bi-info-circle"></i> 合同过审后自动生成「待开票」发票并通知财务确认开票，金额不可超过合同金额，后续可在合同金额内再次申请。</div>
+  </div>
   <button type="submit" class="btn btn-warning"><i class="bi bi-send"></i> 确认提交</button>
   <a href="/contract/<?=$contract['id']?>" class="btn btn-outline-secondary ms-2">返回</a>
 <?php else: ?>
@@ -41,7 +99,11 @@
   <a href="/contract/<?=$contract['id']?>" class="btn btn-outline-secondary">返回</a>
 <?php endif; ?>
 </form></div></div>
-<script>// P0-1：提交防重复锁（双击/连点只创建一次审批实例）+ 网络异常兜底提示
+<script>// v2.51.10：随合同申请开票——勾选后展开开票字段
+var wchk = document.getElementById('withInvoice');
+var ibox = document.getElementById('invIntentBox');
+if(wchk && ibox){ wchk.addEventListener('change', function(){ ibox.style.display = this.checked ? '' : 'none'; }); }
+// P0-1：提交防重复锁（双击/连点只创建一次审批实例）+ 网络异常兜底提示
 var __approvalSubmitting = false;
 document.getElementById('submitForm').addEventListener('submit',function(e){
   e.preventDefault();

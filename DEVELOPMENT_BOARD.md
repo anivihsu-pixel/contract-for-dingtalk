@@ -1,7 +1,7 @@
 # 开发进度看板（产品经理窗口）
 
 > 本看板用于管理合同管理系统的开发进度：需求 → 开发 → 闭环测试 → 发布，集中跟踪模块状态与待办。
-> 最后更新：2026-08-17
+> 最后更新：2026-08-18
 
 ## 一、项目概览
 
@@ -100,6 +100,8 @@
 - [x] 用户管理编辑不刷新 + 禁用图标修复（2026-08-17）：**编辑不刷新**——saveUser 成功改为后端返回该用户最新行数据（`AdminController::buildUserRow` 新私有方法，与 index 注入 $users 同构，含 roles 角色名/_role_ids/_is_leader/dept_name），前端新增 `rebuildUserRow()` 用 DOM API 局部重建该行（首渲染行补 `data-user-id` 定位属性；行结构/操作按钮与 PHP 渲染同构，按钮事件用闭包避免引号转义），保存后自动关闭弹窗、不整页刷新、部门树选中与过滤保持（重建后重调 renderUserList）；delUser 保持原整页刷新——回收站数据为 PHP 首渲染快照、无 AJAX 接口，局部移除行会造成回收站列表不同步，故不纳入局部化。**禁用图标修复**——`bi-person-dash` 不在图标白名单子集（icons_whitelist.txt 缺失该图标 → CSS 无 `.bi-person-dash::before` 字形 → 按钮塌缩为空白小方块），全站 7 处统一换 `bi-x-circle`（白名单已有、实测渲染正常），行内/顶部/确认弹窗禁用按钮全部对齐。验收：php -l 通过；浏览器实测编辑保存行更新且 window 标记确认不刷新、弹窗自动关闭、重建行四按钮图标正常且尺寸统一（30×29）、连续编辑下一用户正常；禁用后回收站可恢复；测试数据已清理。无 DB 变更
 - [x] 提交审批页用户/角色/部门标签统一蓝底（2026-08-17）：**移动端** mobile/approval_create.php 审批人标签 `m-tag-muted`（灰底）→ `m-tag-info`（#e8f1ff），与抄送标签一致；**PC 端** approval/create.php 审批人由灰色括号文本 → `pc-tag-info` 蓝底标签（去括号），抄送用户 `text-muted` → `pc-tag-info`（抄送角色本就 `pc-tag-info`）。三类标签（指定用户/角色/提交人部门负责人/抄送角色/抄送用户）全部统一 #e8f1ff 蓝底 / #0b5ed7 字。验收：php -l 通过；临时构造 部门+三类节点流程+抄送+DRAFT 合同 后 PC 与移动端提交审批页实测 5 处标签背景色均为 rgb(232,241,255)（#e8f1ff）；验证数据与临时脚本已清理（含恢复 admin 部门归属）。无 DB 变更
 - [x] 提交审批页抄送角色只显示成员用户（2026-08-17）：审批节点 ROLE 本已由 ApproverResolver::resolve 解析为成员用户，无需改；抄送按角色不再列出角色名——ApprovalController::create 移除 ccRoleNames 组装（抄送角色仅 resolveRoleCodes 解析成员并入 ccNames）、has_cc 改为仅依赖实际成员、删除 role_map/cc_roles 视图变量；PC 端 approval/create.php 删除「角色：××」标签、移动端 mobile/approval_create.php 删除抄送角色循环，均只展示成员用户。验收：php -l 3 文件通过；构造 抄送角色 manager+指定用户 王财务 的流程与 DRAFT 合同，PC 与移动端提交审批页抄送均只显示「张经理、王财务」（无角色名），审批节点显示成员不变；验证数据与临时脚本已清理。无 DB 变更
+- [x] PC 端快捷操作按钮样式统一（2026-08-18）：工作台「快捷操作」区 5 个按钮（新建合同/新建客户/审批/登记回款/申请开票）颜色统一为「新建合同」的 `btn btn-primary btn-sm` 实心主色样式，原 outline 五彩描边（outline-primary/info/success/warning）全部移除。验收：php -l 通过；浏览器实测工作台按钮 class 全部 `btn btn-primary btn-sm`（其余「查看全部/全部合同」等非快捷操作按钮不受影响）。无 DB 变更
+- [x] 随合同申请开票（2026-08-18，v2.51.10）：提交合同审批时可勾选并填写开票信息（主体/类型/内容/金额/抬头/税号），合同过审（含全抄送免审批）后自动生成「待开票」发票并通知开票确认人，财务确认开票；跳过发票审批流（合同审批已把关）；contract 新增 invoice_intent 字段（迁移 `migration_v2.51.10_contract_invoice_intent.sql`）；**开票通知确认人按流程独立配置**（approval_flow 新增 invoice_notify，迁移 `migration_v2.51.10_flow_invoice_notify.sql`），配置入口在「审批流程 → 新建/编辑流程弹窗」（角色下拉+用户选择器，与抄送一致），未配置回退财务角色；金额 ≤ 合同金额可分批；验收：流程弹窗配置（回显/取值/保存落库）+ 提交过审（免审批）→ 发票 APPROVED → 通知按流程配置送达（user_ids=[1]）→ intent 清空，全链路浏览器 + DB 验证通过，测试数据已清理
 - [ ] （待产品确认）后续需求池：按需补充，进入开发前更新本看板
 
 ## 五、维护约定

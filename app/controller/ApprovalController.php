@@ -131,6 +131,10 @@ class ApprovalController extends BaseController
         View::assign('cc_names', $ccNames);
         // v2.51.10：仅当抄送有实际成员（角色成员或指定用户）时展示抄送行，角色名不再单独列出
         View::assign('has_cc', !empty($ccNames));
+        // v2.51.10：随合同申请开票——开票主体下拉 + 默认带出合同乙方抬头/税号
+        View::assign('companies', CompanyLogic::getListWithDefault());
+        View::assign('default_inv_title', trim((string)($contract['party_b_name'] ?? '')));
+        View::assign('default_inv_tax_no', trim((string)($contract['party_b_credit_code'] ?? '')));
         return View::fetch();
     }
 
@@ -142,6 +146,21 @@ class ApprovalController extends BaseController
 
         if (!ContractLogic::accessible($contractId)) {
             return json_error('无权限提交该合同审批');
+        }
+
+        // v2.51.10：随合同申请开票——勾选时校验并暂存开票意图（合同过审后自动生成待开票发票并通知财务）
+        if ((int)$this->getPost('with_invoice', 0)) {
+            $intent = $this->buildInvoiceIntent($contractId);
+            if (isset($intent['error'])) {
+                return json_error($intent['error']);
+            }
+            \think\facade\Db::name('contract')->where('id', $contractId)
+                ->update(['invoice_intent' => json_encode($intent, JSON_UNESCAPED_UNICODE)]);
+        } else {
+            // 未勾选：清除历史开票意图（防旧意图残留误生成）
+            \think\facade\Db::name('contract')->where('id', $contractId)
+                ->where('invoice_intent', '<>', '')->whereNotNull('invoice_intent')
+                ->update(['invoice_intent' => null]);
         }
 
         try {
@@ -156,6 +175,50 @@ class ApprovalController extends BaseController
             return json_success(['instance_id' => $result], '审批已提交');
         }
         return json_error('提交审批失败：未匹配到适用的审批流程，请联系管理员配置');
+    }
+
+    /**
+     * 组装「随合同申请开票」意图（v2.51.10）：校验开票字段后返回可 JSON 化的意图数组。
+     * 失败时返回 ['error'=>文案]。
+     */
+    private function buildInvoiceIntent(int $contractId): array
+    {
+        $contract = ContractLogic::accessible($contractId);
+        if (!$contract) {
+            return ['error' => '无权限或无此合同'];
+        }
+        if ((int)($contract['trade_attr'] ?? 1) === 0 || ($contract['direction'] ?? '') !== 'sales') {
+            return ['error' => '该合同为非销售交易合同，不可随合同申请开票'];
+        }
+        $amount = (float)$this->getPost('invoice_amount', 0);
+        if ($amount <= 0) {
+            return ['error' => '请填写正确的开票金额'];
+        }
+        if ($amount > (float)$contract['amount'] + 0.001) {
+            return ['error' => '开票金额不能超过合同金额（合同 ¥' . number_format((float)$contract['amount'], 2) . '）'];
+        }
+        $ourCompanyId = (int)$this->getPost('invoice_our_company_id', 0);
+        if ($ourCompanyId <= 0) {
+            return ['error' => '请选择开票主体'];
+        }
+        $contentDesc = trim((string)$this->getPost('invoice_content_desc', ''));
+        if ($contentDesc === '') {
+            return ['error' => '请填写开票内容'];
+        }
+        $invType = (string)$this->getPost('invoice_type', 'VAT_SPECIAL');
+        if (!in_array($invType, ['VAT_SPECIAL', 'VAT_NORMAL'], true)) {
+            $invType = 'VAT_SPECIAL';
+        }
+        return [
+            'apply'           => 1,
+            'our_company_id'  => $ourCompanyId,
+            'invoice_type'    => $invType,
+            'content_desc'    => $contentDesc,
+            'amount'          => $amount,
+            'invoice_title'   => trim((string)$this->getPost('invoice_title', '')),
+            'tax_no'          => trim((string)$this->getPost('invoice_tax_no', '')),
+            'remark'          => trim((string)$this->getPost('invoice_remark', '')),
+        ];
     }
 
     /** 审批详情 */

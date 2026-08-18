@@ -438,6 +438,7 @@ class AdminController extends BaseController
             'max_amount'   => (float)$this->getPost('max_amount', 99999999.99),
             'nodes'        => $this->getPost('nodes', '[]'),
             'cc_list'      => $this->getPost('cc_list', '[]'), // v2.38.0：流程级抄送（JSON 字符串）
+            'invoice_notify' => $this->getPost('invoice_notify', ''), // v2.51.10：随合同申请开票通知确认人（JSON：{role_codes:[],user_ids:[]}，空=默认财务角色）
             'status'       => (int)$this->getPost('status', 1),
             'biz_type'     => $this->getPost('biz_type', 'contract'),
         ];

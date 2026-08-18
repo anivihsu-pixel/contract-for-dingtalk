@@ -87,6 +87,15 @@ function editFlow(f){
     document.getElementById('ccUsersView').innerHTML = ccUsers.length ? ccUsers.map(function(id){return '<span class="badge bg-info me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') : '<span class="text-muted small">未选择</span>';
     Array.from(document.getElementById('ccDeptSel').options).forEach(function(o){o.selected=(cc.dept_ids||[]).map(Number).includes(parseInt(o.value));});
     document.getElementById('ccRequireAck').checked=!!cc.require_ack;
+    // v2.51.10：开票通知确认人回填（每流程独立）
+    let invNotify = {}; try{ invNotify = f.invoice_notify ? JSON.parse(f.invoice_notify) : {}; }catch(e){ invNotify={}; }
+    let invRoles = (invNotify.role_codes && invNotify.role_codes.length) ? invNotify.role_codes : [];
+    let invUsers = invNotify.user_ids || [];
+    document.getElementById('invNotifyRoles').value = JSON.stringify(invRoles);
+    fillInvNotifyRoleOptions();
+    document.getElementById('invNotifyUsers').value = JSON.stringify(invUsers);
+    let invUserBox = document.getElementById('invNotifyUsersView');
+    if(invUserBox) invUserBox.innerHTML = invUsers.length ? invUsers.map(function(id){return '<span class="badge bg-primary me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('') : '<span class="text-muted small">未选择</span>';
     new bootstrap.Modal('#flowModal').show();
 }
 
@@ -333,12 +342,67 @@ function openCcPicker(){
     });
 }
 
+// v2.51.10：随合同申请开票——开票通知确认人（每流程独立配置，交互与抄送完全一致）
+function fillInvNotifyRoleOptions(){
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('invNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    let box = document.getElementById('invNotifyRolesView');
+    if(box){
+        box.innerHTML = codes.length
+            ? codes.map(function(c){
+                let n = (allRoles||[]).find(function(r){ return r.code===c; });
+                return '<span class="badge bg-info me-1 mb-1">'+esc(n?n.name:c)+'<b style="cursor:pointer" onclick="removeInvNotifyRole(\''+c+'\')"> ×</b></span>';
+              }).join('')
+            : '<span class="text-muted small">未选择</span>';
+    }
+    let sel = document.getElementById('invNotifyRoleSel');
+    if(!sel) return;
+    sel.innerHTML = '<option value="">选择角色…</option>' + (allRoles||[]).filter(function(r){ return codes.indexOf(r.code)===-1; })
+        .map(function(r){ return '<option value="'+r.code+'">'+esc(r.name)+'</option>'; }).join('');
+}
+function addInvNotifyRole(sel){
+    if(!sel || !sel.value) return;
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('invNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    if(codes.indexOf(sel.value)===-1) codes.push(sel.value);
+    document.getElementById('invNotifyRoles').value = JSON.stringify(codes);
+    fillInvNotifyRoleOptions();
+}
+function removeInvNotifyRole(code){
+    let codes = [];
+    try{ codes = JSON.parse(document.getElementById('invNotifyRoles').value||'[]'); }catch(e){ codes=[]; }
+    codes = codes.filter(function(c){ return c!==code; });
+    document.getElementById('invNotifyRoles').value = JSON.stringify(codes);
+    fillInvNotifyRoleOptions();
+}
+function openInvNotifyPicker(){
+    let cur = [];
+    try{ cur = JSON.parse(document.getElementById('invNotifyUsers').value||'[]'); }catch(e){ cur = []; }
+    openUserPicker({
+        multiple: true, selected: cur,
+        onConfirm: function(ids){
+            document.getElementById('invNotifyUsers').value = JSON.stringify(ids);
+            let box = document.getElementById('invNotifyUsersView');
+            if(ids.length===0){ box.innerHTML='<span class="text-muted small">未选择</span>'; return; }
+            box.innerHTML = ids.map(function(id){return '<span class="badge bg-primary me-1 mb-1">'+esc(userNameById(id))+'</span>';}).join('');
+        }
+    });
+}
+function getInvoiceNotifyData(){
+    let roles = [];
+    try{ roles = JSON.parse(document.getElementById('invNotifyRoles').value||'[]'); }catch(e){ roles = []; }
+    let users = [];
+    try{ users = JSON.parse(document.getElementById('invNotifyUsers').value||'[]'); }catch(e){ users = []; }
+    return {role_codes: roles, user_ids: users.map(function(x){ return parseInt(x); })};
+}
+
 function saveFlow(){
     let nodes = getNodesData();
     if(nodes.length === 0){ showToast('至少需要1个审批节点','error'); return; }
     let fd = new FormData(document.getElementById('flowForm'));
     fd.append('nodes', JSON.stringify(nodes));
     fd.append('cc_list', JSON.stringify(getCcListData())); // 流程级抄送
+    fd.append('invoice_notify', JSON.stringify(getInvoiceNotifyData())); // v2.51.10：开票通知确认人
     $ajax('/ajax/admin/flow/save',{method:'POST',body:fd,loadingText:'保存中…'})
         .then(function(res){ showToast(res.msg||'已保存',res.code===0?'success':'error'); if(res.code===0)setTimeout(function(){location.reload();},800); })
         .catch(function(){});

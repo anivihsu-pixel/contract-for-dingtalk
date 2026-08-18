@@ -31,10 +31,10 @@ include __DIR__.'/../layout/header.php'; ?>
   <div class="card-body py-2">
     <div class="d-flex flex-wrap gap-2">
       <?php if(!empty($can_create)): ?><a href="/contract/create" class="btn btn-primary btn-sm"><i class="bi bi-file-earmark-plus"></i> 新建合同</a><?php endif; ?>
-      <?php if(!empty($can_create_customer)): ?><a href="/customer/create" class="btn btn-outline-primary btn-sm"><i class="bi bi-person-plus"></i> 新建客户</a><?php endif; ?>
-      <?php if(!empty($can_approve)): ?><a href="/approval" class="btn btn-outline-info btn-sm"><i class="bi bi-list-check"></i> 审批</a><?php endif; ?>
-      <?php if(!empty($can_pay)): ?><a href="/finance#add" class="btn btn-outline-success btn-sm"><i class="bi bi-cash-coin"></i> 登记回款</a><?php endif; ?>
-      <?php if(!empty($is_admin) || in_array('invoice:apply', $user_permissions ?? [], true)): ?><a href="/invoice-apply" class="btn btn-outline-warning btn-sm"><i class="bi bi-receipt-cutoff"></i> 申请开票</a><?php endif; ?>
+      <?php if(!empty($can_create_customer)): ?><a href="/customer/create" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> 新建客户</a><?php endif; ?>
+      <?php if(!empty($can_approve)): ?><a href="/approval" class="btn btn-primary btn-sm"><i class="bi bi-list-check"></i> 审批</a><?php endif; ?>
+      <?php if(!empty($can_pay)): ?><a href="/finance#add" class="btn btn-primary btn-sm"><i class="bi bi-cash-coin"></i> 登记回款</a><?php endif; ?>
+      <?php if(!empty($is_admin) || in_array('invoice:apply', $user_permissions ?? [], true)): ?><a href="/invoice-apply" class="btn btn-primary btn-sm"><i class="bi bi-receipt-cutoff"></i> 申请开票</a><?php endif; ?>
     </div>
   </div>
 </div>

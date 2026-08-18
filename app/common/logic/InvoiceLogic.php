@@ -133,6 +133,145 @@ class InvoiceLogic
         });
     }
 
+    /**
+     * 合同过审自动开票（v2.51.10）：
+     * 合同提交审批时可勾选「随合同申请开票」（contract.invoice_intent 存 JSON，apply=1）；
+     * 合同审批通过（含全抄送免审批）进入 EXECUTING 后调用本方法——
+     * 校验开票意图 → 生成一张「待开票(APPROVED)」发票（跳过发票审批流，合同审批已把关）→ 审计留痕 →
+     * 清空合同 intent（防重复生成）→ 通知配置的开票确认人（默认财务角色）。
+     * 与手动开票申请的区别：本方法生成的发票不占发票审批流（approval_instance_id=0），财务直接在待开票列表确认开票。
+     * 校验不通过（金额/主体/额度等不合法）时静默跳过（返回 null），不阻断合同过审主流程。
+     *
+     * @param array $contract 合同行（含 invoice_intent/id/amount/trade_attr/direction/title/contract_no）
+     * @param int   $operatorId 过审操作人（审批通过者/系统）
+     * @param int   $submitterId 合同提交人（作发票申请人）
+     * @return int|null 生成的发票 id；无意图或校验不通过返回 null
+     */
+    public static function createAutoForExecutingContract(array $contract, int $operatorId, int $submitterId): ?int
+    {
+        $contractId = (int)($contract['id'] ?? 0);
+        $intent     = json_decode((string)($contract['invoice_intent'] ?? ''), true);
+        if ($contractId <= 0 || !is_array($intent) || empty($intent['apply'])) {
+            return null;
+        }
+        $amount       = (float)($intent['amount'] ?? 0);
+        $ourCompanyId = (int)($intent['our_company_id'] ?? 0);
+        $contentDesc  = trim((string)($intent['content_desc'] ?? ''));
+        if ($amount <= 0 || $ourCompanyId <= 0 || $contentDesc === '') {
+            return null;
+        }
+        if ((int)($contract['trade_attr'] ?? 1) === 0 || ($contract['direction'] ?? '') !== 'sales') {
+            return null;
+        }
+
+        $invoiceId = null;
+        try {
+            $invoiceId = Db::transaction(function () use ($contract, $contractId, $intent, $amount, $ourCompanyId, $contentDesc, $operatorId, $submitterId) {
+                // 行锁重读合同，校验 intent 仍在（防并发重复生成）且合同仍为执行中
+                $locked = self::lockContractForFinancialWrite($contractId);
+                if (!$locked || ($locked['status'] ?? '') !== ContractLogic::STATUS_EXECUTING) {
+                    return null;
+                }
+                $lockedIntent = json_decode((string)($locked['invoice_intent'] ?? ''), true);
+                if (!is_array($lockedIntent) || empty($lockedIntent['apply'])) {
+                    return null;
+                }
+                // 额度校验：已开票 + 本次 ≤ 合同金额（超出静默跳过，可稍后手动申请）
+                $committed = self::sumCommitted($contractId);
+                if ($committed + $amount > (float)$locked['amount'] + 0.001) {
+                    return null;
+                }
+
+                $taxRate   = CompanyLogic::getInvoiceTaxRate($ourCompanyId);
+                $taxAmount = round($amount / (1 + $taxRate) * $taxRate, 2);
+
+                $id = self::create([
+                    'contract_id'    => $contractId,
+                    'our_company_id' => $ourCompanyId,
+                    'content_desc'   => $contentDesc,
+                    'customer_id'    => (int)($intent['customer_id'] ?? 0),
+                    'amount'         => $amount,
+                    'tax_rate'       => $taxRate,
+                    'tax_amount'     => $taxAmount,
+                    'invoice_type'   => (string)($intent['invoice_type'] ?? 'VAT_SPECIAL'),
+                    'invoice_title'  => (string)($intent['invoice_title'] ?? ''),
+                    'tax_no'         => (string)($intent['tax_no'] ?? ''),
+                    'remark'         => (string)($intent['remark'] ?? ''),
+                    'applicant_id'   => $submitterId,
+                    'operator_id'    => 0,
+                    'status'         => self::STATUS_APPROVED, // 合同已过审，跳过发票审批流，直接待开票
+                ]);
+                // 清空 intent，防重复生成
+                Db::name('contract')->where('id', $contractId)->update(['invoice_intent' => null]);
+                AuditService::log($operatorId, 'create', 'invoice', $id, '合同过审自动开票（随合同申请）');
+                return $id;
+            });
+        } catch (\Throwable $e) {
+            \think\facade\Log::error('合同过审自动开票失败（不影响合同过审）', [
+                'contract_id' => $contractId,
+                'error'       => $e->getMessage(),
+            ]);
+            return null;
+        }
+        if ($invoiceId) {
+            self::notifyAutoInvoicePending($invoiceId, $contract, $amount, $contentDesc);
+        }
+        return $invoiceId;
+    }
+
+    /**
+     * 通知开票确认人（v2.51.10）：按合同所属审批流程的 invoice_notify 配置读取确认人
+     * （{role_codes:[],user_ids:[]}，每流程独立）；配置为空时默认通知财务角色成员。
+     * 站内信指向 PC 待开票列表，钉钉指向移动端财务页。
+     */
+    private static function notifyAutoInvoicePending(int $invoiceId, array $contract, float $amount, string $contentDesc): void
+    {
+        // 流程级开票通知配置
+        $userIds = [];
+        $flowId  = (int)($contract['flow_id'] ?? 0);
+        $notify  = [];
+        if ($flowId > 0) {
+            $raw = Db::name('approval_flow')->where('id', $flowId)->value('invoice_notify');
+            if ($raw) {
+                $parsed = json_decode((string)$raw, true);
+                if (is_array($parsed)) $notify = $parsed;
+            }
+        }
+        foreach (($notify['user_ids'] ?? []) as $uid) {
+            $userIds[] = (int)$uid;
+        }
+        foreach (($notify['role_codes'] ?? []) as $code) {
+            $code = trim((string)$code);
+            if ($code === '') continue;
+            $rid = Db::name('role')->where('code', $code)->value('id');
+            if ($rid) {
+                $userIds = array_merge($userIds, Db::name('user_role')->where('role_id', (int)$rid)->column('user_id'));
+            }
+        }
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($v) => $v > 0)));
+        if (empty($userIds)) {
+            // 默认兜底：财务角色
+            $fid = Db::name('role')->where('code', 'finance')->value('id');
+            $userIds = $fid ? Db::name('user_role')->where('role_id', (int)$fid)->column('user_id') : [];
+        }
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($v) => $v > 0)));
+        if (empty($userIds)) {
+            return;
+        }
+
+        $title   = '待开票：' . ($contract['contract_no'] ?? '') . '《' . ($contract['title'] ?? '') . '》';
+        $content = "合同已审批通过并进入执行，随合同申请的开票已生成待开票：\n\n"
+            . "开票内容：{$contentDesc}\n金额：¥" . number_format($amount, 2) . "\n\n请前往财务中心确认开票。";
+        \app\common\service\InternalNotify::send($userIds, \app\common\service\InternalNotify::TYPE_INVOICE_AUTO_PENDING,
+            $title, $content, '/finance?tab=invoice');
+        try {
+            \app\common\service\DingTalkService::sendToLocalUsers($userIds, $title, $content,
+                rtrim((string)config('dingtalk.app_url'), '/') . '/m/finance', \app\common\service\InternalNotify::TYPE_INVOICE_AUTO_PENDING);
+        } catch (\Throwable $e) {
+            // 钉钉失败不影响主流程
+        }
+    }
+
     private static function lockContractForFinancialWrite(int $contractId): ?array
     {
         $q = Db::name('contract')->where('id', $contractId)->where('is_deleted', 0);

@@ -22,6 +22,7 @@ class InternalNotify
     const TYPE_APPROVAL_CC          = 'APPROVAL_CC';           // 审批抄送知会（通知抄送人）
     const TYPE_APPROVAL_OVERDUE     = 'APPROVAL_OVERDUE';      // 审批超时催办（通知待审批人）
     const TYPE_CONTRACT_EXECUTION_CC = 'CONTRACT_EXECUTION_CC'; // 合同进入执行后的抄送确认
+    const TYPE_INVOICE_AUTO_PENDING  = 'INVOICE_AUTO_PENDING';  // 合同过审自动开票待确认（v2.51.10，通知财务/配置确认人）
 
     /**
      * 发送站内信（批量，本地 DB 写，无网络 I/O，可在事务内直接调用）

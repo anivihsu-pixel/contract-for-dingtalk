@@ -275,7 +275,8 @@ $tables = [
         created_at TEXT DEFAULT (datetime('now','localtime')),  -- 创建时间
         updated_at TEXT DEFAULT (datetime('now','localtime')),  -- 更新时间
         renewed_to INTEGER DEFAULT 0,  -- 续约至新合同ID(v2.38.3)
-        renewed_from INTEGER DEFAULT 0  -- 续约自原合同ID(v2.38.3)
+        renewed_from INTEGER DEFAULT 0,  -- 续约自原合同ID(v2.38.3)
+        invoice_intent TEXT  -- 随合同申请开票意图JSON(v2.51.10)；合同过审后自动生成待开票发票并清空
     )",
     "CREATE UNIQUE INDEX uk_contract_no ON contract(contract_no)",
     "CREATE INDEX idx_contract_owner ON contract(owner_id)",
@@ -325,6 +326,7 @@ $tables = [
         cc_list TEXT DEFAULT '',  -- 抄送配置(JSON：流程级知会，与审批节点平级)
         biz_type TEXT DEFAULT 'contract',  -- 业务类型(contract=合同审批/invoice=发票审批；发票专用流程按此过滤)
         form_condition TEXT DEFAULT '',  -- 表单条件(JSON：[{field,value}]，非空=仅表单该字段值命中时匹配；空=默认兜底流程)
+        invoice_notify TEXT DEFAULT '',  -- 随合同申请开票通知确认人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.10)
         sort_order INTEGER DEFAULT 0,  -- 同类型流程内优先级(越小越靠前，审批匹配优先取小；0=未手动排序)
         status INTEGER DEFAULT 1,  -- 状态
         creator_id INTEGER NOT NULL DEFAULT 0,  -- 创建人ID

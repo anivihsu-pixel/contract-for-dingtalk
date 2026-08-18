@@ -900,6 +900,17 @@ function purgeFlow(id){
       <div class="col-6" id="amtMaxWrap"><label class="form-label small" for="flowMax">上限 ¥</label><input type="number" step="0.01" name="max_amount" class="form-control form-control-sm" id="flowMax" value="99999999.99"></div></div>
     </div>
     <div class="mb-3"><label class="form-label" for="flowStatus">状态</label><select name="status" class="form-select form-select-sm" id="flowStatus"><option value="1">启用</option><option value="0">停用</option></select></div>
+    <!-- v2.51.10：随合同申请开票——开票通知确认人（每流程独立配置，复用抄送同款选人/选角色组件） -->
+    <div class="mb-3" style="border-top:1px solid var(--line);padding-top:12px">
+      <label class="form-label"><i class="bi bi-receipt-cutoff text-primary"></i> 开票通知确认人 <span class="text-muted small">(随合同申请开票)</span></label>
+      <div class="d-flex flex-wrap gap-1 mb-1" id="invNotifyRolesView"><span class="text-muted small">未选择</span></div>
+      <input type="hidden" id="invNotifyRoles" value="[]">
+      <select class="form-select form-select-sm mb-2" id="invNotifyRoleSel" onchange="addInvNotifyRole(this)"><option value="">选择角色…</option></select>
+      <div class="mb-2" id="invNotifyUsersView"><span class="text-muted small">未选择</span></div>
+      <input type="hidden" id="invNotifyUsers" value="[]">
+      <button type="button" class="btn btn-sm btn-outline-primary" onclick="openInvNotifyPicker()"><i class="bi bi-person-plus"></i> 选择用户</button>
+      <div class="form-text small">该流程过审后通知这些确认人开票（站内信 + 钉钉）；留空 = 默认财务角色。</div>
+    </div>
     <hr>
     <div class="text-muted small">点击左侧画布节点卡片内的「选择审批人」配置审批人；节点可上下移动、删除；「添加审批节点」按钮在画布底部。</div>
   </div>

@@ -203,6 +203,8 @@ class ApprovalSubmitService
                 $executingContract = Db::name('contract')->where('id', $contractId)->find();
                 if ($executingContract) {
                     \app\common\service\ContractExecutionNotifyService::dispatch($executingContract, $submitterId);
+                    // v2.51.10：合同过审（免审批）→ 若提交时勾选「随合同申请开票」，自动生成待开票发票并通知财务
+                    InvoiceLogic::createAutoForExecutingContract($executingContract, $submitterId, $submitterId);
                 }
                 return $instanceId;
             }
