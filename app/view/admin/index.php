@@ -928,7 +928,7 @@ function purgeFlow(id){
 </div>
 </form></div>
 <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveFlow()"><i class="bi bi-save"></i> 保存流程</button></div></div></div></div>
-<script src="/static/js/admin/flow-editor.js?v=8"></script>
+<script src="<?=asset_url('js/admin/flow-editor.js')?>"></script>
 
 <!-- 发票流程编辑器弹窗（v2.38.25：参照合同审批编辑器——左画布分支并列 + 右配置面板；form-builder.js 驱动） -->
 <div class="modal fade" id="invoiceModal" tabindex="-1"><div class="modal-dialog modal-xxl"><div class="modal-content"><div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="bi bi-receipt"></i> 发票流程配置</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
@@ -1331,6 +1331,13 @@ function toggleOffZone(key) {
     </div>
     <div class="row g-3 mt-1">
       <div class="col-md-4">
+        <label class="form-label" for="ruleOverdueRemindDays">到期/逾期提醒封顶（天）</label>
+        <input type="text" class="form-control" id="ruleOverdueRemindDays" value="<?=htmlspecialchars(sys_config('rule_overdue_remind_days', '30'), ENT_QUOTES)?>" placeholder="30">
+        <small class="text-muted">合同已到期与回款逾期共用的提醒天数上限：到期/逾期超过该天数停止每天推送（防止钉钉通知接口调用无限浪费）；0=到期/逾期后不提醒。</small>
+      </div>
+    </div>
+    <div class="row g-3 mt-1">
+      <div class="col-md-4">
         <div class="form-check form-switch pt-2">
           <input class="form-check-input" type="checkbox" id="ruleWeeklyDd" <?=sys_config('weekly_report_dd_enabled', '1') === '1' ? 'checked' : ''?>>
           <label class="form-check-label" for="ruleWeeklyDd">经营周报钉钉推送</label>
@@ -1395,13 +1402,19 @@ function saveRuleConfig() {
     var expL = numList(exp), payL = numList(pay);
     if (!expL) { showToast('合同到期提醒天数格式错误（如 30,15,7,3,1）', 'error'); return; }
     if (!payL) { showToast('回款提醒天数格式错误（如 7,3,1）', 'error'); return; }
+    // v2.51.13：到期/逾期提醒封顶天数（整数，0=到期/逾期后不提醒；合同已到期与回款逾期共用）
+    var odEl = document.getElementById('ruleOverdueRemindDays');
+    var overdueDays = odEl ? parseInt(odEl.value.trim(), 10) : 30;
+    if (isNaN(overdueDays) || overdueDays < 0) { showToast('到期/逾期提醒封顶须为不小于 0 的整数', 'error'); return; }
     // v2.47.0：经营周报钉钉推送开关
     var weeklyDdEl = document.getElementById('ruleWeeklyDd');
     var weeklyDd = weeklyDdEl ? (weeklyDdEl.checked ? '1' : '0') : '1';
     function post(key, value) {
         return $ajax('/ajax/admin/config/save', {method: 'POST', body: new URLSearchParams({key: key, value: value})});
     }
-    Promise.all([post('rule_expire_remind_days', expL), post('rule_payment_remind_days', payL), post('weekly_report_dd_enabled', weeklyDd)]).then(function (rs) {
+    Promise.all([post('rule_expire_remind_days', expL), post('rule_payment_remind_days', payL),
+        post('weekly_report_dd_enabled', weeklyDd),
+        post('rule_overdue_remind_days', String(overdueDays))]).then(function (rs) {
         var bad = rs.find(function (r) { return r.code !== 0; });
         if (!bad) { showToast('规则已保存', 'success'); location.reload(); }
         else { showToast(bad.msg || '保存失败', 'error'); }

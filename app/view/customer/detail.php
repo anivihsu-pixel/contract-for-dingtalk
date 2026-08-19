@@ -102,6 +102,10 @@
       <!-- v2.47.8：共享/集团设置显眼入口（直达对应 Tab；集团 Tab 懒加载由 shown.bs.tab 触发） -->
       <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-share')"><i class="bi bi-people"></i> 共享设置</button>
       <button type="button" class="btn btn-outline-primary btn-sm" onclick="goCustTab('#t-group')"><i class="bi bi-diagram-3"></i> 集团</button>
+      <?php if(!empty($can_delete)): ?>
+      <!-- v2.52.x：删除客户（软删除；后端校验关联合同/集团子客户，删除后进入回收站可恢复或彻底清除） -->
+      <button type="button" class="btn btn-outline-danger btn-sm" onclick="delCustomer(<?=$customer['id']?>)"><i class="bi bi-trash"></i> 删除</button>
+      <?php endif; ?>
       <?php if(!empty($can_edit) && !empty($is_owner)): ?>
       <button type="button" class="btn btn-outline-primary btn-sm" onclick="openActivityModal()"><i class="bi bi-plus-lg"></i> 记录跟进</button>
       <?php endif; ?>
@@ -120,7 +124,7 @@
       <tr><td><?=htmlspecialchars($ct['contract_no']??'')?></td><td><a href="/contract/<?=$ct['id']?>"><?=htmlspecialchars($ct['title'])?></a></td><td class="text-end">¥<?=number_format((float)($ct['amount']??0),0)?></td><td><?=htmlspecialchars($stTxt)?></td></tr>
       <?php endforeach; endif; ?>
     </tbody></table></div></div>
-    <?php if($contract_total > $contract_limit): ?><div class="mt-2"><a href="/contract?customer_id=<?=$customer['id']?>" class="btn btn-sm btn-link">查看全部 <?=$contract_total?> 条合同 →</a></div><?php endif; ?>
+    <?php if($contract_total > $contract_limit): ?><div class="mt-2"><a href="/contract?customer_id=<?=$customer['id']?>&amp;scope=all" class="btn btn-sm btn-link">查看全部 <?=$contract_total?> 条合同 →</a></div><?php endif; ?>
   </div>
 
   <!-- 回款记录 -->
@@ -392,6 +396,15 @@ function deleteContact(id){
   var fd = new FormData(); fd.append('id', id);
   $ajax('/ajax/customer/contact/delete',{method:'POST',body:fd,loading:false}).then(function(res){
     if(res.code===0){ showToast('已删除','success'); setTimeout(function(){location.reload();},600); }
+    else showToast(res.msg||'删除失败','error');
+  }).catch(function(){ showToast('删除失败','error'); });
+  });
+}
+// v2.52.x：删除客户（软删除；后端校验关联合同/集团子客户，删除后进入回收站可恢复或彻底清除）
+function delCustomer(id){
+  pcConfirm({message:'确定删除该客户？删除后进入回收站，可在数据回收站恢复或彻底清除', danger:true}).then(function(ok){ if(!ok) return;
+  $ajax('/ajax/customer/delete',{method:'POST',body:new URLSearchParams({id:id}),loading:false}).then(function(res){
+    if(res.code===0){ showToast('已删除','success'); location.href='/customer'; }
     else showToast(res.msg||'删除失败','error');
   }).catch(function(){ showToast('删除失败','error'); });
   });

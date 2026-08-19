@@ -175,8 +175,18 @@ include __DIR__ . '/_head.php';
   <div class="m-card">
     <div class="m-card-hd"><span><i class="bi bi-people me-1 text-primary"></i>甲乙方</span></div>
     <div class="m-card-bd">
+      <?php
+      // 我方身份反推：v2.46.0 起强制「对方侧关联档案」，仅一侧关联时我方必在另一侧；
+      // 两侧同有关联/同无关联（历史自由输入数据）不标注，避免误标。
+      $__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
+      $__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+      $__mineA = $__bRel && !$__aRel; // 仅乙方关联档案 → 对方=乙方 → 我方=甲方
+      $__mineB = $__aRel && !$__bRel; // 仅甲方关联档案 → 对方=甲方 → 我方=乙方
+      $__aText = $__mineA ? '甲方（我方）' : '甲方（' . (!empty($contract['party_a_customer_id']) ? '客户' : (!empty($contract['party_a_supplier_id']) ? '供应商' : '外部')) . '）';
+      $__bText = $__mineB ? '乙方（我方）' : '乙方（' . (!empty($contract['party_b_customer_id']) ? '客户' : (!empty($contract['supplier_id']) ? '供应商' : '外部')) . '）';
+      ?>
       <div class="party">
-        <div class="role"><?= (int)($contract['trade_attr'] ?? 1) === 1 ? '甲方（我方）' : '甲方' ?>（<?=($contract['party_a_customer_id'] ?? 0) ? '客户' : (($contract['party_a_supplier_id'] ?? 0) ? '供应商' : '外部')?>）</div>
+        <div class="role"><?=$__aText?></div>
         <div class="pn"><?=htmlspecialchars($contract['party_a_name'] ?: '—')?></div>
         <?php if (!empty($contract['party_a_contact']) || !empty($contract['party_a_phone'])): ?>
           <div style="font-size:13px;color:var(--m-text-3);margin-top:4px;">
@@ -194,7 +204,7 @@ include __DIR__ . '/_head.php';
         <?php endif; ?>
       </div>
       <div class="party">
-        <div class="role">乙方（<?=($contract['party_b_customer_id'] ?? 0) ? '客户' : (($contract['supplier_id'] ?? 0) ? '供应商' : '外部')?>）</div>
+        <div class="role"><?=$__bText?></div>
         <div class="pn"><?=htmlspecialchars($contract['party_b_name'] ?: '—')?></div>
         <?php if (!empty($contract['party_b_contact']) || !empty($contract['party_b_phone']) || !empty($contract['party_b_credit_code'])): ?>
           <div style="font-size:13px;color:var(--m-text-3);margin-top:4px;">

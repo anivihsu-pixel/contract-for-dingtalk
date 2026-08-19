@@ -86,8 +86,11 @@ $__company  = $company ?? null;
 <?php endif; ?>
 <?php
 // v2.46.0：甲乙方类型标签（客户/供应商/外部）——与移动端同源
-$__aType = !empty($contract['party_a_customer_id']) ? '客户' : (!empty($contract['party_a_supplier_id']) ? '供应商' : '外部');
-$__bType = !empty($contract['party_b_customer_id']) ? '客户' : (!empty($contract['supplier_id']) ? '供应商' : '外部');
+// v2.51.x：我方身份反推（与移动端同口径）——仅一侧关联档案时我方在另一侧，我方侧类型显示「我方」而非「外部」
+$__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
+$__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+$__aType = (!$__aRel && $__bRel) ? '我方' : (!empty($contract['party_a_customer_id']) ? '客户' : (!empty($contract['party_a_supplier_id']) ? '供应商' : '外部'));
+$__bType = (!$__bRel && $__aRel) ? '我方' : (!empty($contract['party_b_customer_id']) ? '客户' : (!empty($contract['supplier_id']) ? '供应商' : '外部'));
 ?>
 <tr><td class="text-muted">甲方</td><td><?=htmlspecialchars($contract['party_a_name']??'-')?> <span class="pc-tag pc-tag-muted" style="font-size:10px"><?=$__aType?></span></td><td class="text-muted">联系人</td><td><?=htmlspecialchars($contract['party_a_contact']??'-')?><?php if(!empty($contract['party_a_phone'])): ?> · <?=phone_link($contract['party_a_phone'], false)?><?php endif; ?></td></tr>
 <tr><td class="text-muted">乙方</td><td><?=htmlspecialchars($contract['party_b_name']??'-')?> <span class="pc-tag pc-tag-muted" style="font-size:10px"><?=$__bType?></span></td><td class="text-muted">联系人</td><td><?=htmlspecialchars($contract['party_b_contact']??'-')?><?php if(!empty($contract['party_b_phone'])): ?> · <?=phone_link($contract['party_b_phone'], false)?><?php endif; ?></td></tr>

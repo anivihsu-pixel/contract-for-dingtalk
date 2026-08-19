@@ -23,6 +23,26 @@ class SupplierController extends BaseController
         $keyword = $this->getParam('keyword', '');
         $type    = $this->getParam('type', '');
 
+        // v2.52.2：查看范围「我的供应商/全部供应商」——默认「我的供应商」，显式 scope/owner_id 覆盖；
+        // localStorage 记忆由前端在无 scope 参数时按记忆重定向 URL 生效
+        $ownerId  = $this->getParam('owner_id', '');
+        $scopeParam = $this->getParam('scope', '');
+        $visScope = AuthLogic::visibility();
+        $canScopeToggle = $visScope['has_all'] || !empty($visScope['dept_ids']);   // 仅能查看他人供应商的账号显示切换
+        $filterOwner = '';
+        $scope = 'all';
+        if ($scopeParam === 'me' || $ownerId === 'me') {
+            $scope = 'me';
+            $filterOwner = $this->userId;
+        } elseif ($scopeParam === 'all') {
+            // 全部供应商：不加归属人过滤（数据范围兜底）
+        } elseif ($ownerId !== '' && is_numeric($ownerId)) {
+            $filterOwner = (int)$ownerId;
+        } else {
+            $scope = 'me';   // 无参数（独立进入）默认「我的供应商」
+            $filterOwner = $this->userId;
+        }
+
         [$sortField, $sortOrder] = $this->getSortParams([
             'id'         => 'id',
             'name'       => 'name',
@@ -33,6 +53,7 @@ class SupplierController extends BaseController
         $result = SupplierLogic::getIndexList([
             'keyword'    => $keyword,
             'type'       => $type,
+            'owner_id'   => $filterOwner,
             'sortField'  => $sortField,
             'sortOrder'  => $sortOrder,
             'isAjax'     => request()->isAjax(),
@@ -45,6 +66,15 @@ class SupplierController extends BaseController
         }
         View::assign('suppliers', $result['list']);
         View::assign('type', $type);
+        View::assign('scope', $scope);
+        View::assign('owner_id', $filterOwner);
+        // v2.52.2：归属列——补充归属人姓名（列表视图渲染用）
+        $ownerIds = array_values(array_unique(array_filter(array_column($result['list'], 'owner_id'))));
+        View::assign('owner_names', $ownerIds ? \app\common\logic\UserLogic::getNamesByIds($ownerIds) : []);
+        // v2.52.2：查看范围切换（视图据此渲染「我的供应商/全部供应商」，scope 由 URL 驱动）
+        View::assign('can_scope_toggle', $canScopeToggle);
+        // v2.52.x：删除入口门控（与后端 delete() 守卫同口径，无权限不渲染删除按钮）
+        View::assign('can_delete', $this->hasPermission('supplier:delete'));
         return View::fetch();
     }
 
@@ -142,6 +172,8 @@ class SupplierController extends BaseController
         if (!$s) return '供应商不存在';
         if (!AuthLogic::canAccessRecord($s['owner_id'] ?? 0, $s['dept_id'] ?? 0)) return '无权查看该供应商';
         View::assign('supplier', $s);
+        // v2.52.x：删除入口门控（与后端 delete() 守卫同口径，无权限不渲染删除按钮）
+        View::assign('can_delete', $this->hasPermission('supplier:delete'));
         return View::fetch();
     }
 

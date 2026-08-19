@@ -29,7 +29,12 @@ include __DIR__ . '/_head.php';
   </div>
 
   <!-- v2.40.1：状态筛选收敛为高频 4 项（全部/草稿/待审批/执行中），低频状态移入高级筛选抽屉 -->
+  <!-- v2.52.1：行首新增「查看范围」切换（我的合同/全部合同），默认我的合同、记忆上次选择；scope=me 时归属人筛选禁用 -->
   <div class="m-status-chips" style="display:flex;gap:8px;overflow-x:auto;padding:0 var(--m-gap) 4px;-webkit-overflow-scrolling:touch;">
+    <?php if(!empty($can_scope_toggle)): ?>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='me'?'active':''?>" data-scope="me">我的合同</a>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='all'?'active':''?>" data-scope="all">全部合同</a>
+    <?php endif; ?>
     <a href="javascript:;" class="m-chip <?=$status===''?'active':''?>" data-status="">全部</a>
     <?php foreach(['DRAFT','PENDING_APPROVAL','EXECUTING'] as $k): if (!isset($statusMap[$k])) continue; ?>
     <a href="javascript:;" class="m-chip <?=$status===$k?'active':''?>" data-status="<?=htmlspecialchars($k)?>"><?=htmlspecialchars($statusMap[$k])?></a>
@@ -175,6 +180,8 @@ include __DIR__ . '/_head.php';
 window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 window._statusBadge = <?=json_encode($statusBadge, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 window._filter = <?=json_encode($filter, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
+// v2.52.1：服务端渲染首屏所用查看范围（me/all），供前端 localStorage 记忆覆盖后判断是否需要重拉
+window._serverScope = <?=json_encode($scope, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 // v2.40.1：字典供已选标签文本映射（类别/签约主体/归属人）
 window._filterDict = <?=json_encode([
     'business_types' => $business_types,
@@ -186,6 +193,15 @@ window._filterDict = <?=json_encode([
   var keyword = <?=json_encode($keyword, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
   var filter  = window._filter || {};   // 高级筛选条件集合（含统一 status）
   var curDir  = filter.direction || ''; // 当前选中的收付款方向（单选）
+  // v2.52.1：查看范围（我的合同/全部合同）——对象入口（项目/客户/部门）或显式指定归属人（owner_id）恒为全部；
+  // 否则取 localStorage 记忆的上次选择，首次保持服务端默认（我的合同）
+  var SCOPE_KEY = 'contract_list_scope';
+  var scope = window._serverScope || 'all';
+  var savedScope = null;
+  try { savedScope = localStorage.getItem(SCOPE_KEY); } catch(e) {}
+  if (!(filter.project_id || filter.customer_id || filter.dept_id) && !filter.owner_id && savedScope) {
+    scope = savedScope;
+  }
   // v2.40.1：高频状态由顶部 chips 表达，不重复计入角标/标签行
   var HIGH_STATUS = ['DRAFT', 'PENDING_APPROVAL', 'EXECUTING'];
 
@@ -213,6 +229,10 @@ window._filterDict = <?=json_encode([
     var p = new URLSearchParams();
     p.set('keyword', keyword);
     for (var k in filter){ if(filter.hasOwnProperty(k) && filter[k] !== '') p.set(k, filter[k]); }
+    // v2.52.1：查看范围——「我的合同」时归属人固定为本人（覆盖 filter 残留）；「全部合同」且无对象入口/归属人
+    // 时显式带 scope=all，避免服务端按「独立进入默认我的合同」把重拉请求再判定为我的合同
+    if(scope === 'me') p.set('owner_id', 'me');
+    else if(!(filter.project_id || filter.customer_id || filter.dept_id || filter.owner_id)) p.set('scope', 'all');
     if(!replace) p.set('page', page + 1);
     return p.toString();
   }
@@ -236,6 +256,9 @@ window._filterDict = <?=json_encode([
           return;
         }
         res.data.forEach(function(c){ box.insertAdjacentHTML('beforeend', cardHtml(c)); });
+        // v2.52.1：查看范围切换后重拉会改变列表口径，同步更新导航栏合同总数（首屏服务端渲染的计数不再可信）
+        var nc = document.querySelector('.m-nav .right');
+        if(nc) nc.textContent = res.total + ' 份';
         if(res.total && page * 20 >= res.total){ finished = true; var lm=document.getElementById('loadmore'); if(lm) lm.style.display='none'; }
         else { var lm=document.getElementById('loadmore'); if(lm) lm.style.display='block'; }
       })
@@ -294,9 +317,12 @@ window._filterDict = <?=json_encode([
     filter.trade_attr     = document.getElementById('f_trade').value;
     filter.our_company_id = document.getElementById('f_company').value;
     // v2.40.1：归属人从搜索式选择器的选中态取值；输入框被清空/改动时视为未选择（默认全部）
-    var ownerInputVal = document.getElementById('f_owner').value.trim();
-    if(ownerPick && ownerInputVal === ownerPick.name) filter.owner_id = ownerPick.id;
-    else { delete filter.owner_id; ownerPick = null; }
+    // v2.52.1：查看范围「我的合同」时归属人固定为本人，跳过归属人收集（保留原值，切回全部后原筛选仍生效）
+    if(scope !== 'me'){
+      var ownerInputVal = document.getElementById('f_owner').value.trim();
+      if(ownerPick && ownerInputVal === ownerPick.name) filter.owner_id = ownerPick.id;
+      else { delete filter.owner_id; ownerPick = null; }
+    }
     var pv = document.getElementById('f_party').value.trim();
     if(pv) filter.party_name = pv; else delete filter.party_name;
     filter.amount_min     = document.getElementById('f_amt_min').value.trim();
@@ -306,7 +332,12 @@ window._filterDict = <?=json_encode([
   }
   // v2.40.1：角标统计已选条件数（keyword 由搜索框独立表达，不计入）
   function updateBadge(){
-    var n = 0; for(var k in filter){ if(filter.hasOwnProperty(k) && k !== 'keyword' && filter[k] !== '') n++; }
+    var n = 0;
+    for(var k in filter){
+      if(!filter.hasOwnProperty(k) || k === 'keyword' || filter[k] === '') continue;
+      if(k === 'owner_id' && scope === 'me') continue;  // v2.52.1：我的合同视图下归属人由查看范围表达，不重复计数
+      n++;
+    }
     if(n > 0){ badge.style.display = 'block'; badge.textContent = n; } else { badge.style.display = 'none'; }
   }
   // v2.40.1（方案 A）：渲染已选条件标签行；keyword/高频状态不重复展示（chips 已表达）
@@ -318,7 +349,7 @@ window._filterDict = <?=json_encode([
       case 'business_type': return '业务类型:' + ((d.business_types && d.business_types[v]) ? d.business_types[v] : v);
       case 'trade_attr':return v === '1' ? '性质:交易' : (v === '0' ? '性质:非交易' : v);
       case 'our_company_id': { var co = (d.companies || []).find(function(x){ return String(x.id) === String(v); }); return '主体:' + (co ? co.name : v); }
-      case 'owner_id':  { var u = (d.owners || []).find(function(x){ return String(x.id) === String(v); }); return '归属:' + (u ? u.name : v); }
+      case 'owner_id':  { if(String(v) === 'me') return '归属:我'; var u = (d.owners || []).find(function(x){ return String(x.id) === String(v); }); return '归属:' + (u ? u.name : v); }
       case 'party_name':return '相对方:' + v;
       case 'amount_min':return '金额≥' + v;
       case 'amount_max':return '金额≤' + v;
@@ -331,6 +362,7 @@ window._filterDict = <?=json_encode([
       if(!filter.hasOwnProperty(k)) continue;
       if(k === 'keyword' || filter[k] === '' || filter[k] == null) continue;
       if(k === 'status' && HIGH_STATUS.indexOf(filter[k]) >= 0) continue; // 高频状态由顶部 chips 表达
+      if(k === 'owner_id' && scope === 'me') continue;  // v2.52.1：我的合同视图下归属人由查看范围表达，不展示重复标签
       html += '<span class="m-filter-tag" data-fk="' + k + '"><span class="m-filter-tag-txt">' + esc(filterTagText(k, filter[k])) + '</span><i class="bi bi-x"></i></span>';
     }
     tagsBox.style.display = html ? 'flex' : 'none';
@@ -445,6 +477,34 @@ window._filterDict = <?=json_encode([
       setTimeout(function(){ sugg.style.display = 'none'; }, 120);
     });
   })();
+  /* ===== v2.52.1：查看范围切换（我的合同/全部合同） ===== */
+  function syncScopeChips(){
+    document.querySelectorAll('.scope-chip').forEach(function(x){
+      x.classList.toggle('active', x.dataset.scope === scope);
+    });
+  }
+  // scope=me 时归属人选择器禁用（归属固定为本人），切回全部时恢复可用
+  function syncOwnerDisabled(){
+    var o = document.getElementById('f_owner');
+    if(!o) return;
+    o.disabled = (scope === 'me');
+    o.placeholder = (scope === 'me') ? '查看范围为「我的合同」，归属人不可用' : '输入姓名搜索，留空为全部归属人';
+  }
+  document.querySelectorAll('.scope-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var v = this.dataset.scope;
+      if(v === scope) return;
+      scope = v;
+      try{ localStorage.setItem(SCOPE_KEY, v); }catch(e){}
+      syncScopeChips(); syncOwnerDisabled(); updateBadge(); renderTags();
+      page = 1; finished = false; loadList(true);
+    });
+  });
+  syncScopeChips(); syncOwnerDisabled();
+  // 记忆的查看范围与服务端渲染首屏不一致时，按记忆范围重拉（对象入口不适用记忆，后端恒为全部）
+  if(scope !== (window._serverScope || 'all')){
+    page = 1; finished = false; loadList(true);
+  }
   updateBadge(); renderTags(); // 初始根据已回显的筛选渲染角标与标签行
 
   /* ===== 已有交互：加载更多 / 关键词 / 状态 chips ===== */
@@ -475,12 +535,13 @@ window._filterDict = <?=json_encode([
   // v2.40.1：顶部高频状态 chips 与抽屉 f_status 共用 filter.status；点击后同步高亮并清除抽屉选择
   function syncTopChips(){
     var s = filter.status || '';
-    document.querySelectorAll('.m-status-chips .m-chip').forEach(function(x){
+    // v2.52.1：排除 scope-chip（查看范围切换），避免其 active 高亮被状态 chips 逻辑清除
+    document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)').forEach(function(x){
       x.classList.toggle('active', x.dataset.status === s);
     });
   }
-  // 仅绑定顶部状态 chips（避免与抽屉内方向 chips 冲突，方向 chips 用 .m-dir-chip 单独处理）
-  document.querySelectorAll('.m-status-chips .m-chip').forEach(function(chip){
+  // 仅绑定顶部状态 chips（避免与抽屉内方向 chips 冲突，方向 chips 用 .m-dir-chip 单独处理；scope-chip 单独绑定）
+  document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)').forEach(function(chip){
     chip.addEventListener('click', function(){
       var s = this.dataset.status || '';
       if(s) filter.status = s; else delete filter.status;

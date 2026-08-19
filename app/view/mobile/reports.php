@@ -78,7 +78,7 @@ include __DIR__ . '/_head.php';
           $cnt = $status_counts[$k] ?? 0;
           if($cnt == 0) continue; // 仅展示有数据的状态，保持精炼
         ?>
-        <a href="/m/contracts?status=<?=htmlspecialchars($k)?>" style="text-decoration:none">
+        <a href="/m/contracts?status=<?=htmlspecialchars($k)?>&amp;scope=all" style="text-decoration:none">
           <div class="m-row" style="background:#fafbfc;border-radius:10px;padding:10px 12px">
             <div class="main"><div class="t"><?=htmlspecialchars($v)?></div></div>
             <div class="aside"><span class="m-tag <?=$statusBadge[$k]?>"><?=$cnt?></span></div>

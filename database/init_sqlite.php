@@ -764,6 +764,8 @@ Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VA
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_expire_remind_days', '30,15,7,3,1', 'rule')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_payment_remind_days', '7,3,1', 'rule')");
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('weekly_report_dd_enabled', '1', 'rule')");
+// 到期/逾期提醒封顶天数（v2.51.13：合同已到期与回款逾期共用，RemindService 读取，0=到期/逾期后不提醒）
+Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('rule_overdue_remind_days', '30', 'rule')");
 
 // Dict 字典配置
 Db::execute("INSERT INTO system_config (config_key, config_value, group_name) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"REJECTED\":\"已驳回\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");

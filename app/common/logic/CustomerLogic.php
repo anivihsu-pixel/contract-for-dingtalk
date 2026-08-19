@@ -389,11 +389,19 @@ class CustomerLogic
         return Db::name('customer')->where('id', $id)->update($data) !== false;
     }
 
-    /** 软删除客户 */
+    /** 软删除客户（级联清理从属数据：共享/联系人/跟进/交接记录——客户档案删除后这些从属信息无保留意义，
+     *  否则软删客户留下不可达的孤儿子记录，回收站物理清除（purge）时更会变成永久孤儿） */
     public static function softDelete(int $id): bool
     {
-        return Db::name('customer')->where('id', $id)
-            ->update(['is_deleted' => 1, 'updated_at' => date('Y-m-d H:i:s')]) > 0;
+        $ok = false;
+        Db::transaction(function () use ($id, &$ok) {
+            foreach (['customer_share', 'customer_contact', 'customer_activity', 'customer_transfer_record'] as $t) {
+                Db::name($t)->where('customer_id', $id)->delete();
+            }
+            $ok = Db::name('customer')->where('id', $id)
+                ->update(['is_deleted' => 1, 'updated_at' => date('Y-m-d H:i:s')]) > 0;
+        });
+        return $ok;
     }
 
     /**
@@ -408,7 +416,7 @@ class CustomerLogic
 
     /**
      * 批量删除阻塞项映射（P2-16【M-A2】回收站列表 N+1 消除）：与 deleteBlockers 同语义同文案，
-     * 单次 whereIn 聚合甲方/乙方关联合同，返回 [customerId => [阻塞提示]]；无阻塞的 id 不出现。
+     * 单次 whereIn 聚合甲方/乙方关联合同 + 集团子客户，返回 [customerId => [阻塞提示]]；无阻塞的 id 不出现。
      */
     public static function deleteBlockersMap(array $ids): array
     {
@@ -435,6 +443,17 @@ class CustomerLogic
         }
         foreach ($aNos as $cid => $nos) {
             $map[$cid][] = '存在甲方关联合同：' . implode('、', $nos);
+        }
+        // v2.52.x：集团子客户（parent_id 指向本客户且未删除）——子公司为独立客户实体，删除母公司须先解除集团归属，
+        // 否则子公司 parent_id 悬空、集团层级断裂
+        $rowsChild = Db::name('customer')->whereIn('parent_id', $ids)->where('is_deleted', 0)
+            ->field('parent_id, name')->select()->toArray();
+        $childNames = [];
+        foreach ($rowsChild as $r) {
+            $childNames[(int)$r['parent_id']][] = $r['name'];
+        }
+        foreach ($childNames as $pid => $names) {
+            $map[$pid][] = '存在集团子客户（' . count($names) . ' 个）：' . implode('、', $names) . '，请先解除集团归属';
         }
         return $map;
     }
@@ -538,6 +557,10 @@ class CustomerLogic
         // 客户生命周期筛选（客户/成交）
         if (isset($filter['lifecycle_status']) && $filter['lifecycle_status'] !== '') {
             $query->where('c.lifecycle_status', $filter['lifecycle_status']);
+        }
+        // v2.52.2：查看范围「我的客户」——owner_id 过滤（AND 追加；共享/数据范围条件与其组合仍正确）
+        if (isset($filter['owner_id']) && $filter['owner_id'] !== '') {
+            $query->where('c.owner_id', (int)$filter['owner_id']);
         }
 
         $total = $query->count();

@@ -57,9 +57,17 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
 <div class="col-md-3 col-6">
 <button type="button" class="btn btn-outline-secondary btn-sm w-100" data-bs-toggle="offcanvas" data-bs-target="#advFilter" aria-controls="advFilter"><i class="bi bi-sliders"></i> 高级筛选</button></div>
 <div class="col-md-2 col-6"><button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> 搜索</button></div>
-<!-- v2.40.0：草稿快捷筛选（全部 / 草稿 / 我的草稿）——避免每次从状态下拉手动找 -->
+<!-- v2.40.0：草稿快捷筛选（全部 / 草稿 / 我的草稿）——避免每次从状态下拉手动找；
+     v2.52.1：行首新增「查看范围」切换（我的合同/全部合同），默认我的合同、记忆上次选择；
+     scope=me 时归属人筛选禁用（JS 联动，见 contract.js） -->
 <div class="col-12">
   <div class="d-flex gap-1 flex-wrap align-items-center mt-1">
+    <?php if(!empty($can_scope_toggle)): ?>
+    <span class="text-muted small me-1">查看范围：</span>
+    <button type="button" class="btn btn-sm scope-chip btn-primary" data-scope="me">我的合同</button>
+    <button type="button" class="btn btn-sm scope-chip btn-outline-primary" data-scope="all">全部合同</button>
+    <span class="text-muted mx-2" style="opacity:.5">|</span>
+    <?php endif; ?>
     <span class="text-muted small me-1">快捷筛选：</span>
     <button type="button" class="btn btn-sm draft-chip" data-status="" data-owner="">全部合同</button>
     <button type="button" class="btn btn-sm draft-chip" data-status="DRAFT" data-owner="">草稿</button>

@@ -35,7 +35,7 @@ $__stage=$project['stage']??'PLANNING';
 
 <div class="card stat-card"><div class="card-header bg-white d-flex justify-content-between align-items-center"><h6 class="mb-0"><i class="bi bi-file-text"></i> 关联合同（<?=($contract_total ?? count($contracts))?>）</h6>
 <?php if(($contract_total ?? 0) > ($contract_limit ?? 0) && ($contract_limit ?? 0) > 0): ?>
-<a class="btn btn-sm btn-outline-primary" href="/contract?project_id=<?=$project['id']?>">查看全部 <?=$contract_total?> 条</a>
+<a class="btn btn-sm btn-outline-primary" href="/contract?project_id=<?=$project['id']?>&amp;scope=all">查看全部 <?=$contract_total?> 条</a>
 <?php endif; ?>
 </div>
 <div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>合同编号</th><th>标题</th><th>方向</th><th>金额</th><th>状态</th></tr></thead><tbody>
@@ -52,7 +52,7 @@ $__stage=$project['stage']??'PLANNING';
 <?php endforeach; endif; ?>
 </tbody></table></div>
 <?php if(($contract_total ?? 0) > ($contract_limit ?? 0) && ($contract_limit ?? 0) > 0): ?>
-<div class="card-footer bg-white text-muted small">仅显示前 <?=$contract_limit?> 条，<a href="/contract?project_id=<?=$project['id']?>">查看全部 <?=$contract_total?> 条合同</a>。</div>
+<div class="card-footer bg-white text-muted small">仅显示前 <?=$contract_limit?> 条，<a href="/contract?project_id=<?=$project['id']?>&amp;scope=all">查看全部 <?=$contract_total?> 条合同</a>。</div>
 <?php endif; ?>
 </div>
 <script>

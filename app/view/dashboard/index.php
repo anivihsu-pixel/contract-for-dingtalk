@@ -75,7 +75,7 @@ include __DIR__.'/../layout/header.php'; ?>
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <h6 class="mb-0"><i class="bi bi-pencil-square text-warning"></i> 草稿待处理
       <span class="badge bg-warning text-dark rounded-pill ms-1"><?=(int)($draft_contracts['total'])?></span></h6>
-    <a href="/contract?status=DRAFT" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list-ul"></i> 查看全部草稿</a>
+    <a href="/contract?status=DRAFT&scope=all" class="btn btn-sm btn-outline-secondary"><i class="bi bi-list-ul"></i> 查看全部草稿</a>
   </div>
   <div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>编号</th><th>标题</th><th>归属人</th><th class="text-end">金额</th><th>更新时间</th></tr></thead><tbody>
   <?php foreach($draft_contracts['list'] as $d): ?>

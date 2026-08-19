@@ -37,11 +37,13 @@ class ContractExecutionNotifyService
         Db::name('contract_execution_cc')->insertAll($rows);
         $title = '合同已进入执行：' . $contract['title'];
         $content = $needsAck ? '该合同已进入执行，请查看并确认知悉。' : '该合同已进入执行，请查看。';
+        // 站内信保持 PC 路由（PC 端消息中心直用；移动端站内消息/待办列表有 JS/视图层重映射为 /m/contract/{id}）
         $url = '/contract/' . (int)$contract['id'];
         InternalNotify::send($recipients, InternalNotify::TYPE_CONTRACT_EXECUTION_CC, $title, $content, $url);
         try {
+            // 钉钉工作通知在移动端打开，直接使用移动端路由，避免跳 PC 版详情（与开票/回款通知的钉钉链接口径一致）
             DingTalkService::sendToLocalUsers($recipients, $title, $content,
-                rtrim((string)config('dingtalk.app_url'), '/') . $url, InternalNotify::TYPE_APPROVAL_CC);
+                rtrim((string)config('dingtalk.app_url'), '/') . '/m/contract/' . (int)$contract['id'], InternalNotify::TYPE_APPROVAL_CC);
         } catch (\Throwable $e) {
             // 站内信与轨迹已落库；钉钉失败不回滚业务状态。
         }

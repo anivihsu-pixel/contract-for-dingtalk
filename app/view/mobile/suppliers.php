@@ -27,8 +27,12 @@ include __DIR__ . '/_head.php';
     </div>
   </div>
 
-  <!-- 类型筛选 -->
+  <!-- 类型筛选（v2.52.2：行首新增「查看范围」切换，默认我的供应商、记忆上次选择） -->
   <div class="m-hide-scrollbar" style="display:flex;gap:8px;overflow-x:auto;padding:0 var(--m-gap) 4px;-webkit-overflow-scrolling:touch;">
+    <?php if(!empty($can_scope_toggle)): ?>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='me'?'active':''?>" data-scope="me">我的供应商</a>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='all'?'active':''?>" data-scope="all">全部供应商</a>
+    <?php endif; ?>
     <a href="javascript:;" class="m-chip <?=$type===''?'active':''?>" data-type="">全部</a>
     <?php foreach($types as $k=>$v): ?>
     <a href="javascript:;" class="m-chip <?=$type===$k?'active':''?>" data-type="<?=htmlspecialchars($k)?>"><?=htmlspecialchars($v)?></a>
@@ -74,10 +78,17 @@ include __DIR__ . '/_head.php';
 <script>
 window._types = <?=json_encode($types, JSON_UNESCAPED_UNICODE)?>;
 window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE)?>;
+window._serverScope = <?=json_encode($scope, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 (function(){
   var page = 1, loading = false, finished = <?=count($list) >= intval($total) ? 'true' : 'false';?>;
   var keyword = <?=json_encode($keyword)?>;
   var type = <?=json_encode($type)?>;
+  // v2.52.2：查看范围（我的供应商/全部供应商）——取 localStorage 记忆，首次保持服务端默认（我的供应商）
+  var SCOPE_KEY = 'supplier_list_scope';
+  var scope = window._serverScope || 'me';
+  var savedScope = null;
+  try { savedScope = localStorage.getItem(SCOPE_KEY); } catch(e) {}
+  if (savedScope) scope = savedScope;
 
   
   
@@ -98,8 +109,11 @@ window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE)?>;
   function loadList(replace){
     showLoading(true);
     var url = '/m/suppliers?keyword=' + encodeURIComponent(keyword)
-            + (type ? '&type=' + encodeURIComponent(type) : '')
-            + (replace ? '' : '&page=' + (page+1));
+            + (type ? '&type=' + encodeURIComponent(type) : '');
+    // v2.52.2：查看范围——「我的供应商」显式 owner_id=me；「全部供应商」显式 scope=all（否则服务端按默认我的判定）
+    if(scope === 'me') url += '&owner_id=me';
+    else url += '&scope=all';
+    url += (replace ? '' : '&page=' + (page+1));
     fetch(url, {headers:{'X-Requested-With':'XMLHttpRequest'}})
       .then(function(r){ return r.json(); })
       .then(function(res){
@@ -115,6 +129,9 @@ window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE)?>;
           return;
         }
         res.data.forEach(function(s){ box.insertAdjacentHTML('beforeend', cardHtml(s)); });
+        // v2.52.2：查看范围切换后重拉会改变列表口径，同步更新导航栏总数（首屏服务端渲染的计数不再可信）
+        var nc = document.querySelector('.m-nav .right');
+        if(nc) nc.textContent = res.total + ' 个';
         if(res.total && page * 20 >= res.total){ finished = true; var lm=document.getElementById('loadmore'); if(lm) lm.style.display='none'; }
         else { var lm=document.getElementById('loadmore'); if(lm) lm.style.display='block'; }
       })
@@ -131,15 +148,38 @@ window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE)?>;
     timer = setTimeout(function(){ loadList(true); }, 300);
   });
 
-  document.querySelectorAll('.m-chip').forEach(function(chip){
+  // 类型筛选（v2.52.2：选择器排除 scope-chip，避免查看范围切换被误绑定/误清高亮）
+  document.querySelectorAll('.m-chip:not(.scope-chip)').forEach(function(chip){
     chip.addEventListener('click', function(){
       type = this.dataset.type || '';
       page = 1; finished = false;
-      document.querySelectorAll('.m-chip').forEach(function(x){ x.classList.remove('active'); });
+      document.querySelectorAll('.m-chip:not(.scope-chip)').forEach(function(x){ x.classList.remove('active'); });
       this.classList.add('active');
       loadList(true);
     });
   });
+
+  // ===== v2.52.2：查看范围切换（我的供应商/全部供应商） =====
+  function syncScopeChips(){
+    document.querySelectorAll('.scope-chip').forEach(function(x){
+      x.classList.toggle('active', x.getAttribute('data-scope') === scope);
+    });
+  }
+  document.querySelectorAll('.scope-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var v = chip.getAttribute('data-scope');
+      if(v === scope) return;
+      scope = v;
+      try{ localStorage.setItem(SCOPE_KEY, v); }catch(e){}
+      syncScopeChips();
+      page = 1; finished = false; loadList(true);
+    });
+  });
+  syncScopeChips();
+  // 记忆的查看范围与服务端渲染首屏不一致时，按记忆范围重拉
+  if(scope !== (window._serverScope || 'me')){
+    page = 1; finished = false; loadList(true);
+  }
 })();
 </script>
 <?php include __DIR__ . '/_foot.php'; ?>

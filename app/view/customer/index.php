@@ -1,5 +1,13 @@
 <?php $title='客户管理'; $menu_active='customer'; include __DIR__.'/../layout/header.php'; ?>
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2"><h4><i class="bi bi-people"></i> 客户管理</h4><div class="d-flex gap-2"><?php if(!empty($user['is_admin'])): ?><button class="btn btn-outline-warning btn-sm" onclick="showDuplicates()"><i class="bi bi-exclamation-triangle"></i> 查重</button><?php endif; ?><?php if(!empty($can_create_customer)): ?><a href="/customer/create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新增客户</a><?php endif; ?></div></div>
+<!-- v2.52.2：查看范围切换（我的客户/全部客户）——默认我的客户、记忆上次选择；仅能查看他人客户的账号显示（customer.js 绑定） -->
+<?php if(!empty($can_scope_toggle)): ?>
+<div class="d-flex gap-1 flex-wrap align-items-center mb-3">
+  <span class="text-muted small me-1">查看范围：</span>
+  <button type="button" class="btn btn-sm scope-chip btn-primary" data-scope="me">我的客户</button>
+  <button type="button" class="btn btn-sm scope-chip btn-outline-primary" data-scope="all">全部客户</button>
+</div>
+<?php endif; ?>
 <!-- M10 客户生命周期漏斗看板（v2.38.11：移动到客户列表上方——漏斗是全局概览，先看分布再看明细） -->
 <?php
 $funnelStages = ['POTENTIAL','ACTIVE'];
@@ -35,7 +43,7 @@ $stageColors = ['POTENTIAL'=>'#0b5ed7','ACTIVE'=>'#07c160'];
 </div>
 <!-- 客户列表（v2.38.11：移动到漏斗下方——漏斗提供全局概览与筛选入口，列表承载明细） -->
 <div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0" id="customerTable"><thead class="table-light"><tr><th>名称</th><th>联系人</th><th>手机</th><th>行业</th><th>生命周期</th><th>归属</th><th>状态</th><th>操作</th></tr></thead><tbody id="tableBody"><tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm text-muted"></div> <span class="text-muted small">加载中...</span></td></tr></tbody></table></div><div class="card-footer bg-white" id="pagination"></div></div>
-<script>window._canCreateCustomer=<?=!empty($can_create_customer)?'true':'false'?>;window._lifecycleDict=<?=json_encode($lifecycle_dict??[],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._industryDict=<?=json_encode(dict('customer_industry'),JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._lifecycleActive='';window._mySharedIds=<?=json_encode(array_map('intval',$my_shared_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._mySharedOutIds=<?=json_encode(array_map('intval',$my_shared_out_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._myUserId=<?=(int)($user['id']??0)?>;window._isAdmin=<?=!empty($is_super_admin)?'true':'false'?>;window._shareTargetOptions=<?=json_encode(array_map(function($u){return ['id'=>(int)$u['id'],'name'=>$u['name']];},$share_target_options??[]),JSON_UNESCAPED_UNICODE)?>;window._shareDepartments=<?=json_encode(array_map(function($d){return ['id'=>(int)$d['id'],'name'=>$d['name']];},$share_departments??[]),JSON_UNESCAPED_UNICODE)?>;</script>
+<script>window._canCreateCustomer=<?=!empty($can_create_customer)?'true':'false'?>;window._canDeleteCustomer=<?=!empty($can_delete)?'true':'false'?>;window._lifecycleDict=<?=json_encode($lifecycle_dict??[],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._industryDict=<?=json_encode(dict('customer_industry'),JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._lifecycleActive='';window._mySharedIds=<?=json_encode(array_map('intval',$my_shared_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._mySharedOutIds=<?=json_encode(array_map('intval',$my_shared_out_ids??[]),JSON_UNESCAPED_UNICODE)?>;window._myUserId=<?=(int)($user['id']??0)?>;window._isAdmin=<?=!empty($is_super_admin)?'true':'false'?>;window._shareTargetOptions=<?=json_encode(array_map(function($u){return ['id'=>(int)$u['id'],'name'=>$u['name']];},$share_target_options??[]),JSON_UNESCAPED_UNICODE)?>;window._shareDepartments=<?=json_encode(array_map(function($d){return ['id'=>(int)$d['id'],'name'=>$d['name']];},$share_departments??[]),JSON_UNESCAPED_UNICODE)?>;</script>
 <script src="<?=asset_url('js/customer.js')?>"></script>
 <style>
 @media (max-width:768px){

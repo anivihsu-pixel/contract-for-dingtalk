@@ -8,6 +8,16 @@ use think\facade\Log;
 class RemindService
 {
     /**
+     * 到期/逾期提醒封顶天数（读 sys_config，配置项在「系统设置→系统配置→业务规则」页面，2026-08-18）：
+     * 合同已到期提醒与回款逾期提醒共用同一配置项 rule_overdue_remind_days（默认 30），
+     * 到期/逾期超过该天数即静默，不再每天推送（防止钉钉通知接口调用次数无限浪费）；0=到期/逾期后不提醒。
+     */
+    private static function overdueRemindDays(): int
+    {
+        return max(0, (int)sys_config('rule_overdue_remind_days', '30'));
+    }
+
+    /**
      * 提醒触发引擎（写入型）：扫描合同到期、回款到期/逾期及客户计划跟进，
      * 经 shouldRemind() 以「非 push_ 前缀」的 remind_type 原子写入 remind_log 全局去重，
      * 同时把本次触发的提醒文本累积进 $alerts（引用传参），并返回 {contracts,payments} 计数。
@@ -58,12 +68,17 @@ class RemindService
         }
 
         // 2. Contracts already expired but status not updated
+        // 到期提醒封顶（2026-08-18）：已到期合同超过 overdueRemindDays 天即静默（防钉钉接口调用无限浪费，配置项在业务规则页）
         $expired = Db::name('contract')
             ->where('is_deleted', 0)
             ->where('status', 'EXECUTING')
             ->where('expiry_date', '<', $today)
+            ->where('expiry_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')))
             ->select()->toArray();
         foreach ($expired as $c) {
+            if (self::overdueOverWindow((string)$c['expiry_date'], $today)) {
+                continue;
+            }
             if (self::shouldRemind('contract', $c['id'], 'expired', $today)) {
                 $alerts[] = "合同《{$c['title']}》已到期，请处理";
                 $results['contracts']++;
@@ -71,15 +86,20 @@ class RemindService
         }
 
         // 3. Overdue payments (past planned_date, still uncollected: PENDING/OVERDUE; 仅应收 RECEIVABLE，应付不进回款提醒)
+        // 逾期提醒封顶（2026-08-18）：逾期超过 overdueRemindDays 天即静默，与合同到期共用同一配置项
         $overdue = Db::name('payment_record')->alias('p')
             ->join('contract c', 'p.contract_id = c.id')
             ->field('p.*, c.contract_no, c.title')
             ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
             ->where('p.payment_type', 'RECEIVABLE')
             ->where('p.planned_date', '<', $today)
+            ->where('p.planned_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')))
             ->where('c.is_deleted', 0)
             ->select()->toArray();
         foreach ($overdue as $p) {
+            if (self::overdueOverWindow((string)$p['planned_date'], $today)) {
+                continue;
+            }
             if (self::shouldRemind('payment', $p['id'], 'overdue', $today)) {
                 $alerts[] = "回款逾期：{$p['title']} ¥{$p['amount']}（{$p['description']}）";
                 $results['payments']++;
@@ -189,10 +209,13 @@ class RemindService
      */
     private static function scanExpiredContracts(callable $enqueue, array &$results, array $adminIds, string $today): void
     {
+        // 到期提醒封顶（2026-08-18）：已到期合同超过 overdueRemindDays 天即静默，超窗不再进入钉钉推送队列（防接口调用浪费）
         $rows = Db::name('contract')->where('is_deleted', 0)
             ->where('status', 'EXECUTING')->where('expiry_date', '<', $today)
+            ->where('expiry_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')))
             ->select()->toArray();
         foreach ($rows as $c) {
+            if (self::overdueOverWindow((string)$c['expiry_date'], $today)) continue;
             if (self::shouldRemind('contract', $c['id'], 'push_expired', $today)) {
                 $enqueue(array_merge([$c['owner_id'], $c['creator_id']], $adminIds),
                     "❗ 合同 {$c['contract_no']}《{$c['title']}》已到期，请尽快处理");
@@ -208,13 +231,17 @@ class RemindService
      */
     private static function scanOverduePayments(callable $enqueue, array &$results, array $financeIds, string $today, array &$pmtCache): void
     {
+        // 逾期提醒封顶（2026-08-18）：逾期超过 overdueRemindDays 天即静默（与合同到期共用配置项）
         $rows = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
             ->field('p.*, c.contract_no, c.title, c.owner_id, c.creator_id, c.flow_id')
             ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
             ->where('p.payment_type', 'RECEIVABLE')
-            ->where('p.planned_date', '<', $today)->where('c.is_deleted', 0)
+            ->where('p.planned_date', '<', $today)
+            ->where('p.planned_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')))
+            ->where('c.is_deleted', 0)
             ->select()->toArray();
         foreach ($rows as $p) {
+            if (self::overdueOverWindow((string)$p['planned_date'], $today)) continue;
             if (self::shouldRemind('payment', $p['id'], 'push_overdue', $today)) {
                 $fid    = (int)($p['flow_id'] ?? 0);
                 $notify = $pmtCache[$fid] ?? ($pmtCache[$fid] = self::resolvePaymentNotify($fid, $financeIds));
@@ -362,6 +389,18 @@ class RemindService
         return $days ?: $default;
     }
 
+    /**
+     * 到期/逾期是否超出提醒封顶窗口（2026-08-18，check/scanExpiredContracts/scanAlerts 及回款逾期扫描共用）：
+     * 距离日期（合同 expiry_date / 回款 planned_date）距今超过 overdueRemindDays 天即静默，
+     * 不再每天推送（防止钉钉通知接口调用次数无限浪费）。
+     * 注：查询层已用 max(1, overdueRemindDays()) 收窄数据窗口，此处为统一判定。
+     */
+    private static function overdueOverWindow(string $date, string $today): bool
+    {
+        $overdueDays = (int)floor((strtotime($today) - strtotime($date)) / 86400);
+        return $overdueDays > self::overdueRemindDays();
+    }
+
     private static function shouldRemind(string $type, int $id, string $remindType, string $date): bool
     {
         // 原子去重写入：依赖 remind_log 唯一索引 uk_remind_dedup。
@@ -433,24 +472,28 @@ class RemindService
             }
         }
 
-        // 2. 已到期未处理
+        // 2. 已到期未处理（提醒封顶 2026-08-18：到期超过 overdueRemindDays 天静默，与 check/dispatch 口径一致）
         $q = Db::name('contract')->where('is_deleted', 0)
-            ->where('status', 'EXECUTING')->where('expiry_date', '<', $today);
+            ->where('status', 'EXECUTING')->where('expiry_date', '<', $today)
+            ->where('expiry_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')));
         self::scopeOwner($q, $userId, $isAdmin, false, $hasFinancePerm);
         foreach ($q->limit(100)->select()->toArray() as $c) {
+            if (self::overdueOverWindow((string)$c['expiry_date'], $today)) continue;
             $alerts[] = ['type' => 'contract', 'id' => $c['id'], 'level' => 'danger',
                 'text' => "合同《{$c['title']}》已到期，请处理"];
         }
 
-        // 3. 逾期回款（口径与 check/dispatch 统一：PENDING/OVERDUE 且已过计划日，仅应收；v2.38.2：财务人员可看全量，不受合同归属限制）
+        // 3. 逾期回款（口径与 check/dispatch 统一：PENDING/OVERDUE 且已过计划日，仅应收；逾期超 overdueRemindDays 天静默；v2.38.2：财务人员可看全量，不受合同归属限制）
         $q = Db::name('payment_record')->alias('p')->join('contract c', 'p.contract_id = c.id')
             ->field('p.*, c.contract_no, c.title')
             ->where('p.status', 'in', ['PENDING', 'OVERDUE'])
             ->where('p.payment_type', 'RECEIVABLE')
             ->where('p.planned_date', '<', $today)
+            ->where('p.planned_date', '>=', date('Y-m-d', strtotime('-'.max(1, self::overdueRemindDays()).' days')))
             ->where('c.is_deleted', 0);
         self::scopeOwner($q, $userId, $isAdmin, true, $hasFinancePerm);
         foreach ($q->limit(100)->select()->toArray() as $p) {
+            if (self::overdueOverWindow((string)$p['planned_date'], $today)) continue;
             $alerts[] = ['type' => 'payment', 'id' => $p['contract_id'], 'level' => 'danger',
                 'text' => "回款逾期：{$p['title']} ¥{$p['amount']}（{$p['description']}）"];
         }

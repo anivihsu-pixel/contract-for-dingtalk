@@ -824,6 +824,8 @@ $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, 
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_expire_remind_days', '30,15,7,3,1', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_payment_remind_days', '7,3,1', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('weekly_report_dd_enabled', '1', 'rule')");
+// 到期/逾期提醒封顶天数（v2.51.13：合同已到期与回款逾期共用，RemindService 读取，0=到期/逾期后不提醒）
+$db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('rule_overdue_remind_days', '30', 'rule')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_contract_status', '{\"DRAFT\":\"草稿\",\"PENDING_APPROVAL\":\"待审批\",\"REJECTED\":\"已驳回\",\"EXECUTING\":\"执行中\",\"COMPLETED\":\"已完成\",\"TERMINATED\":\"已终止\",\"EXPIRED\":\"已到期\",\"ARCHIVED\":\"已归档\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_supplier_type', '{\"MEDIA\":\"媒体渠道\",\"PRODUCTION\":\"制作方\",\"FREELANCER\":\"自由职业者\",\"MATERIAL\":\"物料供应商\",\"SERVICE\":\"服务商\",\"OTHER\":\"其他\"}', 'dict')");
 $db->execute("INSERT IGNORE INTO `system_config` (`config_key`, `config_value`, `group_name`) VALUES ('dict_invoice_type', '{\"VAT_SPECIAL\":\"我要开增值税专用发票\",\"VAT_NORMAL\":\"我要开普通发票\",\"E_INVOICE\":\"电子发票\",\"OTHER\":\"其他\"}', 'dict')");

@@ -154,6 +154,12 @@ class RecycleBinLogic
                     Db::name('approval_instance')->whereIn('id', $instanceIds)->delete();
                 }
             }
+            // v2.52.x：客户物理删除时级联清理从属数据（防御历史软删客户残留的共享/联系人/跟进/交接记录，防孤儿）
+            if ($type === 'customer') {
+                foreach (['customer_share', 'customer_contact', 'customer_activity', 'customer_transfer_record'] as $t) {
+                    Db::name($t)->where('customer_id', $id)->delete();
+                }
+            }
             Db::name($table)->where('id', $id)->where('is_deleted', 1)->delete();
             Db::commit();
             // 记录删除成功后清理附件物理文件：先确认无其他合同（含回收站内）仍引用同一 URL，防共享文件误删

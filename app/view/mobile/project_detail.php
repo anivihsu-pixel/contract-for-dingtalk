@@ -137,7 +137,7 @@ include __DIR__ . '/_head.php';
       <?php endforeach; ?>
     </div>
     <?php if (($contract_total ?? 0) > ($contract_limit ?? 0) && ($contract_limit ?? 0) > 0): ?>
-    <div class="m-loadmore text-muted small"><a href="/m/contract?project_id=<?=intval($project['id'] ?? 0)?>">仅显示前 <?=$contract_limit?> 条，查看全部 <?=$contract_total?> 条 →</a></div>
+    <div class="m-loadmore text-muted small"><a href="/m/contract?project_id=<?=intval($project['id'] ?? 0)?>&amp;scope=all">仅显示前 <?=$contract_limit?> 条，查看全部 <?=$contract_total?> 条 →</a></div>
     <?php endif; ?>
   </div>
   <?php endif; ?>

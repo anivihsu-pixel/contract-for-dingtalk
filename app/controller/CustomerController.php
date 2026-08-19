@@ -29,6 +29,22 @@ class CustomerController extends BaseController
             'lifecycle_status' => $this->getParam('lifecycle_status', ''),
         ];
 
+        // v2.52.2：查看范围「我的客户/全部客户」——默认「我的客户」，localStorage 记忆由前端覆盖 URL 参数重拉；
+        // owner_id=me / scope=me → 本人；显式归属人（数字）→ 该归属人；scope=all → 数据范围内全部
+        $ownerId  = $this->getParam('owner_id', '');
+        $scopeParam = $this->getParam('scope', '');
+        $visScope = AuthLogic::visibility();
+        $canScopeToggle = $visScope['has_all'] || !empty($visScope['dept_ids']);   // 仅能查看他人客户的账号显示切换
+        if ($scopeParam === 'me' || $ownerId === 'me') {
+            $filter['owner_id'] = $this->userId;
+        } elseif ($scopeParam === 'all') {
+            // 全部客户：不加归属人过滤（数据范围兜底）
+        } elseif ($ownerId !== '' && is_numeric($ownerId)) {
+            $filter['owner_id'] = (int)$ownerId;
+        } else {
+            $filter['owner_id'] = $this->userId;   // 无参数（独立进入）默认「我的客户」
+        }
+
         list($page, $pageSize) = $this->getPageParams();
         [$sortField, $sortOrder] = $this->getSortParams([
             'id'         => 'id',
@@ -43,6 +59,10 @@ class CustomerController extends BaseController
 
         View::assign('customers', $result['list']);
         View::assign('filter', $filter);
+        // v2.52.2：查看范围切换（前端 customer.js 据此渲染，scope 由前端 URL/记忆决定）
+        View::assign('can_scope_toggle', $canScopeToggle);
+        // v2.52.x：删除入口门控（与后端 delete() 守卫同口径；JS 用 window._canDeleteCustomer 渲染操作列按钮）
+        View::assign('can_delete', $this->hasPermission('customer:delete'));
         // M10 客户生命周期漏斗看板：各阶段客户数（POTENTIAL/ACTIVE）
         View::assign('funnel', CustomerLogic::lifecycleFunnel());
         View::assign('lifecycle_dict', dict('customer_lifecycle'));
@@ -216,6 +236,8 @@ class CustomerController extends BaseController
         // PC 端客户操作（转移）——归属人=本人可转移
         View::assign('is_owner', ((int)$customer['owner_id'] ?? 0) === $this->userId);
         View::assign('can_edit', $this->hasPermission('customer:edit'));
+        // v2.52.x：删除入口门控（与后端 delete() 守卫同口径，无权限不渲染删除按钮）
+        View::assign('can_delete', $this->hasPermission('customer:delete'));
         // 转移选人弹窗初始列表（启用用户、排除本人、非管理员仅同部门；与移动端同源 getTransferTargets）
         View::assign('transfer_users', \app\common\logic\UserLogic::getTransferTargets(
             $this->userId,

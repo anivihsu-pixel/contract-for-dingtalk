@@ -682,7 +682,29 @@ class MobileController extends BaseController
         if ($tradeAttr !== '') $filter['trade_attr'] = (int)$tradeAttr;
         if ($partyName !== '') $filter['party_name'] = $partyName;
         if ($ourCompany!== '' && is_numeric($ourCompany)) $filter['our_company_id'] = (int)$ourCompany;
-        if ($ownerId  !== '' && is_numeric($ownerId))   $filter['owner_id'] = (int)$ownerId;
+        // v2.52.1：查看范围「我的合同/全部合同」——owner_id=me 表示「我的合同」（转当前用户）；
+        // scope 参数显式表达查看范围（前端按 localStorage 记忆重拉时使用）；
+        // 独立进入列表（无对象入口）默认「我的合同」，对象入口（项目/客户/部门）恒为全部；
+        // 显式指定归属人（数字 id）按该归属人筛选。
+        $visScope = \app\common\logic\AuthLogic::visibility();
+        $canScopeToggle = $visScope['has_all'] || !empty($visScope['dept_ids']);   // 仅能查看他人合同的账号显示切换
+        $objectEntry = $projectId !== '' || $customerId !== '' || $deptId !== '';
+        $scopeParam = $this->getParam('scope', '');
+        $scope = 'all';
+        if ($scopeParam === 'me') {
+            $scope = 'me';
+            $filter['owner_id'] = $this->userId;
+        } elseif ($scopeParam === 'all') {
+            $scope = 'all';
+        } elseif ($ownerId === 'me') {
+            $scope = 'me';
+            $filter['owner_id'] = $this->userId;
+        } elseif ($ownerId === '' && !$objectEntry) {
+            $scope = 'me';
+            $filter['owner_id'] = $this->userId;
+        } elseif ($ownerId !== '' && is_numeric($ownerId)) {
+            $filter['owner_id'] = (int)$ownerId;
+        }
         if ($projectId!== '' && is_numeric($projectId)) $filter['project_id'] = (int)$projectId;
         if ($customerId!== '' && is_numeric($customerId)) $filter['customer_id'] = (int)$customerId;
         if ($deptId   !== '' && is_numeric($deptId))    $filter['dept_id'] = (int)$deptId;
@@ -692,6 +714,11 @@ class MobileController extends BaseController
         // v2.44.4：移动端合同列表草稿置顶（草稿卡片同时浅琥珀底区分，见 contracts.php）
         $res  = ContractLogic::getList($page, $pageSize, $filter, ['draft_first', 'desc']);
         $list = $res['list'] ?? [];
+        // v2.52.1：scope=me 时查询已按本人过滤，回显给高级筛选的 filter 移除该归属人值——
+        // 避免前端按 localStorage 记忆覆盖为「全部合同」重拉时把「查看范围」产生的 owner_id 残留进请求参数
+        if ($scope === 'me') {
+            unset($filter['owner_id']);
+        }
 
         $statusMap = contract_status_map();     // CR-57：复用公共 helper，全 10 态
         $statusBadge = contract_status_badge();
@@ -734,6 +761,9 @@ class MobileController extends BaseController
         View::assign('business_types', $businessTypes);
         View::assign('companies', $companies);
         View::assign('owners', $owners);
+        // v2.52.1：查看范围切换——scope 供首屏 chips 高亮；can_scope_toggle 决定是否渲染切换
+        View::assign('scope', $scope);
+        View::assign('can_scope_toggle', $canScopeToggle);
         View::assign('can_create_contract', $this->hasPermission('contract:create'));   // 移动端合同列表「新增」悬浮按钮权限（与客户的/供应商一致）
         View::assign('can_create_customer', $this->hasPermission('customer:create'));
         View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
@@ -749,6 +779,24 @@ class MobileController extends BaseController
         $lifecycle = $this->getParam('lifecycle', '');
         [$page, $pageSize] = $this->mobilePage();
         $filter = ['keyword' => $keyword, 'lifecycle_status' => $lifecycle];
+
+        // v2.52.2：查看范围「我的客户/全部客户」——默认「我的客户」，前端按 localStorage 记忆覆盖 scope 后重拉
+        $ownerId  = $this->getParam('owner_id', '');
+        $scopeParam = $this->getParam('scope', '');
+        $visScope = \app\common\logic\AuthLogic::visibility();
+        $canScopeToggle = $visScope['has_all'] || !empty($visScope['dept_ids']);
+        if ($scopeParam === 'me' || $ownerId === 'me') {
+            $scope = 'me';
+            $filter['owner_id'] = $this->userId;
+        } elseif ($scopeParam === 'all') {
+            $scope = 'all';
+        } elseif ($ownerId !== '' && is_numeric($ownerId)) {
+            $scope = 'all';
+            $filter['owner_id'] = (int)$ownerId;
+        } else {
+            $scope = 'me';   // 独立进入默认「我的客户」
+            $filter['owner_id'] = $this->userId;
+        }
         $res = CustomerLogic::getList($page, $pageSize, $filter);
         $list = $res['list'] ?? [];
 
@@ -777,6 +825,8 @@ class MobileController extends BaseController
         View::assign('keyword', $keyword);
         View::assign('owners', $owners);
         View::assign('statusMap', $statusMap);
+        View::assign('scope', $scope);
+        View::assign('can_scope_toggle', $canScopeToggle);
         View::assign('can_create_customer', $this->hasPermission('customer:create'));
         View::assign('can_create_contract', $this->hasPermission('contract:create'));
         View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
@@ -891,7 +941,24 @@ class MobileController extends BaseController
         $type    = $this->getParam('type', '');
         [$page, $pageSize] = $this->mobilePage();
 
-        $res   = SupplierLogic::getList($page, $pageSize, ['keyword' => $keyword, 'type' => $type]);
+        // v2.52.2：查看范围「我的供应商/全部供应商」——默认「我的供应商」，前端按 localStorage 记忆覆盖 scope 后重拉
+        $ownerId  = $this->getParam('owner_id', '');
+        $scopeParam = $this->getParam('scope', '');
+        $visScope = \app\common\logic\AuthLogic::visibility();
+        $canScopeToggle = $visScope['has_all'] || !empty($visScope['dept_ids']);
+        $scope = 'all';
+        if ($scopeParam === 'me' || $ownerId === 'me') {
+            $scope = 'me';
+            $filter['owner_id'] = $this->userId;
+        } elseif ($scopeParam === 'all') {
+            $scope = 'all';
+        } elseif ($ownerId !== '' && is_numeric($ownerId)) {
+            $filter['owner_id'] = (int)$ownerId;
+        } else {
+            $scope = 'me';   // 独立进入默认「我的供应商」
+            $filter['owner_id'] = $this->userId;
+        }
+        $res   = SupplierLogic::getList($page, $pageSize, ['keyword' => $keyword, 'type' => $type, 'owner_id' => ($filter['owner_id'] ?? '')]);
         $list  = $res['list'];
         $total = $res['total'];
 
@@ -918,6 +985,8 @@ class MobileController extends BaseController
         View::assign('type', $type);
         View::assign('types', $types);
         View::assign('statusMap', $statusMap);
+        View::assign('scope', $scope);
+        View::assign('can_scope_toggle', $canScopeToggle);
         View::assign('can_create_supplier', $this->hasPermission('supplier:create'));
         View::assign('can_create_contract', $this->hasPermission('contract:create'));
         View::assign('can_create_customer', $this->hasPermission('customer:create'));

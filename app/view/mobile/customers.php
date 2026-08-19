@@ -28,7 +28,12 @@ include __DIR__ . '/_head.php';
   </div>
 
   <!-- 生命周期筛选 chips（全部/客户/成交；gap 与供应商页类型筛选对齐） -->
+  <!-- v2.52.2：行首新增「查看范围」切换（我的客户/全部客户），默认我的客户、记忆上次选择 -->
   <div class="m-hide-scrollbar" style="display:flex;gap:8px;overflow-x:auto;padding:0 var(--m-gap) 4px;-webkit-overflow-scrolling:touch;" id="lcChips">
+    <?php if(!empty($can_scope_toggle)): ?>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='me'?'active':''?>" data-scope="me">我的客户</a>
+    <a href="javascript:;" class="m-chip scope-chip <?=$scope==='all'?'active':''?>" data-scope="all">全部客户</a>
+    <?php endif; ?>
     <a href="javascript:;" class="m-chip active" data-lc="">全部</a>
     <a href="javascript:;" class="m-chip" data-lc="POTENTIAL">客户</a>
     <a href="javascript:;" class="m-chip" data-lc="ACTIVE">成交</a>
@@ -79,11 +84,18 @@ window._owners = <?=json_encode($owners, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSO
 window._status = <?=json_encode($statusMap, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 window._lifecycleDict = <?=json_encode($lifecycle_dict ?? [], JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 window._industryDict = <?=json_encode($industry_dict ?? [], JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
+window._serverScope = <?=json_encode($scope, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 (function(){
   var page = 1, loading = false, finished = <?=count($list) >= intval($total) ? 'true' : 'false';?>;
   var keyword = <?=json_encode($keyword, JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
   // v2.38.9：生命周期筛选
   var lifecycle = '';
+  // v2.52.2：查看范围（我的客户/全部客户）——取 localStorage 记忆，首次保持服务端默认（我的客户）
+  var SCOPE_KEY = 'customer_list_scope';
+  var scope = window._serverScope || 'me';
+  var savedScope = null;
+  try { savedScope = localStorage.getItem(SCOPE_KEY); } catch(e) {}
+  if (savedScope) scope = savedScope;
 
   function owner(c){ return (window._owners && window._owners[c.owner_id]!=null)? window._owners[c.owner_id] : '未分配'; }
   function stCls(s){ return s==1?'m-tag-ok':'m-tag-muted'; }
@@ -105,7 +117,11 @@ window._industryDict = <?=json_encode($industry_dict ?? [], JSON_UNESCAPED_UNICO
 
   function loadList(replace){
     showLoading(true);
-    var url = '/m/customers?keyword=' + encodeURIComponent(keyword) + (lifecycle ? '&lifecycle=' + encodeURIComponent(lifecycle) : '') + (replace ? '' : '&page=' + (page+1));
+    var url = '/m/customers?keyword=' + encodeURIComponent(keyword) + (lifecycle ? '&lifecycle=' + encodeURIComponent(lifecycle) : '');
+    // v2.52.2：查看范围——「我的客户」显式 owner_id=me；「全部客户」显式 scope=all（否则服务端按默认我的判定）
+    if(scope === 'me') url += '&owner_id=me';
+    else url += '&scope=all';
+    url += (replace ? '' : '&page=' + (page+1));
     fetch(url, {headers:{'X-Requested-With':'XMLHttpRequest'}})
       .then(function(r){ return r.json(); })
       .then(function(res){
@@ -121,6 +137,9 @@ window._industryDict = <?=json_encode($industry_dict ?? [], JSON_UNESCAPED_UNICO
           return;
         }
         res.data.forEach(function(c){ box.insertAdjacentHTML('beforeend', cardHtml(c)); });
+        // v2.52.2：查看范围切换后重拉会改变列表口径，同步更新导航栏总数（首屏服务端渲染的计数不再可信）
+        var nc = document.querySelector('.m-nav .right');
+        if(nc) nc.textContent = res.total + ' 个';
         if(res.total && page * 20 >= res.total){ finished = true; var lm=document.getElementById('loadmore'); if(lm) lm.style.display='none'; }
         else { var lm=document.getElementById('loadmore'); if(lm) lm.style.display='block'; }
       })
@@ -136,15 +155,37 @@ window._industryDict = <?=json_encode($industry_dict ?? [], JSON_UNESCAPED_UNICO
     clearTimeout(timer);
     timer = setTimeout(function(){ loadList(true); }, 300);
   });
-  // v2.38.9：生命周期筛选 chips
+  // v2.38.9：生命周期筛选 chips（v2.52.2：选择器排除 scope-chip，避免查看范围切换被误绑定/误清高亮）
   function setLcFilter(lc){
-    document.querySelectorAll('#lcChips .m-chip').forEach(function(c){ c.classList.toggle('active', c.getAttribute('data-lc') === lc); });
+    document.querySelectorAll('#lcChips .m-chip:not(.scope-chip)').forEach(function(c){ c.classList.toggle('active', c.getAttribute('data-lc') === lc); });
     lifecycle = lc; page = 1; finished = false;
     loadList(true);
   }
-  document.querySelectorAll('#lcChips .m-chip').forEach(function(chip){
+  document.querySelectorAll('#lcChips .m-chip:not(.scope-chip)').forEach(function(chip){
     chip.addEventListener('click', function(){ setLcFilter(chip.getAttribute('data-lc') || ''); });
   });
+
+  // ===== v2.52.2：查看范围切换（我的客户/全部客户） =====
+  function syncScopeChips(){
+    document.querySelectorAll('.scope-chip').forEach(function(x){
+      x.classList.toggle('active', x.getAttribute('data-scope') === scope);
+    });
+  }
+  document.querySelectorAll('.scope-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var v = chip.getAttribute('data-scope');
+      if(v === scope) return;
+      scope = v;
+      try{ localStorage.setItem(SCOPE_KEY, v); }catch(e){}
+      syncScopeChips();
+      page = 1; finished = false; loadList(true);
+    });
+  });
+  syncScopeChips();
+  // 记忆的查看范围与服务端渲染首屏不一致时，按记忆范围重拉
+  if(scope !== (window._serverScope || 'me')){
+    page = 1; finished = false; loadList(true);
+  }
 })();
 </script>
 <?php include __DIR__ . '/_foot.php'; ?>

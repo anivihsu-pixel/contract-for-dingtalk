@@ -188,6 +188,22 @@
 var p=1,sf=document.getElementById('searchForm'),tb=document.getElementById('tableBody'),pg=document.getElementById('pagination');
 if(!tb)return;
 
+// v2.52.1：查看范围（我的合同/全部合同）
+// ① URL 显式 scope 参数（入口链接，如仪表盘「查看全部草稿」）优先遵循；
+// ② 对象入口（project_id/customer_id）或显式指定归属人（owner_id）恒为全部；
+// ③ 否则取 localStorage 记忆的上次选择，首次默认「我的合同」
+var SCOPE_KEY='contract_list_scope';
+var __urlParams = new URLSearchParams(location.search);
+var __urlScope = __urlParams.get('scope');
+var scope;
+if (__urlScope === 'me' || __urlScope === 'all') {
+    scope = __urlScope;
+} else if (__urlParams.has('project_id') || __urlParams.has('customer_id') || (__urlParams.get('owner_id')||'') !== '') {
+    scope = 'all';
+} else {
+    scope = localStorage.getItem(SCOPE_KEY) || 'me';
+}
+
 // 排序状态（字段名经后端 BaseController::getSortParams 白名单校验，杜绝字段名注入）
 var sortKey='', sortOrder='desc';
 
@@ -200,6 +216,8 @@ function load(n){
     // 收集筛选表单参数
     var fd=new FormData(sf),pr=new URLSearchParams(fd);
     pr.set('page',n);pr.set('limit',15);
+    // v2.52.1：查看范围「我的合同」时归属人固定为本人，覆盖表单中可能残留的归属人筛选（联动）
+    if(scope==='me') pr.set('owner_id','me');
     var fw=sf.querySelector('[name="framework"]');
     if(fw && fw.value) pr.set('framework', fw.value);
     // 附加上排序参数
@@ -394,6 +412,41 @@ if (document.readyState === 'loading') {
     });
   });
   syncChips();
+})();
+
+// ---- v2.52.1：查看范围切换（我的合同/全部合同） ----
+// scope=me 时归属人选择器禁用（归属固定为本人），切回全部时恢复可用；
+// 归属人选择器中被忽略的已选值保留，切回全部后原筛选仍生效。
+(function(){
+  var chips = sf ? sf.querySelectorAll('.scope-chip') : [];
+  if(!chips.length) return;
+  function syncScopeChips(){
+    chips.forEach(function(ch){
+      var act = ch.dataset.scope === scope;
+      ch.classList.toggle('btn-primary', act);
+      ch.classList.toggle('btn-outline-primary', !act);
+    });
+  }
+  function syncOwnerDisabled(){
+    var oIn = sf.querySelector('.cs-wrap .cs-input');
+    if(!oIn) return;
+    oIn.disabled = (scope === 'me');
+    oIn.placeholder = (scope === 'me') ? '查看范围为「我的合同」，归属人筛选不可用' : '搜索归属人姓名';
+  }
+  chips.forEach(function(ch){
+    ch.addEventListener('click', function(){
+      var v = ch.dataset.scope;
+      if(v === scope) return;
+      scope = v;
+      try{ localStorage.setItem(SCOPE_KEY, v); }catch(e){}
+      syncScopeChips(); syncOwnerDisabled();
+      load(1);
+    });
+  });
+  syncScopeChips(); syncOwnerDisabled();
+  // 高级筛选抽屉打开时同步归属人禁用态（避免抽屉内已选归属人与查看范围冲突）
+  var off = document.getElementById('advFilter');
+  if(off){ off.addEventListener('show.bs.offcanvas', syncOwnerDisabled); }
 })();
 
 // ---- 导出合同（携带当前筛选条件；P1-5：防重复连点 + 进度提示） ----

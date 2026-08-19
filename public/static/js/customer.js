@@ -6,6 +6,12 @@
 // ---- 状态变量 ----
 var p=1,tb=document.getElementById('tableBody'),pg=document.getElementById('pagination');
 
+// v2.52.2：查看范围（我的客户/全部客户）——URL 显式归属人（owner_id）恒为全部；
+// 否则取 localStorage 记忆的上次选择，首次默认「我的客户」
+var SCOPE_KEY='customer_list_scope';
+var __urlP = new URLSearchParams(location.search);
+var scope = (__urlP.get('owner_id')||'') !== '' ? 'all' : (localStorage.getItem(SCOPE_KEY)||'me');
+
 // HTML 转义：统一使用 app.js 全局 esc（P3-5：移除本地重复副本）
 
 if(!tb)return;
@@ -20,6 +26,10 @@ function load(n){
     // v2.38.9：生命周期筛选（漏斗点击设置 window._lifecycleActive，清除用 clearLcFilter）
     var pr=new URLSearchParams({keyword:kw?(kw.value||''):'',page:p,limit:15});
     if(window._lifecycleActive) pr.set('lifecycle_status', window._lifecycleActive);
+    // v2.52.2：查看范围——「我的客户」时归属固定为本人（默认/记忆决定，覆盖可能残留的 URL 归属人）；
+    // 「全部客户」时显式 scope=all（否则服务端按默认「我的客户」判定）
+    if(scope==='me') pr.set('owner_id','me');
+    else pr.set('scope','all');
     // AJAX 请求（统一走 $ajax 封装，X-Requested-With 头触发服务端返回 JSON 而非完整页面）
     $ajax('/customer?'+pr,{loading:false})
     .then(function(res){
@@ -58,7 +68,10 @@ function load(n){
                     var stLabel=c.status==1?'正常':'禁用';
                     h+='<tr><td colspan="7" style="padding:6px 8px;border:none;">';
                     h+='<div class="c-card" onclick="location.href=\'/m/customer/'+c.id+'\'">';
-                    h+='<div class="c-card-top"><span class="c-card-t">'+esc(c.name)+custBadges(c)+'</span><span class="c-tag '+stCls+'">'+stLabel+'</span></div>';
+                    h+='<div class="c-card-top"><span class="c-card-t">'+esc(c.name)+custBadges(c)+'</span><span class="c-tag '+stCls+'">'+stLabel+'</span>';
+                    // v2.52.x：窄屏卡片删除入口（与桌面表格行同口径，can_delete 门控；stopPropagation 防触发整卡跳详情）
+                    if(window._canDeleteCustomer) h+=' <button type="button" class="btn btn-sm btn-outline-danger" aria-label="删除" title="删除" style="padding:0 5px;font-size:12px;line-height:1.4" onclick="event.stopPropagation();delCustomer('+c.id+')"><i class="bi bi-trash"></i></button>';
+                    h+='</div>';
                     h+='<div class="c-card-meta">';
                     if(c.contact_name) h+='<span class="c-card-contact"><i class="bi bi-person"></i>'+esc(c.contact_name)+'</span>';
                     if(c.contact_mobile) h+='<span class="c-card-contact"><i class="bi bi-telephone"></i>'+esc(c.contact_mobile)+'</span>';
@@ -90,10 +103,11 @@ function load(n){
                     h+='<td><span class="pc-tag '+lcCls+'">'+esc(lcLabel)+'</span></td>';
                     h+='<td>'+(esc(c.owner_name)||'未分配')+'</td>';
                     h+='<td>'+(c.status==1?'<span class="badge bg-success">正常</span>':'<span class="badge bg-secondary">禁用</span>')+'</td>';
-                    // 操作列——编辑 + 快捷共享（负责人/超管）
+                    // 操作列——编辑 + 删除（v2.52.x）+ 快捷共享（负责人/超管）
                     var canShare = (window._isAdmin || Number(c.owner_id)===Number(window._myUserId));
                     h+='<td>';
                     h+='<a href="/customer/'+c.id+'/edit" class="btn btn-sm btn-outline-secondary" aria-label="编辑" title="编辑"><i class="bi bi-pencil"></i></a>';
+                    if(window._canDeleteCustomer) h+=' <button type="button" class="btn btn-sm btn-outline-danger" aria-label="删除" title="删除" onclick="delCustomer('+c.id+')"><i class="bi bi-trash"></i></button>';
                     if(canShare) h+=' <button type="button" class="btn btn-sm btn-outline-primary" aria-label="共享" title="共享设置" onclick="openListShare('+c.id+',this)"><i class="bi bi-people"></i></button>';
                     h+='</td>';
                     h+='</tr>';
@@ -161,6 +175,42 @@ if (document.readyState === 'loading') {
 } else {
     bindLcFilter();
 }
+
+// ===== v2.52.2：查看范围切换（我的客户/全部客户） =====
+// 切换后写 localStorage 记忆，下次进入保持上次选择
+(function(){
+  var chips = document.querySelectorAll('.scope-chip');
+  if(!chips.length) return;
+  function sync(){
+    chips.forEach(function(ch){
+      var on = ch.dataset.scope === scope;
+      ch.classList.toggle('btn-primary', on);
+      ch.classList.toggle('btn-outline-primary', !on);
+    });
+  }
+  chips.forEach(function(ch){
+    ch.addEventListener('click', function(){
+      var v = ch.dataset.scope;
+      if(v === scope) return;
+      scope = v;
+      try{ localStorage.setItem(SCOPE_KEY, v); }catch(e){}
+      sync();
+      load(1);
+    });
+  });
+  sync();
+})();
+
+// ===== v2.52.x：删除客户（软删除；后端校验关联合同/集团子客户，删除后进入回收站可恢复或彻底清除） =====
+window.delCustomer = function(id){
+  pcConfirm({ message: '确定删除该客户？删除后进入回收站，可在数据回收站恢复或彻底清除', danger: true }).then(function(ok){
+    if(!ok) return;
+    $ajax('/ajax/customer/delete', { method: 'POST', body: new URLSearchParams({id: id}), loading: false }).then(function(res){
+      showToast(res.msg || '操作完成', res.code === 0 ? 'success' : 'error');
+      if(res.code === 0) location.reload();
+    }).catch(function(){});
+  });
+};
 
 // ===== v2.47.8：列表快捷共享弹层（负责人/超管；复用 /ajax/customer/{id}/share-list、share、unshare） =====
 var _listShareId = 0, _listShareCan = false, _listShareSel = 0;

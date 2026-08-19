@@ -93,6 +93,10 @@ class SupplierLogic
         if (!empty($filter['type'])) {
             $query->where('type', $filter['type']);
         }
+        // v2.52.2：查看范围「我的供应商」——owner_id 过滤（AND 追加，与数据范围条件组合仍正确）
+        if (isset($filter['owner_id']) && $filter['owner_id'] !== '') {
+            $query->where('owner_id', (int)$filter['owner_id']);
+        }
 
         $total = $query->count();
         $list  = $query->order($sort[0], $sort[1])->page($page, $pageSize)->select()->toArray();
@@ -136,6 +140,11 @@ class SupplierLogic
         }
         if ($type) {
             $query->where('type', $type);
+        }
+        // v2.52.2：查看范围「我的供应商」——owner_id 过滤（AND 追加，与数据范围条件组合仍正确）
+        $ownerId = $params['owner_id'] ?? '';
+        if ($ownerId !== '') {
+            $query->where('owner_id', (int)$ownerId);
         }
 
         if ($isAjax) {

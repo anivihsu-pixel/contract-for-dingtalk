@@ -100,6 +100,8 @@ class ContractController extends BaseController
             $owners = array_values(array_filter($owners, fn($o) => in_array((int)$o['id'], $visibleIds, true)));
         }
         View::assign('owners', $owners);
+        // v2.52.1：合同列表「查看范围」切换（我的合同/全部合同）——仅能查看他人合同的账号显示（ALL/DEPT/CUSTOM）
+        View::assign('can_scope_toggle', $vis['has_all'] || !empty($vis['dept_ids']));
         // UX 门控：导出按钮按 contract:export 权限渲染（后端 export 已有守卫，此处仅收敛视图入口）
         View::assign('can_export', $this->hasPermission('contract:export'));
         // UX 门控：批量归档按 contract:edit、批量删除按 contract:delete 权限分别渲染（与后端 batchArchive/batchDelete 守卫同口径）
