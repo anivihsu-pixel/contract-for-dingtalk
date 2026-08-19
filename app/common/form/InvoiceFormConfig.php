@@ -153,8 +153,11 @@ class InvoiceFormConfig
         return $out;
     }
 
-    /** PC 端表单渲染（Bootstrap 栅格；textarea 占满行，其余各半行） */
-    public static function pcRender(array $data = [], array $maps = []): string
+    /**
+     * PC 端表单渲染（Bootstrap 栅格；textarea 占满行，其余各半行）。
+     * @param string $prefix 字段名前缀（合同编辑页随合同开票区块传入 'inv_'，避免与合同表单 our_company_id/amount 同名冲突）
+     */
+    public static function pcRender(array $data = [], array $maps = [], string $prefix = ''): string
     {
         $html = '';
         foreach (self::fields() as $f) {
@@ -170,13 +173,13 @@ class InvoiceFormConfig
                 case 'textarea':
                     $rows = (int)($f['rows'] ?? 4);
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<textarea name="' . $name . '" class="form-control" rows="' . $rows . '"' . $reqAttr
+                        . '<textarea name="' . $prefix . $name . '" class="form-control" rows="' . $rows . '"' . $reqAttr
                         . ' placeholder="' . self::h($ph) . '">' . self::h($val) . '</textarea></div>';
                     break;
                 case 'select':
                     $opts = self::optionList($f);
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<select name="' . $name . '" class="form-select"' . $reqAttr . '><option value="">请选择</option>';
+                        . '<select name="' . $prefix . $name . '" class="form-select"' . $reqAttr . '><option value="">请选择</option>';
                     foreach ($opts as $code => $n) {
                         $html .= '<option value="' . self::h($code) . '"' . ((string)$val === (string)$code ? ' selected' : '') . '>' . self::h($n) . '</option>';
                     }
@@ -185,7 +188,7 @@ class InvoiceFormConfig
                 case 'company':
                     $companies = $maps['companies'] ?? [];
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<select name="' . $name . '" class="form-select"' . $reqAttr . '><option value="0">请选择开票主体</option>';
+                        . '<select name="' . $prefix . $name . '" class="form-select"' . $reqAttr . '><option value="0">请选择开票主体</option>';
                     foreach ($companies as $c) {
                         $cid = is_array($c) ? ($c['id'] ?? 0) : $c;
                         $cname = is_array($c) ? ($c['name'] ?? '') : $c;
@@ -210,7 +213,7 @@ class InvoiceFormConfig
                         }
                     }
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="invoice_title" data-fill-credit="tax_no"'
+                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="' . $prefix . 'invoice_title" data-fill-credit="' . $prefix . 'tax_no"'
                         . ' data-quick="customer" data-quick-url="/ajax/customer/save"'
                         // data-default-*：服务端预填值（合同详情申请开票默认带出合同客户方）；
                         // 页面打开弹窗重置选择器时按此恢复，data=0 时与旧行为一致清空；
@@ -219,17 +222,17 @@ class InvoiceFormConfig
                         . ' data-default-title="' . self::h($data['invoice_title'] ?? '') . '" data-default-credit="' . self::h($data['tax_no'] ?? '') . '">'
                         . '<input type="text" class="form-control cs-input" placeholder="' . self::h($ph) . '" autocomplete="off" value="' . self::h($selName) . '">'
                         . '<div class="cs-suggestions"></div>'
-                        . '<input type="hidden" class="cs-id" name="' . $name . '" value="' . self::h($val) . '"></div></div>';
+                        . '<input type="hidden" class="cs-id" name="' . $prefix . $name . '" value="' . self::h($val) . '"></div></div>';
                     break;
                 case 'number':
                     $step = isset($f['step']) ? ' step="' . self::h($f['step']) . '"' : '';
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<input type="number" name="' . $name . '" class="form-control"' . $reqAttr . $step
+                        . '<input type="number" name="' . $prefix . $name . '" class="form-control"' . $reqAttr . $step
                         . ' value="' . self::h($val) . '" placeholder="' . self::h($ph) . '"></div>';
                     break;
                 default:
                     $html .= '<div class="' . $col . '">' . $label
-                        . '<input type="text" name="' . $name . '" class="form-control"' . $reqAttr
+                        . '<input type="text" name="' . $prefix . $name . '" class="form-control"' . $reqAttr
                         . ' value="' . self::h($val) . '" placeholder="' . self::h($ph) . '"></div>';
             }
         }
@@ -262,8 +265,11 @@ class InvoiceFormConfig
         return $rows;
     }
 
-    /** 移动端表单渲染（.m-field / .m-input / .m-select 与移动端设计体系一致） */
-    public static function mobileRender(array $data = [], array $maps = []): string
+    /**
+     * 移动端表单渲染（.m-field / .m-input / .m-select 与移动端设计体系一致）。
+     * @param string $prefix 字段名前缀（合同编辑页随合同开票区块传入 'inv_'，避免与合同表单 our_company_id/amount 同名冲突）
+     */
+    public static function mobileRender(array $data = [], array $maps = [], string $prefix = ''): string
     {
         $html = '';
         // v2.51.4：申请表单分区——客户信息、开票金额与上方主体/类型等基本信息区分隔。
@@ -282,7 +288,7 @@ class InvoiceFormConfig
             switch ($f['type']) {
                 case 'textarea':
                     $html .= '<div class="m-field">' . $label
-                        . '<textarea class="m-input" name="' . $name . '" rows="' . (int)($f['rows'] ?? 4) . '"'
+                        . '<textarea class="m-input" name="' . $prefix . $name . '" rows="' . (int)($f['rows'] ?? 4) . '"'
                         . (!empty($f['required']) ? ' required' : '') . ' placeholder="' . self::h($ph) . '">' . self::h($val) . '</textarea></div>';
                     break;
                 case 'select':
@@ -294,8 +300,8 @@ class InvoiceFormConfig
                     }
                     $optsJson = json_encode(array_map(function ($k, $v) { return ['value' => (string)$k, 'label' => (string)$v]; }, array_keys($opts), array_values($opts)), JSON_UNESCAPED_UNICODE);
                     $html .= '<div class="m-field">' . $label
-                        . '<div class="m-pick-box" data-inv-pick="select" data-pick-name="' . self::h($name) . '" data-options=\'' . self::h($optsJson) . '\'><span class="m-pick-name">' . self::h($selLabel !== '' ? $selLabel : '请选择') . '</span><button type="button" class="m-pick-btn">选择</button></div>'
-                        . '<input type="hidden" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
+                        . '<div class="m-pick-box" data-inv-pick="select" data-pick-name="' . self::h($prefix . $name) . '" data-options=\'' . self::h($optsJson) . '\'><span class="m-pick-name">' . self::h($selLabel !== '' ? $selLabel : '请选择') . '</span><button type="button" class="m-pick-btn">选择</button></div>'
+                        . '<input type="hidden" name="' . $prefix . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
                     break;
                 case 'company':
                     // v2.51.4：开票主体选择复用新建合同「我方主体」交互——只读展示 + 切换按钮 + 底部 sheet 弹层
@@ -314,8 +320,8 @@ class InvoiceFormConfig
                             'rate' => (string)($c['invoice_tax_rate'] ?? ''), 'default' => (int)($c['is_default'] ?? 0)];
                     }, $companies), JSON_UNESCAPED_UNICODE);
                     $html .= '<div class="m-field">' . $label
-                        . '<div class="m-pick-box" data-inv-pick="company" data-pick-name="' . self::h($name) . '" data-options=\'' . self::h($companyJson) . '\'><span class="m-pick-name">' . self::h($selName !== '' ? $selName : '请选择开票主体') . '</span><button type="button" class="m-pick-btn">切换</button></div>'
-                        . '<input type="hidden" name="' . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
+                        . '<div class="m-pick-box" data-inv-pick="company" data-pick-name="' . self::h($prefix . $name) . '" data-options=\'' . self::h($companyJson) . '\'><span class="m-pick-name">' . self::h($selName !== '' ? $selName : '请选择开票主体') . '</span><button type="button" class="m-pick-btn">切换</button></div>'
+                        . '<input type="hidden" name="' . $prefix . $name . '"' . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '"></div>';
                     break;
                 case 'customer':
                     // 2026-08-11：同 PC 端——后端搜索 + data-fill-* 内建带出抬头/税号；
@@ -329,22 +335,22 @@ class InvoiceFormConfig
                         }
                     }
                     $html .= '<div class="m-field">' . $label
-                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="invoice_title" data-fill-credit="tax_no"'
+                        . '<div class="cs-wrap" data-cs-url="/ajax/party/search?q=" data-fill-name="' . $prefix . 'invoice_title" data-fill-credit="' . $prefix . 'tax_no"'
                         . ' data-quick="customer" data-quick-url="/ajax/customer/save"'
                         . ' data-default-id="' . self::h($val) . '" data-default-name="' . self::h($selName) . '"'
                         . ' data-default-title="' . self::h($data['invoice_title'] ?? '') . '" data-default-credit="' . self::h($data['tax_no'] ?? '') . '">'
                         . '<input type="text" class="m-input cs-input" placeholder="' . self::h($ph) . '" autocomplete="off" value="' . self::h($selName) . '">'
                         . '<div class="cs-suggestions"></div>'
-                        . '<input type="hidden" class="cs-id" name="' . $name . '" value="' . self::h($val) . '"></div></div>';
+                        . '<input type="hidden" class="cs-id" name="' . $prefix . $name . '" value="' . self::h($val) . '"></div></div>';
                     break;
                 case 'number':
                     $html .= '<div class="m-field">' . $label
-                        . '<input type="number" class="m-input" name="' . $name . '" step="' . self::h($f['step'] ?? '0.01') . '"'
+                        . '<input type="number" class="m-input" name="' . $prefix . $name . '" step="' . self::h($f['step'] ?? '0.01') . '"'
                         . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '" placeholder="' . self::h($ph) . '"></div>';
                     break;
                 default:
                     $html .= '<div class="m-field">' . $label
-                        . '<input type="text" class="m-input" name="' . $name . '"'
+                        . '<input type="text" class="m-input" name="' . $prefix . $name . '"'
                         . (!empty($f['required']) ? ' required' : '') . ' value="' . self::h($val) . '" placeholder="' . self::h($ph) . '"></div>';
             }
         }

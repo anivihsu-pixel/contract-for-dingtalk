@@ -124,6 +124,30 @@ $__dcid = $default_company_id ?? 0;
   if(initCust > 0 && initType === 'customer') loadPartyBContacts(initCust);
 })();
 </script>
+
+<!-- v2.51.x：随合同申请开票——入口由提交审批页迁移至合同编辑页；字段复用申请开票表单（InvoiceFormConfig::pcRender），
+     开票主体/开票内容与后台「发票表单」配置一致，提交字段带 inv_ 前缀避免与合同表单 our_company_id/amount 同名冲突 -->
+<div class="card border mt-3">
+  <div class="card-header bg-white py-2">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" id="withInvoice" name="with_invoice" value="1" <?=!empty($inv_intent['apply'])?'checked':''?>>
+      <label class="form-check-label fw-semibold" for="withInvoice"><i class="bi bi-receipt-cutoff me-1"></i>随合同申请开票</label>
+      <span class="text-muted small ms-2">合同过审后自动生成待开票发票并通知财务确认</span>
+    </div>
+  </div>
+  <div class="card-body" id="invIntentBox" <?=empty($inv_intent['apply'])?'style="display:none"':''?>>
+    <?= \app\common\form\InvoiceFormConfig::pcRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
+    <div class="text-muted small mt-2"><i class="bi bi-info-circle"></i> 金额不可超过合同金额；过审后自动开票，后续仍可在合同金额内单独申请。</div>
+  </div>
+</div>
+<script>
+// v2.51.x：随合同申请开票——勾选后展开开票字段（display:none 的 required 字段不参与浏览器约束验证，未勾选不拦截提交）
+(function(){
+  var wchk = document.getElementById('withInvoice');
+  var ibox = document.getElementById('invIntentBox');
+  if(wchk && ibox){ wchk.addEventListener('change', function(){ ibox.style.display = this.checked ? '' : 'none'; }); }
+})();
+</script>
 </div>
 
 <!-- 本公司主体选择器：复用移动端遮罩层交互，不依赖 Bootstrap Modal。 -->

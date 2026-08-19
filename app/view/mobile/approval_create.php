@@ -49,52 +49,6 @@ include __DIR__ . '/_head.php';
           </li>
           <?php endif; ?>
         </ol>
-        <!-- v2.51.10：随合同申请开票——合同过审后自动生成待开票发票并通知财务，无需再单独申请 -->
-        <div style="border-top:1px solid var(--m-border);margin:12px 0;padding-top:12px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <input type="checkbox" id="withInvoice" name="with_invoice" value="1" style="width:18px;height:18px">
-            <label for="withInvoice" style="font-size:14px;font-weight:500;margin:0"><i class="bi bi-receipt-cutoff me-1"></i>随合同申请开票</label>
-          </div>
-          <div id="invIntentBox" style="display:none">
-            <div class="m-field"><label class="m-field-label">开票主体 <span style="color:#fa5151">*</span></label>
-              <select class="m-input" name="invoice_our_company_id" style="appearance:auto">
-                <option value="">请选择开票主体</option>
-                <?php foreach(($companies ?? []) as $__c): ?>
-                <option value="<?=(int)$__c['id']?>"><?=htmlspecialchars($__c['name'])?><?=isset($__c['invoice_tax_rate']) && $__c['invoice_tax_rate'] !== '' ? '（' . (float)$__c['invoice_tax_rate'] * 100 . '%）' : ''?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="m-field"><label class="m-field-label">开票类型 <span style="color:#fa5151">*</span></label>
-              <select class="m-input" name="invoice_type" style="appearance:auto">
-                <option value="VAT_SPECIAL">增值税专用发票</option>
-                <option value="VAT_NORMAL">普通发票</option>
-              </select>
-            </div>
-            <div class="m-field"><label class="m-field-label">含税金额（元） <span style="color:#fa5151">*</span></label>
-              <input type="number" class="m-input" name="invoice_amount" step="0.01" min="0.01" placeholder="≤ ¥<?=number_format((float)($contract['amount'] ?? 0),0)?>">
-            </div>
-            <div class="m-field"><label class="m-field-label">开票内容 <span style="color:#fa5151">*</span></label>
-              <select class="m-input" name="invoice_content_desc" style="appearance:auto">
-                <option value="">请选择开票内容</option>
-                <option>软件开发服务费</option>
-                <option>咨询服务费</option>
-                <option>运维服务费</option>
-                <option>硬件销售费</option>
-                <option>其他</option>
-              </select>
-            </div>
-            <div class="m-field"><label class="m-field-label">发票抬头</label>
-              <input type="text" class="m-input" name="invoice_title" value="<?=htmlspecialchars($default_inv_title ?? '')?>" placeholder="默认带出合同乙方">
-            </div>
-            <div class="m-field"><label class="m-field-label">税号</label>
-              <input type="text" class="m-input" name="invoice_tax_no" value="<?=htmlspecialchars($default_inv_tax_no ?? '')?>">
-            </div>
-            <div class="m-field"><label class="m-field-label">申请说明</label>
-              <input type="text" class="m-input" name="invoice_remark" placeholder="选填">
-            </div>
-            <div class="m-float-tip" style="margin-bottom:12px">合同过审后自动生成「待开票」发票并通知财务确认开票，金额不可超过合同金额。</div>
-          </div>
-        </div>
         <button class="m-btn m-btn-ok m-btn-block" id="btnSubmit"><i class="bi bi-send"></i> 确认提交</button>
       <?php else: ?>
         <div class="m-float-tip danger"><i class="bi bi-exclamation-triangle me-1"></i>未匹配到适用的审批流程，请联系管理员在「系统设置 → 审批流程」中配置。</div>
@@ -112,10 +66,6 @@ include __DIR__ . '/_head.php';
   
   
   var btn = document.getElementById('btnSubmit');
-  // v2.51.10：随合同申请开票——勾选后展开开票字段
-  var wchk = document.getElementById('withInvoice');
-  var ibox = document.getElementById('invIntentBox');
-  if(wchk && ibox){ wchk.addEventListener('change', function(){ ibox.style.display = this.checked ? '' : 'none'; }); }
   if(btn){
     btn.addEventListener('click', function(){
       var self = this;
@@ -124,11 +74,6 @@ include __DIR__ . '/_head.php';
       var fd = new FormData();
       fd.append('contract_id', <?=intval($contract['id'])?>);
       fd.append('flow_id', <?=intval($contract['flow_id'] ?? 0)?>);
-      // v2.51.10：随合同申请开票字段（勾选=1 保存意图；未勾选=0 清除历史意图）
-      var wc = document.getElementById('withInvoice');
-      fd.append('with_invoice', (wc && wc.checked) ? '1' : '0');
-      var ib = document.getElementById('invIntentBox');
-      if(ib){ ib.querySelectorAll('[name]').forEach(function(el){ fd.append(el.name, el.value); }); }
       fetch('/ajax/approval/submit', {
         method:'POST', body:fd,
         headers:{'X-Requested-With':'XMLHttpRequest','X-CSRF-TOKEN':csrfToken()}

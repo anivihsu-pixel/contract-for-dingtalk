@@ -58,6 +58,13 @@ include __DIR__ . '/_head.php';
 .m-radio input{width:18px;height:18px;flex:none}
 .m-radio:has(input:checked){border-color:#3b82f6;background:#f5f9ff}
 .m-fold-sub{color:#9aa3af;font-size:12px;font-weight:400;margin-left:4px}
+/* v2.51.x：随合同申请开票——勾选开关明显化（卡片 + 勾选态高亮），避免样式不明显被忽略 */
+.m-inv-toggle{display:flex;align-items:center;gap:10px;padding:13px 14px;border:1.5px solid #dcdfe6;border-radius:12px;background:#fff;transition:border-color .15s,background .15s}
+.m-inv-toggle.on{border-color:#3b82f6;background:#f0f7ff}
+.m-inv-toggle input{width:20px;height:20px;flex:none;accent-color:#3b82f6}
+.m-inv-toggle label{font-size:15px;font-weight:600;color:var(--m-text-1);margin:0;display:flex;align-items:center;gap:6px;cursor:pointer}
+.m-inv-toggle-sub{margin-left:auto;font-size:11px;color:var(--m-text-3);text-align:right;font-weight:400}
+.m-inv-section{font-size:12px;color:var(--m-text-3);margin:10px 0 8px;display:flex;align-items:center;gap:6px}
 </style>
 
 <div class="m-nav">
@@ -86,6 +93,24 @@ $__mmaps = [
 echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $default_company_id ?? 0);
 ?>
 <script>window.__contractDraft=mobileFormDraft(document.getElementById('form'),'contract:<?=intval($contract['id']??0)?>');</script>
+    <!-- v2.51.x：随合同申请开票——入口由提交审批页迁移至合同编辑页底部；字段复用申请开票表单（InvoiceFormConfig），
+         勾选态明显化（卡片高亮），开票主体/开票内容与后台「发票表单」配置一致 -->
+    <div class="m-card" id="invIntentCard" style="margin-top:14px">
+      <div class="m-card-bd">
+        <div class="m-inv-toggle" id="invToggle">
+          <input type="checkbox" id="withInvoice" name="with_invoice" value="1" <?=!empty($inv_intent['apply']) ? 'checked' : ''?>>
+          <label for="withInvoice"><i class="bi bi-receipt-cutoff"></i>随合同申请开票</label>
+          <span class="m-inv-toggle-sub">过审后自动开票</span>
+        </div>
+        <div id="invIntentBox" <?=empty($inv_intent['apply']) ? 'style="display:none"' : ''?>>
+          <div class="m-inv-section"><i class="bi bi-receipt"></i>开票信息（合同过审后自动生成「待开票」发票并通知财务）</div>
+          <input type="hidden" name="inv_tax_rate" id="invTaxRate" value="0.06">
+          <?= \app\common\form\InvoiceFormConfig::mobileRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
+          <div style="color:var(--m-text-3);font-size:13px;margin-top:6px;display:none" id="invTaxCalc"></div>
+          <div style="color:var(--m-text-3);font-size:12px;margin-top:6px">金额不可超过合同金额；过审后自动开票，后续仍可在合同金额内单独申请。</div>
+        </div>
+      </div>
+    </div>
     <!-- v2.51.4：提交按钮由固定悬浮栏改为直接放在页面内容末尾（随内容滚动，不悬浮遮挡）；居中自适应宽度 -->
     <div style="padding: 6px var(--m-pad) calc(18px + var(--safe-bottom)); display:flex; justify-content:center;">
       <button type="button" class="m-btn m-btn-brand" id="submitBtn" style="flex:none; min-width:160px; padding:0 32px;"><?=!empty($is_edit)?'保存修改':'创建合同'?></button>
@@ -161,6 +186,45 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
   }
   document.querySelectorAll('input[name="trade_attr"]').forEach(function(r){ r.addEventListener('change', syncTrade); });
   syncTrade();
+
+  // ===== v2.51.x：随合同申请开票——勾选展开开票字段（复用申请开票表单渲染与「展示框+底部弹层」选择器交互） =====
+  var wchk = document.getElementById('withInvoice');
+  var ibox = document.getElementById('invIntentBox');
+  var itog = document.getElementById('invToggle');
+  function syncInvBox(){
+    if(!wchk || !ibox) return;
+    ibox.style.display = wchk.checked ? '' : 'none';
+    if(itog) itog.classList.toggle('on', wchk.checked);
+  }
+  if(wchk && ibox){
+    wchk.addEventListener('change', syncInvBox);
+    syncInvBox();
+    if(typeof window.initInvPickers === 'function') window.initInvPickers(ibox);
+  }
+  // 开票主体选中：带出税率并刷新价税拆分（税率隐藏字段仅供展示，提交后端从公司档案读取防篡改）
+  function refreshInvTaxCalc(){
+    if(!ibox) return;
+    var amtEl = ibox.querySelector('input[name="inv_amount"]');
+    var rateEl = ibox.querySelector('input[name="inv_tax_rate"]');
+    var calc = document.getElementById('invTaxCalc');
+    if(!amtEl || !rateEl || !calc) return;
+    var amt = parseFloat(amtEl.value) || 0, rate = parseFloat(rateEl.value) || 0;
+    if(amt <= 0){ calc.style.display = 'none'; return; }
+    var tax = amt - amt / (1 + rate);
+    calc.innerHTML = '含税 ¥' + amt.toLocaleString(2) + ' = 不含税 ¥' + (amt - tax).toFixed(2) + ' + 税额 ¥' + tax.toFixed(2) + '（税率 ' + (rate * 100) + '%）';
+    calc.style.display = '';
+  }
+  window.mInvCompanyPicked = function(rate){
+    if(!ibox) return;
+    var rateEl = ibox.querySelector('input[name="inv_tax_rate"]');
+    if(rateEl && rate !== '' && rate !== null && rate !== undefined){ rateEl.value = rate; }
+    refreshInvTaxCalc();
+  };
+  if(ibox){
+    var amt0 = ibox.querySelector('input[name="inv_amount"]');
+    if(amt0) amt0.addEventListener('input', refreshInvTaxCalc);
+    refreshInvTaxCalc();
+  }
 
   // ===== 甲乙方身份（法律地位）与收付款方向（资金）解耦 =====
   // ourSide：我方在法律上的哪一侧（A=甲方 / B=乙方），由「本公司」按钮显式指定，
@@ -962,6 +1026,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     for(var ri=0; ri<reqs.length; ri++){
       var nm = reqs[ri].getAttribute('name');
       if(tv === '0' && (nm === 'direction' || nm === 'amount')) continue;  // 非交易：方向/金额不参与必填校验
+      if(nm && nm.indexOf('inv_') === 0 && !(wchk && wchk.checked)) continue;  // v2.51.x：随合同开票字段未勾选时跳过必填校验（勾选展开后才参与）
       var rv = (reqs[ri].value || '').trim();
       if(!rv){
         var lbl = '必填项';

@@ -381,6 +381,12 @@ class InvoiceController extends BaseController
 
         return ['ok' => true, 'msg' => '', 'data' => [
             'id'               => (int)$inv['id'],
+            'inst_id'          => (int)($inv['approval_instance_id'] ?? 0),
+            'is_applicant'     => (int)$inv['applicant_id'] === $userId,
+            // 撤回入口门控（与列表/后端 recall 校验同口径：仅申请人本人、待审批、且已挂审批实例）
+            'can_recall'       => (int)$inv['applicant_id'] === $userId
+                && ($inv['status'] ?? '') === InvoiceLogic::STATUS_PENDING_APPROVAL
+                && (int)($inv['approval_instance_id'] ?? 0) > 0,
             'content_desc'     => $inv['content_desc'] ?? '',
             'invoice_title'    => $inv['invoice_title'] ?? '',
             'tax_no'           => $inv['tax_no'] ?? '',

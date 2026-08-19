@@ -3,6 +3,7 @@
   <h4 class="mb-0"><i class="bi bi-receipt-cutoff"></i> 开票申请详情</h4>
   <div class="d-flex gap-2 align-items-center">
     <?php if(!empty($detail)): ?><span class="badge bg-light text-dark border fs-6"><?=htmlspecialchars($detail['status_label'])?></span><?php endif; ?>
+    <?php if(!empty($detail['can_recall'])): ?><button type="button" class="btn btn-outline-secondary btn-sm" onclick="recallInvoiceApply(<?=(int)$detail['inst_id']?>)"><i class="bi bi-arrow-counterclockwise"></i> 撤回</button><?php endif; ?>
     <a href="/invoice-apply" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> 返回发票申请</a>
   </div>
 </div>
@@ -84,4 +85,17 @@
   <?php endif; ?>
 </div></div>
 <?php endif; ?>
+<script>
+// 撤回开票申请（仅待审批、申请人本人可见入口；后端 recall 二次校验 submitted_by）
+function recallInvoiceApply(instId) {
+    pcConfirm({ message: '确认撤回该开票申请？撤回后需重新提交才能再次进入审批。', danger: true }).then(function (ok) {
+        if (!ok) return;
+        $ajax('/ajax/approval/' + instId + '/recall', { method: 'POST', body: new URLSearchParams({}), loading: true, loadingText: '提交中…' })
+            .then(function (res) {
+                showToast(res.msg || '已撤回', res.code === 0 ? 'success' : 'error');
+                if (res.code === 0) setTimeout(function () { location.reload(); }, 600);
+            }).catch(function () {});
+    });
+}
+</script>
 <?php include __DIR__.'/../layout/footer.php'; ?>

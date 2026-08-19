@@ -1078,6 +1078,8 @@ class MobileController extends BaseController
             'name'   => $this->user['name'] ?? '',
             'mobile' => $this->user['mobile'] ?? '',
         ]);
+        // v2.51.x：随合同申请开票意图回显（合同编辑页底部区块；入口由提交审批页迁移至此）
+        View::assign('inv_intent', $contract ? (json_decode((string)($contract['invoice_intent'] ?? ''), true) ?: []) : []);
         return View::fetch('mobile/contract_form');
     }
 

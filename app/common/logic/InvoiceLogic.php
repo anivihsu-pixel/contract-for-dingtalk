@@ -347,6 +347,12 @@ class InvoiceLogic
         }
         $total = $q->count();
         $list  = $q->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
+        // 撤回入口依赖 inst_id（前端按 v.inst_id 展示撤回按钮），
+        // 与 pagePendingApproval 的 inst_id 口径一致：补出 approval_instance_id 别名
+        foreach ($list as &$v) {
+            $v['inst_id'] = (int)($v['approval_instance_id'] ?? 0);
+        }
+        unset($v);
         return [$list, $total];
     }
 
