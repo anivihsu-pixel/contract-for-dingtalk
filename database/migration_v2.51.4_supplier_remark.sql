@@ -8,7 +8,7 @@ SET @has_remark = (
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'supplier' AND COLUMN_NAME = 'remark'
 );
 SET @sql = IF(@has_remark = 0,
-    'ALTER TABLE `supplier` ADD COLUMN `remark` VARCHAR(255) NOT NULL DEFAULT '''' COMMENT ''备注(原contact_email改备注)'' AFTER `contact_mobile`',
+    'ALTER TABLE `supplier` ADD COLUMN `remark` VARCHAR(255) NOT NULL DEFAULT '''' COMMENT ''备注(原contact_email改备注)'' AFTER `contact_mobile`', -- 供应商备注
     'SELECT 1'
 );
 PREPARE stmt FROM @sql;

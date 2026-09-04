@@ -138,7 +138,9 @@
         if (reset) { issuePage = 1; issueDone = false; }
         if (issueDone) return;
         issueLoading = true;
-        $ajax('/ajax/invoice/pending-issue?page=' + issuePage, { silent: true }).then(function (res) {
+        var kw = document.getElementById('invKw') ? document.getElementById('invKw').value.trim() : '';
+        var url = '/ajax/invoice/pending-issue?page=' + issuePage + '&pageSize=20' + (kw ? '&kw=' + encodeURIComponent(kw) : '');
+        $ajax(url, { silent: true }).then(function (res) {
             issueLoading = false;
             var list = (res && res.data) || [], total = (res && res.count) || 0;
             var tb = document.getElementById('issueTb');
@@ -164,6 +166,12 @@
         });
     };
     window.loadIssueMore = function () { if (!issueDone && !issueLoading) { issuePage++; loadIssue(false); } };
+
+    // 2026-XX：待开票关键词搜索——输入防抖 300ms 后重置并重新加载
+    window.onInvKwInput = function () {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () { loadIssue(true); }, 300);
+    };
 
     window.openIssue = function (id) {
         issueId = id;
@@ -396,7 +404,15 @@
 
     // ===== 初始加载 =====
     function init() {
-        loadMine(true);
+        // 2026-XX：支持 ?tab= 直达指定 tab（仪表盘开票申请入口携带 tab=issue/mine）：
+        // 合法则激活对应 tab 并加载；issue 不存在（非财务）时回退 mine；无参数按服务端默认 mine。
+        var urlTab = new URLSearchParams(window.location.search).get('tab');
+        if (urlTab && ['issue', 'mine', 'pending'].indexOf(urlTab) !== -1) {
+            if (urlTab === 'issue' && !document.getElementById('panelIssue')) { urlTab = 'mine'; }
+            switchTab(urlTab);
+        } else {
+            loadMine(true);
+        }
         bindRowDetail(); // 整行点击打开详情
         var more = document.querySelector('#panelMine #mineMore button');
         if (more) more.addEventListener('click', function () { loadMine(false); });

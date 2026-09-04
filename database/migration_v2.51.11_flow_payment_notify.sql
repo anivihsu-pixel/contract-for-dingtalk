@@ -3,5 +3,5 @@
 -- 结构：{"role_codes":["finance"],"user_ids":[1,5]}
 -- 无 DB 逆操作（回滚：DROP COLUMN payment_notify）
 ALTER TABLE approval_flow
-  ADD COLUMN `payment_notify` TEXT DEFAULT NULL COMMENT '回款提醒通知人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.11)'
+  ADD COLUMN `payment_notify` TEXT DEFAULT NULL COMMENT '回款提醒通知人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.11)' -- 回款提醒通知人
   AFTER `invoice_notify`;

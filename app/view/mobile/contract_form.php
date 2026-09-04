@@ -94,15 +94,17 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
 ?>
 <script>window.__contractDraft=mobileFormDraft(document.getElementById('form'),'contract:<?=intval($contract['id']??0)?>');</script>
     <!-- v2.51.x：随合同申请开票——入口由提交审批页迁移至合同编辑页底部；字段复用申请开票表单（InvoiceFormConfig），
-         勾选态明显化（卡片高亮），开票主体/开票内容与后台「发票表单」配置一致 -->
+         勾选态明显化（卡片高亮），开票主体/开票内容与后台「发票表单」配置一致。
+         2026-XX：财务反馈「合同过审同步开票但客户未填开票资料会致抬头/税号空白」，前端隐藏该入口，仅保留恢复可能。 -->
+    <!--
     <div class="m-card" id="invIntentCard" style="margin-top:14px">
       <div class="m-card-bd">
         <div class="m-inv-toggle" id="invToggle">
-          <input type="checkbox" id="withInvoice" name="with_invoice" value="1" <?=!empty($inv_intent['apply']) ? 'checked' : ''?>>
+          <input type="checkbox" id="withInvoice" name="with_invoice" value="1" checked>
           <label for="withInvoice"><i class="bi bi-receipt-cutoff"></i>随合同申请开票</label>
           <span class="m-inv-toggle-sub">过审后自动开票</span>
         </div>
-        <div id="invIntentBox" <?=empty($inv_intent['apply']) ? 'style="display:none"' : ''?>>
+        <div id="invIntentBox">
           <div class="m-inv-section"><i class="bi bi-receipt"></i>开票信息（合同过审后自动生成「待开票」发票并通知财务）</div>
           <input type="hidden" name="inv_tax_rate" id="invTaxRate" value="0.06">
           <?= \app\common\form\InvoiceFormConfig::mobileRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
@@ -111,6 +113,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
         </div>
       </div>
     </div>
+    -->
     <!-- v2.51.4：提交按钮由固定悬浮栏改为直接放在页面内容末尾（随内容滚动，不悬浮遮挡）；居中自适应宽度 -->
     <div style="padding: 6px var(--m-pad) calc(18px + var(--safe-bottom)); display:flex; justify-content:center;">
       <button type="button" class="m-btn m-btn-brand" id="submitBtn" style="flex:none; min-width:160px; padding:0 32px;"><?=!empty($is_edit)?'保存修改':'创建合同'?></button>
@@ -188,6 +191,8 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
   syncTrade();
 
   // ===== v2.51.x：随合同申请开票——勾选展开开票字段（复用申请开票表单渲染与「展示框+底部弹层」选择器交互） =====
+  // 2026-XX：随合同申请开票功能前端隐藏（入口注释），此段 JS 与下述 mInvCompanyPicked/refreshInvTaxCalc 一并注释保留，供恢复。
+  /*
   var wchk = document.getElementById('withInvoice');
   var ibox = document.getElementById('invIntentBox');
   var itog = document.getElementById('invToggle');
@@ -225,6 +230,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     if(amt0) amt0.addEventListener('input', refreshInvTaxCalc);
     refreshInvTaxCalc();
   }
+  */
 
   // ===== 甲乙方身份（法律地位）与收付款方向（资金）解耦 =====
   // ourSide：我方在法律上的哪一侧（A=甲方 / B=乙方），由「本公司」按钮显式指定，
@@ -1026,7 +1032,7 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
     for(var ri=0; ri<reqs.length; ri++){
       var nm = reqs[ri].getAttribute('name');
       if(tv === '0' && (nm === 'direction' || nm === 'amount')) continue;  // 非交易：方向/金额不参与必填校验
-      if(nm && nm.indexOf('inv_') === 0 && !(wchk && wchk.checked)) continue;  // v2.51.x：随合同开票字段未勾选时跳过必填校验（勾选展开后才参与）
+      // if(nm && nm.indexOf('inv_') === 0 && !(wchk && wchk.checked)) continue;  // v2.51.x：随合同开票字段未勾选时跳过必填校验（勾选展开后才参与）——入口已注释隐藏，此分支保留供恢复
       var rv = (reqs[ri].value || '').trim();
       if(!rv){
         var lbl = '必填项';

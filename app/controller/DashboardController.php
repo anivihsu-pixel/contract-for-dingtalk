@@ -64,6 +64,18 @@ class DashboardController extends BaseController
             return \app\common\logic\ContractLogic::draftList($user, 5);
         }, 60);
 
+        // 2026-XX：开票申请快捷入口角标——待开票数（财务口径，invoice:create）+ 我的申请数，60s 短缓存按用户隔离
+        $canIssueInvoice = $this->hasPermission('invoice:create');
+        $pendingIssueCount = 0;
+        $myInvoiceCount = (int)Cache::remember('dashboard_my_invoice_' . $userId, function () use ($userId) {
+            return \app\common\logic\InvoiceLogic::countMyInvoices($userId);
+        }, 60);
+        if ($canIssueInvoice) {
+            $pendingIssueCount = (int)Cache::remember('dashboard_pending_issue', function () {
+                return \app\common\logic\InvoiceLogic::countPendingIssue();
+            }, 60);
+        }
+
         // 今日提醒（读写分离：展示走 RemindService 纯读，写库由 CLI 负责；内部已加 60s 短缓存）
         // isAdmin 语义：is_admin=1 ∪ admin 角色（钉钉部署 is_admin=0 同效），管理员看全公司提醒
         $remindAlerts = RemindService::getTodayAlerts($userId, $this->isSuperAdmin(), $this->hasPermission('payment:view'));
@@ -115,6 +127,9 @@ class DashboardController extends BaseController
             'top_projects'     => $topProjects,
             'dept_summary'     => $deptSummary,
             'draft_contracts'  => $draftContracts,
+            'can_issue_invoice'=> $canIssueInvoice,
+            'pending_issue_count' => $pendingIssueCount,
+            'my_invoice_count' => $myInvoiceCount,
             'is_admin'         => $isAdmin,
             'is_manager'       => $isManager,
             'is_finance'       => $isFinance,

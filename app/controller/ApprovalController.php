@@ -166,8 +166,9 @@ class ApprovalController extends BaseController
         if (!$detail) return '审批不存在';
 
         // 2026-08-15：开票审批（biz_type=invoice）不关联合同，PC 端跳转「发票申请」页查看/管理
+        // 2026-XX：钉钉/站内通知点开直达开票详情页（target_id=合同发票 id），而非落到列表。
         if (($detail['biz_type'] ?? '') === 'invoice') {
-            return redirect('/invoice-apply');
+            return redirect('/invoice-apply/detail?id=' . (int)$detail['target_id']);
         }
 
         // 与移动端审批详情共用合同数据口径：审批页内直接完成合同查阅和决策。

@@ -277,7 +277,8 @@ class InvoiceController extends BaseController
     {
         $this->requirePermission('invoice:create');
         [$page, $pageSize] = $this->getPageParams();
-        [$list, $total] = InvoiceLogic::pagePendingIssue($page, $pageSize);
+        $kw = (string)$this->getParam('kw', '');
+        [$list, $total] = InvoiceLogic::pagePendingIssue($page, $pageSize, $kw);
         return layui_table(InvoiceLogic::decorateList($list), $total);
     }
 

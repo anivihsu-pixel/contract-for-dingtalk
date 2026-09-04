@@ -62,12 +62,17 @@ include __DIR__ . '/_head.php';
   <div id="panel-invoice" class="fin-panel" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:4px var(--m-gap) 8px">
       <div style="display:flex;gap:6px;overflow-x:auto">
+        <?php if(!empty($m_can_create_invoice)): ?><a href="javascript:;" class="m-chip" data-invtab="issue" onclick="switchInvTab('issue')">待开票</a><?php endif; ?>
         <a href="javascript:;" class="m-chip active" data-invtab="mine" onclick="switchInvTab('mine')">我的申请</a>
         <a href="javascript:;" class="m-chip" data-invtab="pending" onclick="switchInvTab('pending')">待我审批</a>
-        <?php if(!empty($m_can_create_invoice)): ?><a href="javascript:;" class="m-chip" data-invtab="issue" onclick="switchInvTab('issue')">待开票</a><?php endif; ?>
       </div>
       <?php if(!empty($m_can_apply_invoice)): ?><a href="javascript:;" class="m-chip m-chip-primary" onclick="showMInvApply()"><i class="bi bi-plus-lg"></i> 申请</a><?php endif; ?>
     </div>
+    <?php if(!empty($m_can_create_invoice)): ?>
+    <div style="padding:0 var(--m-gap) 8px;display:none" id="mInvKwRow">
+      <input type="search" class="m-input" id="mInvKw" placeholder="按开票内容/主体/申请人/金额搜索…" style="font-size:14px" oninput="onMInvKwInput()">
+    </div>
+    <?php endif; ?>
     <div id="list-inv-mine" style="display:block"><div class="m-empty">加载中…</div></div>
     <div id="list-inv-pending" style="display:none"><div class="m-empty">加载中…</div></div>
     <div id="list-inv-issue" style="display:none"><div class="m-empty">加载中…</div></div>
@@ -488,8 +493,18 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
     ['mine','pending','issue'].forEach(function(t){
       document.getElementById('list-inv-' + t).style.display = t === tab ? 'block' : 'none';
     });
+    // 2026-XX：待开票 tab 显示搜索框，其余隐藏
+    var kwRow = document.getElementById('mInvKwRow');
+    if(kwRow){ kwRow.style.display = (tab === 'issue') ? '' : 'none'; }
     document.querySelectorAll('[data-invtab]').forEach(function(c){ c.classList.toggle('active', c.dataset.invtab === tab); });
     loadInv(true);
+  };
+
+  // 2026-XX：待开票关键词搜索——输入防抖 300ms 后重置并重新加载
+  var mInvKwTimer = null;
+  window.onMInvKwInput = function(){
+    clearTimeout(mInvKwTimer);
+    mInvKwTimer = setTimeout(function(){ loadInv(true); }, 300);
   };
 
   window.loadInv = function(reset){
@@ -497,7 +512,9 @@ window.__mCanPay = <?= !empty($m_can_pay) ? 'true' : 'false' ?>;
     if(reset){ invPage = 1; invDone = false; }
     if(invDone) return;
     invLoading = true;
-    var url = '/ajax/invoice/' + (invTab === 'mine' ? 'my-list' : invTab === 'pending' ? 'pending-approval' : 'pending-issue') + '?page=' + invPage;
+    var kwEl = document.getElementById('mInvKw');
+    var kw = (invTab === 'issue' && kwEl) ? kwEl.value.trim() : '';
+    var url = '/ajax/invoice/' + (invTab === 'mine' ? 'my-list' : invTab === 'pending' ? 'pending-approval' : 'pending-issue') + '?page=' + invPage + (kw ? '&kw=' + encodeURIComponent(kw) : '');
     $ajax(url, {loading:false}).then(function(res){
       invLoading = false;
       var list = (res && res.data) || [], total = (res && res.count) || 0;

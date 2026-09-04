@@ -34,8 +34,24 @@ include __DIR__.'/../layout/header.php'; ?>
       <?php if(!empty($can_create_customer)): ?><a href="/customer/create" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> 新建客户</a><?php endif; ?>
       <?php if(!empty($can_approve)): ?><a href="/approval" class="btn btn-primary btn-sm"><i class="bi bi-list-check"></i> 审批</a><?php endif; ?>
       <?php if(!empty($can_pay)): ?><a href="/finance#add" class="btn btn-primary btn-sm"><i class="bi bi-cash-coin"></i> 登记回款</a><?php endif; ?>
-      <?php if(!empty($is_admin) || in_array('invoice:apply', $user_permissions ?? [], true)): ?><a href="/invoice-apply" class="btn btn-primary btn-sm"><i class="bi bi-receipt-cutoff"></i> 申请开票</a><?php endif; ?>
+      <?php if(!empty($is_admin) || in_array('invoice:apply', $user_permissions ?? [], true)): ?><a href="/invoice-apply<?=!empty($can_issue_invoice)?'?tab=issue':''?>" class="btn btn-primary btn-sm"><i class="bi bi-receipt-cutoff"></i> 申请开票</a><?php endif; ?>
     </div>
+  </div>
+</div>
+
+<!-- 2026-XX：开票申请快捷入口角标卡片——财务见「待开票 N」，其余见「我的申请 M」；整卡直达对应 tab -->
+<div class="card stat-card mb-4">
+  <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-receipt-cutoff text-primary"></i> 开票申请</h6></div>
+  <div class="card-body py-3">
+    <a href="/invoice-apply?tab=<?=!empty($can_issue_invoice)?'issue':'mine'?>" class="text-decoration-none">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fs-5 fw-bold <?=!empty($can_issue_invoice)?'text-primary':'text-body'?>"><?=!empty($can_issue_invoice)?'待开票: '.(int)$pending_issue_count:'我的申请: '.(int)$my_invoice_count?></div>
+          <div class="small text-muted"><?=!empty($can_issue_invoice)?'有发票待开，点击查看':'点击查看我的开票申请'?></div>
+        </div>
+        <i class="bi bi-chevron-right text-muted"></i>
+      </div>
+    </a>
   </div>
 </div>
 

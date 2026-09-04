@@ -3,5 +3,5 @@
 -- 结构：{"role_codes":["finance"],"user_ids":[1,5]}
 -- 无 DB 逆操作（回滚：DROP COLUMN invoice_notify）
 ALTER TABLE approval_flow
-  ADD COLUMN `invoice_notify` TEXT DEFAULT NULL COMMENT '随合同申请开票通知确认人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.10)'
+  ADD COLUMN `invoice_notify` TEXT DEFAULT NULL COMMENT '随合同申请开票通知确认人(JSON：{role_codes:[],user_ids:[]}；空=默认财务角色，v2.51.10)' -- 随合同申请开票通知确认人
   AFTER `form_condition`;

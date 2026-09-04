@@ -245,7 +245,8 @@ class ApprovalActionService
                 if (($executingContract['status'] ?? '') === ContractLogic::STATUS_EXECUTING) {
                     \app\common\service\ContractExecutionNotifyService::dispatch($executingContract, $approverId);
                     // v2.51.10：合同过审 → 若提交时勾选「随合同申请开票」，自动生成待开票发票并通知财务
-                    InvoiceLogic::createAutoForExecutingContract($executingContract, $approverId, (int)($finished['submitted_by'] ?? $approverId));
+                    // 2026-XX：随合同开票入口前端隐藏，不再自动生成随合同开票发票；以下调用注释保留，供恢复（方法本身保留）。
+                    // InvoiceLogic::createAutoForExecutingContract($executingContract, $approverId, (int)($finished['submitted_by'] ?? $approverId));
                 }
             }
             // 审批人已在详情页完成处理：自动读掉进入该审批的站内消息，保持移动工作台各角标一致。

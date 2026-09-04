@@ -144,7 +144,8 @@ class ContractController extends BaseController
         ]);
 
         // v2.51.x：随合同申请开票意图回显（合同编辑页底部区块；入口由提交审批页迁移至此）
-        View::assign('inv_intent', $contract ? (json_decode((string)($contract['invoice_intent'] ?? ''), true) ?: []) : []);
+        // 2026-XX：随合同开票入口前端隐藏，回显不再使用；保留 assign 供恢复。下方 View::assign('inv_intent', ...) 注释保留。
+        // View::assign('inv_intent', $contract ? (json_decode((string)($contract['invoice_intent'] ?? ''), true) ?: []) : []);
 
         return $template ? View::fetch($template) : View::fetch();
     }
@@ -386,6 +387,8 @@ class ContractController extends BaseController
         // v2.51.x：随合同申请开票——入口由「提交审批页」迁移至「合同编辑页」底部；
         // 勾选时校验并暂存开票意图（合同过审后自动生成待开票发票并通知财务），未勾选则清除历史意图。
         // 校验失败直接拦截保存（与提交审批时勾选拦截同口径）。
+        // 2026-XX：随合同开票功能前端隐藏（入口注释），后端不再接收/生成随合同开票意图，以下逻辑注释保留供恢复。
+        /*
         $invIntent = null;
         if ((int)$this->getPost('with_invoice', 0)) {
             $invIntent = $this->buildInvoiceIntent($data, $tradeAttr);
@@ -393,6 +396,7 @@ class ContractController extends BaseController
                 return json_error($invIntent['error']);
             }
         }
+        */
 
         try {
             if ($id) {
@@ -418,6 +422,8 @@ class ContractController extends BaseController
                 CustomerLogic::promoteToActive($cid);
             }
             // v2.51.x：随合同开票意图落库——勾选写 JSON；未勾选清除历史意图（防旧意图残留误生成）
+            // 2026-XX：随合同开票功能前端隐藏，以下落库/清除逻辑注释保留供恢复。
+            /*
             if ($invIntent) {
                 Db::name('contract')->where('id', $id)->update(['invoice_intent' => json_encode($invIntent, JSON_UNESCAPED_UNICODE)]);
             } else {
@@ -425,6 +431,7 @@ class ContractController extends BaseController
                     ->where('invoice_intent', '<>', '')->whereNotNull('invoice_intent')
                     ->update(['invoice_intent' => null]);
             }
+            */
         $result=['id'=>$id];\app\common\service\IdempotencyService::remember($this->userId,'contract.save',$idemKey,$result);
         return json_success($result, '保存成功');
         } catch (\Throwable $e) {
@@ -439,11 +446,12 @@ class ContractController extends BaseController
      * 合同编辑页勾选随合同开票后提交 inv_* 前缀字段（与合同表单 our_company_id/amount 等字段名隔离），
      * 校验通过返回可 JSON 化的意图数组（字段结构与 InvoiceLogic::createAutoForExecutingContract 消费口径一致）；
      * 失败时返回 ['error'=>文案]。
+     * 2026-XX：随合同开票功能前端隐藏，此方法不再被调用；整体注释保留，供恢复时解除。
      *
      * @param array $data     本次保存的合同数据（含 amount/direction/trade_attr）
      * @param int   $tradeAttr 交易属性（1=交易 / 0=非交易）
      * @return array
-     */
+     *
     private function buildInvoiceIntent(array $data, int $tradeAttr): array
     {
         if ($tradeAttr === 0 || ($data['direction'] ?? '') !== 'sales') {
@@ -480,6 +488,7 @@ class ContractController extends BaseController
             'remark'         => trim((string)$this->getPost('inv_remark', '')),
         ];
     }
+    */
 
     /** 合同详情 */
     public function detail($id)

@@ -377,15 +377,47 @@ class InvoiceLogic
 
     /**
      * 待开票列表分页（财务视角：APPROVED 待开票 + 历史 APPLIED，P1-1：从 InvoiceController 下沉）
+     * 2026-XX：新增 $kw 关键词搜索——非空时左联开票主体/申请人，OR 组匹配：开票内容、主体名、申请人名、金额。
      * @return array [rows, total]
      */
-    public static function pagePendingIssue(int $page, int $pageSize): array
+    public static function pagePendingIssue(int $page, int $pageSize, string $kw = ''): array
     {
         $q = Db::name('contract_invoice')
-            ->where('status', 'in', [self::STATUS_APPROVED, self::STATUS_APPLIED]);
+            ->where('contract_invoice.status', 'in', [self::STATUS_APPROVED, self::STATUS_APPLIED]);
+        $kw = trim($kw);
+        if ($kw !== '') {
+            $like = '%' . $kw . '%';
+            $q->field('contract_invoice.*')
+                ->leftJoin('company_profile cp', 'cp.id = contract_invoice.our_company_id')
+                ->leftJoin('user u', 'u.id = contract_invoice.applicant_id')
+                ->where(function ($query) use ($like) {
+                    $query->whereLike('contract_invoice.content_desc', $like)
+                        ->whereOr('cp.name', 'like', $like)
+                        ->whereOr('u.name', 'like', $like)
+                        ->whereOr('contract_invoice.amount', 'like', $like);
+                });
+        }
         $total = $q->count();
-        $list  = $q->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
+        $list  = $q->order('contract_invoice.id', 'desc')->page($page, $pageSize)->select()->toArray();
         return [$list, $total];
+    }
+
+    /**
+     * 待开票总数（财务视角，与 pagePendingIssue 同口径；供仪表盘「待开票」角标）
+     */
+    public static function countPendingIssue(): int
+    {
+        return Db::name('contract_invoice')
+            ->where('status', 'in', [self::STATUS_APPROVED, self::STATUS_APPLIED])
+            ->count();
+    }
+
+    /**
+     * 本人开票申请总数（供仪表盘「我的申请」角标）
+     */
+    public static function countMyInvoices(int $userId): int
+    {
+        return Db::name('contract_invoice')->where('applicant_id', $userId)->count();
     }
 
     /**

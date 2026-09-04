@@ -7,7 +7,7 @@ SET @has_target_title = (
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'audit_log' AND COLUMN_NAME = 'target_title'
 );
 SET @sql = IF(@has_target_title = 0,
-    'ALTER TABLE `audit_log` ADD COLUMN `target_title` VARCHAR(255) NOT NULL DEFAULT '''' COMMENT ''目标标题快照(对象删除后仍可追溯定位)'' AFTER `target_id`',
+    'ALTER TABLE `audit_log` ADD COLUMN `target_title` VARCHAR(255) NOT NULL DEFAULT '''' COMMENT ''目标标题快照(对象删除后仍可追溯定位)'' AFTER `target_id`', -- 目标标题快照
     'SELECT 1'
 );
 PREPARE stmt FROM @sql;

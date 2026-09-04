@@ -9,9 +9,9 @@
 </div>
 
 <ul class="nav nav-tabs mb-3" id="invApplyTabs">
+  <?php if(!empty($can_create)): ?><li class="nav-item"><a class="nav-link" href="javascript:;" data-tab="issue" onclick="switchTab('issue')">待开票</a></li><?php endif; ?>
   <li class="nav-item"><a class="nav-link active" href="javascript:;" data-tab="mine" onclick="switchTab('mine')">我的申请</a></li>
   <li class="nav-item"><a class="nav-link" href="javascript:;" data-tab="pending" onclick="switchTab('pending')">待我审批</a></li>
-  <?php if(!empty($can_create)): ?><li class="nav-item"><a class="nav-link" href="javascript:;" data-tab="issue" onclick="switchTab('issue')">待开票</a></li><?php endif; ?>
 </ul>
 
 <!-- 我的申请 -->
@@ -36,6 +36,9 @@
 
 <!-- 待开票（财务视角：审批通过的申请，填写发票号开票） -->
 <div id="panelIssue" style="display:none">
+  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <input type="text" id="invKw" class="form-control form-control-sm" style="max-width:300px" placeholder="按开票内容/主体/申请人/金额搜索…" oninput="onInvKwInput()">
+  </div>
   <div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr>
     <th>开票内容</th><th>申请人</th><th>开票主体</th><th>金额</th><th>类型</th><th>状态</th><th>操作</th></tr></thead><tbody id="issueTb"><tr><td colspan="7" class="text-center py-4 text-muted">切换后加载</td></tr></tbody></table>
   <div class="card-footer bg-white text-muted small" id="issueEmpty" style="display:none">暂无待开票的申请</div>

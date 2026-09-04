@@ -22,7 +22,7 @@ SET @db = DATABASE();
 SET @has = (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'credit_score');
 SET @sql = IF(@has = 0,
-    'ALTER TABLE `customer` ADD COLUMN `credit_score` INT DEFAULT 100 COMMENT ''信用评分(满分100)(v2.38.3)''',
+    'ALTER TABLE `customer` ADD COLUMN `credit_score` INT DEFAULT 100 COMMENT ''信用评分(满分100)(v2.38.3)''', -- 信用评分
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -30,7 +30,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @has = (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'lifecycle_status');
 SET @sql = IF(@has = 0,
-    'ALTER TABLE `customer` ADD COLUMN `lifecycle_status` VARCHAR(16) DEFAULT ''ACTIVE'' COMMENT ''生命周期(POTENTIAL/ACTIVE)(v2.38.3)''',
+    'ALTER TABLE `customer` ADD COLUMN `lifecycle_status` VARCHAR(16) DEFAULT ''ACTIVE'' COMMENT ''生命周期(POTENTIAL/ACTIVE)(v2.38.3)''', -- 生命周期
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -38,7 +38,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @has = (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'high_risk');
 SET @sql = IF(@has = 0,
-    'ALTER TABLE `customer` ADD COLUMN `high_risk` TINYINT NOT NULL DEFAULT 0 COMMENT ''高风险标记(1=高风险)(v2.38.3)''',
+    'ALTER TABLE `customer` ADD COLUMN `high_risk` TINYINT NOT NULL DEFAULT 0 COMMENT ''高风险标记(1=高风险)(v2.38.3)''', -- 高风险标记
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -46,7 +46,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @has = (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'credit_manual');
 SET @sql = IF(@has = 0,
-    'ALTER TABLE `customer` ADD COLUMN `credit_manual` TINYINT NOT NULL DEFAULT 0 COMMENT ''信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)''',
+    'ALTER TABLE `customer` ADD COLUMN `credit_manual` TINYINT NOT NULL DEFAULT 0 COMMENT ''信用评分人工锁定(1=人工维护过，自动重算跳过评分/等级)(v2.38.6)''', -- 信用评分人工锁定
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -54,7 +54,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @has = (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'customer' AND COLUMN_NAME = 'industry');
 SET @sql = IF(@has = 0,
-    'ALTER TABLE `customer` ADD COLUMN `industry` VARCHAR(32) DEFAULT '''' COMMENT ''行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)''',
+    'ALTER TABLE `customer` ADD COLUMN `industry` VARCHAR(32) DEFAULT '''' COMMENT ''行业(GOV/REAL_ESTATE/FOOD_TOURISM/OTHER)(v2.40.0)''', -- 客户行业
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 

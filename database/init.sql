@@ -415,7 +415,7 @@ CREATE TABLE `supplier` (
     `type` VARCHAR(32) DEFAULT 'MEDIA' COMMENT '供应商类型(MEDIA/MATERIAL等)',    -- 供应商类型(MEDIA/MATERIAL等)
     `contact_name` VARCHAR(64) DEFAULT '' COMMENT '联系人姓名',    -- 联系人姓名
     `contact_mobile` VARCHAR(32) DEFAULT '' COMMENT '联系人手机',    -- 联系人手机
-    `contact_email` VARCHAR(128) DEFAULT '' COMMENT '联系人邮箱',    -- 联系人邮箱
+    `remark` VARCHAR(255) DEFAULT '' COMMENT '备注(v2.51.3:原contact_email改备注)',    -- 备注
     `address` VARCHAR(255) DEFAULT '' COMMENT '地址',    -- 地址
     `status` TINYINT DEFAULT 1 COMMENT '状态',    -- 状态
     `owner_id` BIGINT DEFAULT 0 COMMENT '归属人ID',    -- 归属人ID

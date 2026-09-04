@@ -5,5 +5,5 @@
 --              "amount":100000,"invoice_title":"对方公司","tax_no":"91330...","remark":""}
 -- 无 DB 逆操作（回滚：DROP COLUMN invoice_intent）
 ALTER TABLE contract
-  ADD COLUMN `invoice_intent` TEXT DEFAULT NULL COMMENT '随合同申请开票意图JSON(v2.51.10)'
+  ADD COLUMN `invoice_intent` TEXT DEFAULT NULL COMMENT '随合同申请开票意图JSON(v2.51.10)' -- 随合同申请开票意图JSON
   AFTER `renewed_from`;
