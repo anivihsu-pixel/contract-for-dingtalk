@@ -107,7 +107,8 @@ echo ContractFormConfig::mobileRenderAll($contract ?? [], $isNew, $__mmaps, $def
         <div id="invIntentBox">
           <div class="m-inv-section"><i class="bi bi-receipt"></i>开票信息（合同过审后自动生成「待开票」发票并通知财务）</div>
           <input type="hidden" name="inv_tax_rate" id="invTaxRate" value="0.06">
-          <?= \app\common\form\InvoiceFormConfig::mobileRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
+          <?php // 2026-09-07：随合同开票入口前端隐藏（HTML 注释无法屏蔽 PHP 执行，故本体注释保留供恢复）。
+          // \app\common\form\InvoiceFormConfig::mobileRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
           <div style="color:var(--m-text-3);font-size:13px;margin-top:6px;display:none" id="invTaxCalc"></div>
           <div style="color:var(--m-text-3);font-size:12px;margin-top:6px">金额不可超过合同金额；过审后自动开票，后续仍可在合同金额内单独申请。</div>
         </div>

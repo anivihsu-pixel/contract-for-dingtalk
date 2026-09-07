@@ -138,7 +138,8 @@ $__dcid = $default_company_id ?? 0;
     </div>
   </div>
   <div class="card-body" id="invIntentBox">
-    <?= \app\common\form\InvoiceFormConfig::pcRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
+    <?php // 2026-09-07：随合同开票入口前端隐藏（HTML 注释无法屏蔽 PHP 执行，故本体注释保留供恢复）。
+    // \app\common\form\InvoiceFormConfig::pcRender($inv_intent ?: [], ['companies' => $companies], 'inv_') ?>
     <div class="text-muted small mt-2"><i class="bi bi-info-circle"></i> 金额不可超过合同金额；过审后自动开票，后续仍可在合同金额内单独申请。</div>
   </div>
 </div>
