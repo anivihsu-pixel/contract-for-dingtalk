@@ -321,12 +321,12 @@ function statusB(s){
     return m[s]||s;
 }
 
-/** 收支方向 + 交易属性 → 标签 HTML */
+/** 收支方向 + 交易属性 → 标签 HTML（仅表达收付方向；我方是甲方/乙方由详情页按档案关联侧判定，不可按方向推断） */
 function dirBadge(c){
     if(c && c.trade_attr == 0) return '<span class="badge bg-secondary">非交易·不计入收支</span>';
     var d = (c && c.direction) ? c.direction : '';
-    if(d==='purchase') return '<span class="badge bg-warning text-dark">采购·我方为乙方(付款)</span>';
-    if(d==='sales') return '<span class="badge bg-success">销售·我方为甲方(收款)</span>';
+    if(d==='purchase') return '<span class="badge bg-warning text-dark">采购·我方付款</span>';
+    if(d==='sales') return '<span class="badge bg-success">销售·我方收款</span>';
     return '<span class="badge bg-secondary">未定</span>';
 }
 

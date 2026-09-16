@@ -69,13 +69,16 @@ $__dirBadge = $__isNonTrade
     : ($__dir === 'purchase'
         ? '<span class="pc-tag pc-tag-warn">采购 · 我方付款</span>'
         : ($__dir === 'sales' ? '<span class="pc-tag pc-tag-ok">销售 · 我方收款</span>' : '<span class="pc-tag pc-tag-muted">未定</span>'));
-// 深化：销售=我方为甲方（收款），采购=我方为乙方（付款）
-$__position = $__isNonTrade ? '非交易（不计入收支）' : ($__dir === 'purchase' ? '乙方（我方付款）' : ($__dir === 'sales' ? '甲方（我方收款）' : '未定'));
+// 我方身份反推（与甲乙方标签同口径）：收付款方向（direction）与我方身份正交解耦（销售也可我方=乙方收款），
+// 不可按方向推断；按 v2.46.0「对方侧必关联档案」约束——仅一侧关联档案时我方在另一侧，两侧同有关/同无关不显示
+$__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
+$__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+$__mineSide = (!$__aRel && $__bRel) ? '甲方' : ((!$__bRel && $__aRel) ? '乙方' : '');
 // $__flowName / $__company 由 Controller 注入（v2.28.2 下沉）
 $__flowName = $flowName ?? '';
 $__company  = $company ?? null;
 ?>
-<tr><td class="text-muted">合同方向</td><td colspan="3"><?=$__dirBadge?> <span class="text-muted small">我方为：<strong><?=$__position?></strong></span><?php if($__flowName): ?> · 建议审批流：<?=htmlspecialchars($__flowName)?><?php endif; ?></td></tr>
+<tr><td class="text-muted">合同方向</td><td colspan="3"><?=$__dirBadge?><?php if($__mineSide): ?> <span class="text-muted small">我方为：<strong><?=$__mineSide?></strong></span><?php endif; ?><?php if($__flowName): ?> · 建议审批流：<?=htmlspecialchars($__flowName)?><?php endif; ?></td></tr>
 <tr><td class="text-muted">关联项目</td><td colspan="3"><?php if(!empty($contract['project_id']) && !empty($contract['project_name'])): ?><a href="/project/<?=$contract['project_id']?>" class="pc-tag pc-tag-info text-decoration-none"><i class="bi bi-folder2-open me-1"></i><?=htmlspecialchars($contract['project_name'])?></a><?php else: ?><span class="text-muted">-</span><?php endif; ?></td></tr>
 <?php if($__company): ?>
 <tr><td class="text-muted">签约主体</td><td colspan="3"><span class="pc-tag pc-tag-info"><i class="bi bi-building me-1"></i><?=htmlspecialchars($__company['name'])?></span><?php if($__company['is_default']): ?> <span class="pc-tag pc-tag-muted" style="font-size:10px">默认主体</span><?php endif; ?></td></tr>
@@ -86,9 +89,7 @@ $__company  = $company ?? null;
 <?php endif; ?>
 <?php
 // v2.46.0：甲乙方类型标签（客户/供应商/外部）——与移动端同源
-// v2.51.x：我方身份反推（与移动端同口径）——仅一侧关联档案时我方在另一侧，我方侧类型显示「我方」而非「外部」
-$__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
-$__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+// $__aRel / $__bRel 复用上方「合同方向」行的我方身份反推结果：我方侧类型显示「我方」而非「外部」
 $__aType = (!$__aRel && $__bRel) ? '我方' : (!empty($contract['party_a_customer_id']) ? '客户' : (!empty($contract['party_a_supplier_id']) ? '供应商' : '外部'));
 $__bType = (!$__bRel && $__aRel) ? '我方' : (!empty($contract['party_b_customer_id']) ? '客户' : (!empty($contract['supplier_id']) ? '供应商' : '外部'));
 ?>

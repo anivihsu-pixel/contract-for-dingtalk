@@ -1,14 +1,14 @@
 # 开发进度看板（产品经理窗口）
 
 > 本看板用于管理合同管理系统的开发进度：需求 → 开发 → 闭环测试 → 发布，集中跟踪模块状态与待办。
-> 最后更新：2026-08-19
+> 最后更新：2026-09-16
 
 ## 一、项目概览
 
 | 项 | 说明 |
 |---|---|
 | 项目 | 合同管理系统（PC + 移动端） |
-| 当前版本 | v2.51.14（2026-08-19） |
+| 当前版本 | v2.51.17（2026-09-16） |
 | 技术栈 | ThinkPHP 8.0 / PHP 8.4 / MySQL（演示库，本地 127.0.0.1:3307 contract_dingtalk） / 钉钉集成 |
 | 演示地址 | `http://0.0.0.0:8099`（局域网可访问） |
 | 演示账号 | admin / 85151818；manager01、employee01、finance01（密码 password） |
@@ -118,6 +118,7 @@
 - [x] 修复：钉钉「开票/回款通知人设置点击无反应」（2026-08-18，积攒批次）：部署到钉钉（PC 客户端内置浏览器）后，审批流程编辑弹窗右侧「开票通知确认人」「回款提醒通知人」区块点击无反应，网页端正常、同弹窗左侧抄送配置正常。根因——flow-editor.js 加载 URL 硬编码 `?v=8` 自 v2.47.1 起从未更新，v2.51.10/v2.51.11 两次改文件内容（新增 invNotify/pmtNotify 系列函数）未升版本号，钉钉 WebView 启发式缓存命中旧 JS（无新函数），新区块 inline onclick 调用未定义函数 → 点击无反应；抄送由旧 JS 自渲染故正常。修复——admin/index.php 改 `asset_url('js/admin/flow-editor.js')` 按 mtime 自动版本化（URL 全新强制拉新，未来改文件自动升版本号，杜绝同类遗漏；同类 pickers.js?v=2 内容未变无风险、form-builder.js?v=time() 无缓存问题，均不动）。验收：php -l 通过；Playwright 实测 script 标签输出 mtime 版本号、编辑弹窗区块齐全、角色下拉填充 6 角色、点「选择用户」正常弹出选人窗。无 DB 变更；部署后首次访问需刷新一次页面
 - [x] 修复：PC 端提交的开票申请无撤回入口（2026-08-19，积攒批次）：列表「我的申请」与详情页均无撤回按钮。根因——`InvoiceLogic::pageMyList` 返回 `contract_invoice.*` 未含 `inst_id`（approval_instance_id），而前端撤回按钮显示条件 `v.status==='PENDING_APPROVAL' && v.inst_id` 恒不成立（撤回逻辑/接口本身已支持发票，缺的是入口）。修复——①pageMyList 补 `inst_id` 别名（与 pagePendingApproval 口径一致）；②`InvoiceController::detailData` 补 `inst_id/is_applicant/can_recall`（门控与后端 `ApprovalActionService::recall` 校验同口径：仅申请人本人 + 待审批 + 已挂实例）；③详情页 `invoice_apply/detail.php` 顶部加「撤回」按钮（二次确认后调 `/ajax/approval/<id>/recall`，成功置 CANCELLED 可重新提交）。验收：php -l 3 文件全绿；浏览器实测提交开票申请 → 列表/详情撤回按钮均出现 → 点击撤回 → 状态变「已撤回」；测试数据已清理还原。无 DB 变更
 - [x] 随合同申请开票入口迁移至合同编辑页 + 复用申请开票表单（2026-08-19，v2.51.14）：移动端测试反馈「勾选样式不明显」「自创样式」「主体选不了/开票内容与后台配置不一致」——根因：v2.51.10 的开票区块在提交审批页自创样式（移动端 `MobileController::approvalCreate` 漏 assign `$companies` 致主体下拉恒空；开票内容硬编码 5 选项与 invoice_form_field 配置脱节）。改法（用户拍板：双端同步 + 新建也展示）——入口从提交审批页（PC/移动）迁移至合同编辑页底部（明显卡片勾选开关，勾选态高亮）；开票字段复用 `InvoiceFormConfig`（pcRender/mobileRender 新增 `$prefix` 参数传 `'inv_'`，避免与合同表单 our_company_id/amount 同名冲突，customer 的 data-fill-* 与 select/company 的 data-pick-name 同步加前缀）；`contract.invoice_intent` 写入/清除由 `ApprovalController::submit` 迁移至 `ContractController::save`（buildInvoiceIntent 校验后落库、未勾选清除，submit 不再触碰意图；intent 新增 customer_id 键，消费端 createAutoForExecutingContract 兼容）。验收：php -l 8 文件全绿；回归 admin 29/29、misc 20/20、perm 18/18、finance 10/10、mobile 23/26、transfer 4/12（失败项均为纯净库缺历史审批实例，基线内）；E2E——编辑页勾选保存落库/取消勾选清除/编辑回显、提交审批页无开票区块且 intent 保留、完整过审链路（提交→双节点通过→EXECUTING + 发票自动生成 + intent 清空）全通过；测试数据已清理还原。**无 DB 变更**（沿用 v2.51.10 的 invoice_intent 列）
+- [x] 修复：合同详情「我方为」按收付款方向硬推身份（2026-09-16，未出包）：PC 合同详情「合同方向」行原按 direction 推「我方为：甲方/乙方」（sales→甲方、purchase→乙方），但 direction（收付款方向）与我方身份在设计上**正交解耦**（ContractController 明确注释：禁止按方向反推；技术服务合同可「我方=乙方 + 收款」）——致销售合同一律显示「我方为：甲方」、采购一律「乙方」。修复——改为与甲乙方标签同口径的「档案关联侧」反推（仅甲方侧关联→我方=乙方；仅乙方侧关联→我方=甲方；两侧同有关/同无关不显示该片段，同时消除非交易合同与方向 badge 重复的「非交易（不计入收支）」文案）；PC 列表方向标签同源写死的「销售·我方为甲方(收款)」改为纯方向文案「销售·我方收款 / 采购·我方付款」（与详情页 badge 一致，不再臆断身份）。验收：php -l + node --check 通过；E2E id=23（销售·我方=乙方）→「我方为：乙方」、id=21（采购·我方=甲方）→「我方为：甲方」均正确（修复前两者都反向错误）；列表 8 行 badge 文案正确；回归 misc 20/20、perm 18/18。无 DB 变更
 - [ ] （待产品确认）后续需求池：按需补充，进入开发前更新本看板
 
 ## 五、维护约定
