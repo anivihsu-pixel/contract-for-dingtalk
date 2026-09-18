@@ -12,6 +12,10 @@ include __DIR__ . '/_head.php';
   <div class="right"><?=intval($total)?> 份</div>
 </div>
 
+<style>/* 回款金额：已收讫黑色、部分回款红色（SSR 卡片与 JS 加载复用） */
+.m-recv{padding-left:8px;border-left:1px solid rgba(0,0,0,.12);font-size:13px;font-weight:600;color:var(--m-text-1,#1f2329);}
+.m-recv-part{color:var(--m-danger,#d9304a);}
+</style>
 <div class="m-page" id="page">
   <!-- 搜索 + 筛选入口（v2.40.1：筛选按钮改为「图标+文字」，带已选角标；关键词输入可一键清除） -->
   <div style="margin:var(--m-gap);">
@@ -39,6 +43,9 @@ include __DIR__ . '/_head.php';
     <?php foreach(['DRAFT','PENDING_APPROVAL','EXECUTING'] as $k): if (!isset($statusMap[$k])) continue; ?>
     <a href="javascript:;" class="m-chip <?=$status===$k?'active':''?>" data-status="<?=htmlspecialchars($k)?>"><?=htmlspecialchars($statusMap[$k])?></a>
     <?php endforeach; ?>
+    <?php $__pay = $filter['payment_status'] ?? ''; ?>
+    <a href="javascript:;" class="m-chip <?=$__pay==='uncollected'?'active':''?>" data-pay="uncollected">未回款</a>
+    <a href="javascript:;" class="m-chip <?=$__pay==='collected'?'active':''?>" data-pay="collected">已回款</a>
   </div>
 
   <!-- v2.40.1（方案 A）：已选筛选条件标签行，可单条删除 -->
@@ -63,7 +70,7 @@ include __DIR__ . '/_head.php';
             <div class="pic"><i class="bi bi-file-earmark-text"></i></div>
             <div class="main">
               <div class="t"><?=htmlspecialchars($c['title'] ?? '')?></div>
-              <div class="s"><?=htmlspecialchars($c['contract_no'] ?? '')?><?=!empty($c['owner_name'])?' · '.htmlspecialchars($c['owner_name']):''?></div>
+              <div class="s"><?=!empty($c['owner_name'])?htmlspecialchars($c['owner_name']):''?></div>
             </div>
             <div class="aside"><span class="m-tag <?=$stCls?>"><?=htmlspecialchars($statusMap[$st] ?? $st)?></span></div>
           </div>
@@ -71,6 +78,9 @@ include __DIR__ . '/_head.php';
             <span style="display:flex;align-items:center;gap:6px">
               <span class="m-tag <?=$dirCls?>"><?=$dirTxt?></span>
               <span class="amt pay-amt <?=$amtCls?>">¥<?=number_format((float)($c['amount'] ?? 0), 0)?></span>
+              <?php $pay = (float)($c['paid_sum'] ?? 0); if ($pay > 0 && (($c['trade_attr'] ?? 1) != 0)): ?>
+              <span class="m-recv<?=($pay >= (float)($c['amount'] ?? 0)) ? '' : ' m-recv-part'?>">¥<?=number_format($pay, 0)?></span>
+              <?php endif; ?>
             </span>
             <span style="font-size:12px;color:var(--m-text-3)"><?=!empty($c['expiry_date'])?'到期 '.htmlspecialchars($c['expiry_date']):''?></span>
           </div>
@@ -336,6 +346,7 @@ window._filterDict = <?=json_encode([
     for(var k in filter){
       if(!filter.hasOwnProperty(k) || k === 'keyword' || filter[k] === '') continue;
       if(k === 'owner_id' && scope === 'me') continue;  // v2.52.1：我的合同视图下归属人由查看范围表达，不重复计数
+      if(k === 'payment_status') continue;  // 回款快捷筛选由顶部 chips 表达，不重复计数
       n++;
     }
     if(n > 0){ badge.style.display = 'block'; badge.textContent = n; } else { badge.style.display = 'none'; }
@@ -363,6 +374,7 @@ window._filterDict = <?=json_encode([
       if(k === 'keyword' || filter[k] === '' || filter[k] == null) continue;
       if(k === 'status' && HIGH_STATUS.indexOf(filter[k]) >= 0) continue; // 高频状态由顶部 chips 表达
       if(k === 'owner_id' && scope === 'me') continue;  // v2.52.1：我的合同视图下归属人由查看范围表达，不展示重复标签
+      if(k === 'payment_status') continue;  // 回款快捷筛选由顶部 chips 表达，不展示标签
       html += '<span class="m-filter-tag" data-fk="' + k + '"><span class="m-filter-tag-txt">' + esc(filterTagText(k, filter[k])) + '</span><i class="bi bi-x"></i></span>';
     }
     tagsBox.style.display = html ? 'flex' : 'none';
@@ -535,16 +547,33 @@ window._filterDict = <?=json_encode([
   // v2.40.1：顶部高频状态 chips 与抽屉 f_status 共用 filter.status；点击后同步高亮并清除抽屉选择
   function syncTopChips(){
     var s = filter.status || '';
-    // v2.52.1：排除 scope-chip（查看范围切换），避免其 active 高亮被状态 chips 逻辑清除
+    var pay = filter.payment_status || '';
+    // v2.x：排除 scope-chip（查看范围切换），并区分状态(数据回款 chip data-pay) 独立高亮
     document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)').forEach(function(x){
-      x.classList.toggle('active', x.dataset.status === s);
+      if(x.dataset.pay){ x.classList.toggle('active', x.dataset.pay === pay); }
+      else if(x.dataset.status !== undefined){ x.classList.toggle('active', x.dataset.status === s); }
     });
   }
-  // 仅绑定顶部状态 chips（避免与抽屉内方向 chips 冲突，方向 chips 用 .m-dir-chip 单独处理；scope-chip 单独绑定）
-  document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)').forEach(function(chip){
+  // 仅绑定顶部状态 chips（data-status；避免与抽屉方向 chips / 回款 chips 冲突）
+  document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)[data-status]').forEach(function(chip){
     chip.addEventListener('click', function(){
       var s = this.dataset.status || '';
       if(s) filter.status = s; else delete filter.status;
+      // 回款与状态快捷筛选互斥：选状态时清除回款筛选
+      delete filter.payment_status;
+      syncTopChips(); syncStatusSelect();
+      page = 1; finished = false;
+      updateBadge(); renderTags();
+      loadList(true);
+    });
+  });
+  // 回款快捷筛选（未回款/已回款）
+  document.querySelectorAll('.m-status-chips .m-chip:not(.scope-chip)[data-pay]').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var v = this.dataset.pay || '';
+      if(v) filter.payment_status = v; else delete filter.payment_status;
+      // 与状态快捷筛选互斥：选回款时清除状态筛选
+      delete filter.status;
       syncTopChips(); syncStatusSelect();
       page = 1; finished = false;
       updateBadge(); renderTags();

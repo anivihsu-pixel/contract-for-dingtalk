@@ -229,7 +229,13 @@ class ContractLogic
         $query = Db::name('contract')->alias('c')
             ->leftJoin('user u', 'c.owner_id = u.id')
             ->leftJoin('project pr', 'c.project_id = pr.id')
-            ->field('c.*, u.name as owner_name, pr.name as project_name')
+            // 回款列/回款快捷筛选依赖：按应收(RECEIVABLE)已确认(PAID)记录聚合累计已收讫金额（paid_sum）。
+            // 子查询已 GROUP BY contract_id，每个合同至多关联一行，不影响 count/分页行数。
+            ->leftJoin("(SELECT contract_id, COALESCE(SUM(paid_amount),0) AS paid_sum
+                            FROM payment_record
+                           WHERE payment_type='RECEIVABLE' AND status='PAID'
+                           GROUP BY contract_id) pmt", 'pmt.contract_id = c.id')
+            ->field("c.*, u.name AS owner_name, pr.name AS project_name, COALESCE(pmt.paid_sum,0) AS paid_sum")
             ->where('c.is_deleted', 0);
 
         // 数据范围
@@ -326,6 +332,17 @@ class ContractLogic
         // REV-29：高级筛选 — 合同归属人
         if (isset($filter['owner_id']) && $filter['owner_id'] !== '') {
             $query->where('c.owner_id', (int)$filter['owner_id']);
+        }
+        // 回款状态快捷筛选（未回款/已回款）——按列表聚合的应收累计已收讫金额 paid_sum 过滤。
+        // 已回款 = 累计已收 > 0；未回款 = 无应收已收（paid_sum 为空或 ≤ 0）。
+        if (!empty($filter['payment_status'])) {
+            if ($filter['payment_status'] === 'collected') {
+                $query->whereRaw('COALESCE(pmt.paid_sum, 0) > 0');
+            } elseif ($filter['payment_status'] === 'uncollected') {
+                $query->where(function ($q) {
+                    $q->whereNull('pmt.contract_id')->whereOr('pmt.paid_sum', '<=', 0);
+                });
+            }
         }
     }
 

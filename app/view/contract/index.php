@@ -20,6 +20,8 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
   .m-camt{font-size:15px;font-weight:700;margin-left:auto;}
   .m-amt-in{color:var(--danger);}
   .m-amt-out{color:var(--success);}
+  .m-recv{padding-left:8px;border-left:1px solid var(--line);font-size:13px;font-weight:600;color:var(--text-main);}
+  .m-recv-part{color:var(--danger);}
 }
 /* P1-7：列表首屏骨架屏（替换 spinner，消除空白感） */
 .sk-row{display:flex;align-items:center;gap:14px;padding:14px 10px;border-bottom:1px solid #f0f1f3}
@@ -69,9 +71,12 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
     <span class="text-muted mx-2" style="opacity:.5">|</span>
     <?php endif; ?>
     <span class="text-muted small me-1">快捷筛选：</span>
+    <input type="hidden" name="payment_status" id="payStatus" value="<?=htmlspecialchars($filter['payment_status']??'')?>">
     <button type="button" class="btn btn-sm draft-chip" data-status="" data-owner="">全部合同</button>
     <button type="button" class="btn btn-sm draft-chip" data-status="DRAFT" data-owner="">草稿</button>
     <button type="button" class="btn btn-sm draft-chip" data-status="DRAFT" data-owner="me">我的草稿</button>
+    <button type="button" class="btn btn-sm pay-chip btn-outline-primary" data-pay="uncollected">未回款</button>
+    <button type="button" class="btn btn-sm pay-chip btn-outline-primary" data-pay="collected">已回款</button>
   </div>
 </div>
 
@@ -131,8 +136,8 @@ th.sorted-desc::after{content:" ▼";color:var(--primary);font-size:.75em}
 <!-- REV-28：表格增加全选与行勾选列 -->
 <div class="card stat-card"><div class="table-responsive"><table class="table table-hover mb-0" id="contractTable"><thead class="table-light"><tr>
 <th style="width:36px"><input type="checkbox" id="selectAll" onchange="toggleAll(this)" title="全选"></th>
-<th data-sort="id" class="sortable">编号</th><th data-sort="title" class="sortable">标题</th><th>分类</th><th>方向</th><th data-sort="amount" class="sortable">金额</th><th data-sort="status" class="sortable">状态</th><th>乙方</th><th>项目</th><th>关联</th><th>操作</th></tr></thead><tbody id="tableBody"><!-- P1-7：首屏骨架屏（JS 加载完成/失败后自动替换，消除空白感与永久转圈） -->
-<tr><td colspan="11" style="padding:0 12px">
+<th data-sort="title" class="sortable">标题</th><th>方向</th><th data-sort="amount" class="sortable">金额</th><th>回款</th><th data-sort="status" class="sortable">状态</th><th>乙方</th><th>项目</th><th>关联</th><th>操作</th></tr></thead><tbody id="tableBody"><!-- P1-7：首屏骨架屏（JS 加载完成/失败后自动替换，消除空白感与永久转圈） -->
+<tr><td colspan="10" style="padding:0 12px">
 <?php for($__i=0;$__i<5;$__i++): ?><div class="sk-row"><div class="sk sk-w1"></div><div class="sk sk-w2"></div><div class="sk sk-w3"></div><div class="sk sk-w4"></div><div class="sk sk-w5"></div><div class="sk sk-w6"></div></div><?php endfor; ?>
 </td></tr></tbody></table></div><div class="card-footer bg-white" id="pagination"></div></div>
 <script>window._businessTypes=<?=json_encode($business_types,JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;window._canCreateContract=<?=!empty($can_create_contract)?'true':'false'?>;window._contractOwners=<?=json_encode($owners ?? [],JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;</script>

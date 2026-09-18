@@ -232,7 +232,7 @@ function load(n){
             if(isMobile){
                 h='<tr><td colspan="10"><div class="m-empty" style="padding:48px 0;">暂无合同<br><span style="font-size:13px;">创建第一份合同，提交后进入审批流</span></div></td></tr>';
             }else{
-                h=emptyState({colspan:11,icon:'bi-file-text',title:'暂无合同',desc:'创建第一份合同，提交后进入审批流',btn:'新建合同',href:'/contract/create',canCreate:window._canCreateContract});
+                h=emptyState({colspan:10,icon:'bi-file-text',title:'暂无合同',desc:'创建第一份合同，提交后进入审批流',btn:'新建合同',href:'/contract/create',canCreate:window._canCreateContract});
             }
         }else{
             // ---- 逐行渲染 ----
@@ -244,8 +244,7 @@ function load(n){
                     h+='<tr><td colspan="10" style="padding:8px 0;border:none;">';
                     h+='<div class="m-ccard" onclick="location.href=\'/m/contract/'+c.id+'\'">';
                     h+='<div class="m-ccard-top"><span class="m-ccard-t">'+esc(c.title)+'</span>'+statusB(c.status)+'</div>';
-                    h+='<div class="m-ccard-no">'+esc(c.contract_no||'')+'</div>';
-                    h+='<div class="m-ccard-meta">'+dirBadge(c)+(window._businessTypes&&window._businessTypes[c.business_type]?('<span class="m-ctag m-ctag-muted">'+esc(window._businessTypes[c.business_type])+'</span>'):'')+amt+'</div>';
+                    h+='<div class="m-ccard-meta">'+dirBadge(c)+amt+recvSpan(c)+'</div>';
                     if(c.party_b_name){ h+='<div class="m-ccard-party"><i class="bi bi-people me-1"></i>'+esc(c.party_b_name)+'</div>'; }
                     h+='</div>';
                     h+='</td></tr>';
@@ -253,11 +252,10 @@ function load(n){
                     // 桌面端表格行（整行可点进入详情，REV-28：首列为复选框，点击不触发导航；P2-07：tabindex+Enter 键盘可达）
                     h+='<tr role="link" tabindex="0" aria-label="查看合同详情" onclick="location.href=\'/contract/'+c.id+'\'" style="cursor:pointer" onkeydown="if(event.target.tagName===\'INPUT\'||event.target.tagName===\'SELECT\'||event.target.tagName===\'TEXTAREA\')return;if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();location.href=\'/contract/'+c.id+'\';}">';
                     h+='<td onclick="event.stopPropagation()"><input type="checkbox" class="batch-cb" value="'+c.id+'" onchange="updateBatchBar()"></td>';
-                    h+='<td><small>'+esc(c.contract_no)+'</small></td>';
                     h+='<td>'+esc(c.title)+'</td>';
-                    h+='<td>'+(window._businessTypes&&window._businessTypes[c.business_type]?esc(window._businessTypes[c.business_type]):esc(c.business_type))+'</td>';
                     h+='<td>'+dirBadge(c)+'</td>';
                     h+='<td class="text-end">'+parseFloat(c.amount||0).toLocaleString('zh-CN',{minimumFractionDigits:2})+'</td>';
+                    h+=recvCell(c);
                     h+='<td>'+statusB(c.status)+'</td>';
                     h+='<td>'+(esc(c.party_b_name)||'-')+'</td>';
                     // 关联项目列
@@ -299,7 +297,7 @@ function load(n){
         // 修复（2026-07-25）：请求失败时务必清除初始占位 spinner，否则会永久转圈；
         // 改为展示「加载失败 + 重新加载」操作点，点击重试当前页。
         if(tb){
-            tb.innerHTML='<tr><td colspan="11" class="text-center py-5 text-muted">'
+            tb.innerHTML='<tr><td colspan="10" class="text-center py-5 text-muted">'
                 +'<i class="bi bi-exclamation-triangle" style="font-size:2rem"></i>'
                 +'<div class="mt-2">列表加载失败，请检查网络后重试</div>'
                 +'<button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="listRetryBtn"><i class="bi bi-arrow-clockwise"></i> 重新加载</button>'
@@ -328,6 +326,24 @@ function dirBadge(c){
     if(d==='purchase') return '<span class="badge bg-warning text-dark">采购·我方付款</span>';
     if(d==='sales') return '<span class="badge bg-success">销售·我方收款</span>';
     return '<span class="badge bg-secondary">未定</span>';
+}
+
+// 回款金额（PC 表格单元格）：仅应收(交易)合同显示累计已收讫金额；
+// 已收讫（累计已收 ≥ 合同额）走默认黑色，部分回款（0<已收<全额）走红色；未回款留空（'-'）
+function recvCell(c){
+    if(c.trade_attr==0) return '<td class="text-end text-muted">-</td>';
+    var paid = parseFloat(c.paid_sum||0);
+    if(!(paid>0)) return '<td class="text-end text-muted">-</td>';
+    var full = paid >= parseFloat(c.amount||0);
+    return '<td class="text-end '+(full?'':'text-danger')+'">'+paid.toLocaleString('zh-CN',{minimumFractionDigits:2})+'</td>';
+}
+// 回款金额（移动端卡片 span）：口径同 recvCell，未回款不渲染
+function recvSpan(c){
+    if(c.trade_attr==0) return '';
+    var paid = parseFloat(c.paid_sum||0);
+    if(!(paid>0)) return '';
+    var full = paid >= parseFloat(c.amount||0);
+    return '<span class="m-recv'+(full?'':' m-recv-part')+'">¥'+paid.toLocaleString('zh-CN',{minimumFractionDigits:2})+'</span>';
 }
 
 // 筛选表单提交 → 重新从第 1 页加载
@@ -386,6 +402,9 @@ if (document.readyState === 'loading') {
   }
   chips.forEach(function(ch){
     ch.addEventListener('click', function(){
+      // 回款与状态快捷筛选互斥：点「全部合同/草稿/我的草稿」时清空回款筛选并取消其高亮
+      var ps = sf.querySelector('[name="payment_status"]'); if(ps) ps.value='';
+      document.querySelectorAll('.pay-chip').forEach(function(pc){ pc.classList.remove('btn-primary'); pc.classList.add('btn-outline-primary'); });
       var s = sf.querySelector('[name="status"]');  if(s) s.value = ch.dataset.status || '';
       var o = sf.querySelector('[name="owner_id"]');
       if(o){
@@ -412,6 +431,40 @@ if (document.readyState === 'loading') {
     });
   });
   syncChips();
+})();
+
+// ---- v2.x：回款快捷筛选（未回款 / 已回款） ----
+// 点 chip → 写隐藏 payment_status → 清状态/归属人（互斥）→ 刷新列表；激活=primary
+(function(){
+  var chips = sf ? sf.querySelectorAll('.pay-chip') : [];
+  var payStatus = sf ? sf.querySelector('[name="payment_status"]') : null;
+  if(!chips.length) return;
+  function syncPayChips(){
+    var cur = (payStatus ? payStatus.value : '') || '';
+    chips.forEach(function(ch){
+      var act = (ch.dataset.pay||'') === cur;
+      ch.classList.toggle('btn-primary', act);
+      ch.classList.toggle('btn-outline-primary', !act);
+    });
+    // 回款筛选生效时，「全部合同/草稿/我的草稿」保持非激活高亮
+    if(cur){
+      sf.querySelectorAll('.draft-chip').forEach(function(d){ d.classList.remove('btn-primary'); d.classList.add('btn-outline-primary'); });
+    }
+  }
+  chips.forEach(function(ch){
+    ch.addEventListener('click', function(){
+      var v = ch.dataset.pay || '';
+      if(payStatus) payStatus.value = v;
+      // 与状态快捷筛选互斥：清空 status 与归属人
+      var s = sf.querySelector('[name="status"]'); if(s) s.value = '';
+      var o = sf.querySelector('[name="owner_id"]');
+      if(o){ o.value = ''; var oIn = sf.querySelector('.cs-wrap [name="owner_id"]'); var oTxt = oIn ? oIn.closest('.cs-wrap').querySelector('.cs-input') : null; if(oTxt) oTxt.value=''; }
+      syncPayChips();
+      load(1);
+    });
+  });
+  // 初始按已回显的 payment_status 高亮（URL 直达/刷新时）
+  syncPayChips();
 })();
 
 // ---- v2.52.1：查看范围切换（我的合同/全部合同） ----

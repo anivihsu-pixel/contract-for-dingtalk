@@ -710,6 +710,9 @@ class MobileController extends BaseController
         if ($deptId   !== '' && is_numeric($deptId))    $filter['dept_id'] = (int)$deptId;
         if ($amountMin !== '' && is_numeric($amountMin)) $filter['amount_min'] = $amountMin;
         if ($amountMax !== '' && is_numeric($amountMax)) $filter['amount_max'] = $amountMax;
+        // 回款状态快捷筛选（未回款/已回款）
+        $paymentStatus = $this->getParam('payment_status', '');
+        if ($paymentStatus !== '') $filter['payment_status'] = $paymentStatus;
 
         // v2.44.4：移动端合同列表草稿置顶（草稿卡片同时浅琥珀底区分，见 contracts.php）
         $res  = ContractLogic::getList($page, $pageSize, $filter, ['draft_first', 'desc']);

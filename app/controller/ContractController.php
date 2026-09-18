@@ -41,6 +41,8 @@ class ContractController extends BaseController
             'party_name'    => $this->getParam('party_name', ''),
             'our_company_id'=> $this->getParam('our_company_id', ''),
             'owner_id'      => $this->getParam('owner_id', ''),
+            // 回款状态快捷筛选（未回款/已回款）；已回款/未回款 仅当有值时过滤
+            'payment_status'=> $this->getParam('payment_status', ''),
         ];
         // 非交易筛选：仅当显式传入 trade_attr（0 或 1）时过滤；空字符串不附加，避免 0 被 empty() 误判
         $tradeAttrParam = $this->getParam('trade_attr', '');
