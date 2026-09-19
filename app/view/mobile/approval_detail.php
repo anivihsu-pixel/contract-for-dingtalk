@@ -106,8 +106,16 @@ include __DIR__ . '/_head.php';
   <div class="m-card">
     <div class="m-card-hd"><span><i class="bi bi-file-text me-1"></i>合同正文</span></div>
     <div class="m-card-bd">
-      <div class="m-kv"><div class="k">甲方</div><div class="v"><?=htmlspecialchars(($our_company ?: ($contract['party_a_name'] ?? '')) ?: '-')?></div></div>
-      <div class="m-kv"><div class="k">乙方</div><div class="v"><?=htmlspecialchars($contract['party_b_name'] ?? '-')?></div></div>
+      <?php
+      // 我方身份反推（与移动端合同详情 v2.51.17 同口径）：仅一侧关联档案时我方必在另一侧；
+      // 两侧同有关/同无关（历史自由输入）不标注。审批页此前把本公司主体恒当甲方，导致「我方=乙方」合同甲方错显示为本公司。
+      $__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
+      $__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+      $__mineA = $__bRel && !$__aRel; // 仅乙方关联档案 → 我方=甲方
+      $__mineB = $__aRel && !$__bRel; // 仅甲方关联档案 → 我方=乙方
+      ?>
+      <div class="m-kv"><div class="k"><?=$__mineA?'甲方（我方）':'甲方'?></div><div class="v"><?=htmlspecialchars(($contract['party_a_name'] ?? '') ?: '-')?></div></div>
+      <div class="m-kv"><div class="k"><?=$__mineB?'乙方（我方）':'乙方'?></div><div class="v"><?=htmlspecialchars(($contract['party_b_name'] ?? '') ?: '-')?></div></div>
       <div class="m-kv"><div class="k">期限</div><div class="v"><?=htmlspecialchars((($contract['effective_date'] ?? '') . ' ~ ' . ($contract['expiry_date'] ?? '')) ?: '-')?></div></div>
       <?php if(!empty($contract['content'])): ?>
       <div class="m-kv" style="display:block">

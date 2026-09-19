@@ -31,8 +31,16 @@ $totalNodesP = count($nodes);
       <div class="col-md-6"><div class="text-muted small">合同名称</div><div class="fw-semibold"><?=htmlspecialchars($contract['title'] ?? '-')?></div></div>
       <div class="col-md-3"><div class="text-muted small">合同编号</div><div><?=htmlspecialchars($contract['contract_no'] ?? '-')?></div></div>
       <div class="col-md-3"><div class="text-muted small">合同金额</div><div class="fw-semibold text-danger">¥<?=format_money($contract['amount'] ?? 0)?></div></div>
-      <div class="col-md-6"><div class="text-muted small">甲方</div><div><?=htmlspecialchars(($our_company ?: ($contract['party_a_name'] ?? '')) ?: '-')?></div></div>
-      <div class="col-md-6"><div class="text-muted small">乙方</div><div><?=htmlspecialchars(($contract['party_b_name'] ?? '') ?: '-')?></div></div>
+      <?php
+      // 我方身份反推（与合同详情 v2.51.17 同口径）：仅一侧关联档案时我方必在另一侧；
+      // 两侧同有关/同无关（历史自由输入）不标注。此前把本公司主体恒当甲方，导致「我方=乙方」合同甲方错显示为本公司。
+      $__aRel = !empty($contract['party_a_customer_id']) || !empty($contract['party_a_supplier_id']);
+      $__bRel = !empty($contract['party_b_customer_id']) || !empty($contract['supplier_id']);
+      $__mineA = $__bRel && !$__aRel; // 仅乙方关联档案 → 我方=甲方
+      $__mineB = $__aRel && !$__bRel; // 仅甲方关联档案 → 我方=乙方
+      ?>
+      <div class="col-md-6"><div class="text-muted small"><?=$__mineA?'甲方（我方）':'甲方'?></div><div><?=htmlspecialchars(($contract['party_a_name'] ?? '') ?: '-')?></div></div>
+      <div class="col-md-6"><div class="text-muted small"><?=$__mineB?'乙方（我方）':'乙方'?></div><div><?=htmlspecialchars(($contract['party_b_name'] ?? '') ?: '-')?></div></div>
       <div class="col-md-3"><div class="text-muted small">收付方向</div><div><?=($contract['trade_attr'] ?? 1) == 0 ? '非交易合同' : (($contract['direction'] ?? 'sales') === 'sales' ? '应收' : '应付')?></div></div>
       <div class="col-md-3"><div class="text-muted small">生效日期</div><div><?=htmlspecialchars(($contract['effective_date'] ?? '') ?: '-')?></div></div>
       <div class="col-md-3"><div class="text-muted small">到期日期</div><div><?=htmlspecialchars(($contract['expiry_date'] ?? '') ?: '-')?></div></div>
